@@ -94,6 +94,7 @@ import '../widgets/desktop_paste_shortcuts.dart';
 import '../services/transfer_record.dart';
 import '../services/transfer_state_manager.dart';
 import '../services/transfer_keep_alive.dart';
+import '../services/message_notifier.dart';
 import '../services/file_export_service.dart';
 import '../ui/app_ui.dart';
 import '../ui/platform_performance.dart';
@@ -405,6 +406,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   Timer? _presenceRefreshTimer;
   static const Duration _rosterFallbackRefreshInterval = Duration(minutes: 10);
   bool _presencePausedByLifecycle = false;
+
+  /// Presence heartbeat, fully independent of the realtime socket and app
+  /// lifecycle: the server expires a device's online status after a few
+  /// minutes without a heartbeat, so this must keep running while the app is
+  /// alive — minimized, unfocused, or while the socket is reconnecting.
+  Timer? _presenceHeartbeatTimer;
+  static const Duration _presenceHeartbeatInterval = Duration(seconds: 60);
 
   /// Tracks foreground/background so auto-copy can defer clipboard writes on
   /// mobile (Android 10+/iOS block clipboard access from background).
@@ -1021,6 +1029,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     );
   }
 
+  /// Idempotently starts the always-on presence heartbeat.
+  void _ensurePresenceHeartbeat() {
+    if (_presenceHeartbeatTimer != null || !mounted) return;
+    _presenceHeartbeatTimer = Timer.periodic(
+      _presenceHeartbeatInterval,
+      (_) => unawaited(_markPresenceOnline('heartbeat')),
+    );
+  }
+
   /// Low-frequency fallback for missed realtime roster/discovery events.
   Future<void> _onPresenceRefreshTick() async {
     if (!mounted) return;
@@ -1068,12 +1085,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       case AppLifecycleState.paused:
       case AppLifecycleState.detached:
         _appInForeground = false;
-        if (_hasActiveTransferKeepAlive) break;
-        // Android keeps an always-on foreground service that maintains the
-        // realtime connection, so the device stays online in the background;
-        // do not proactively mark it offline. iOS is background-restricted and
-        // keeps the original behavior.
-        if (Platform.isAndroid) break;
+        // Self-hosted fork: keep presence heartbeat and timers running when
+        // the desktop window loses focus/minimizes, so the device stays
+        // reachable for incoming pushes. Official builds mark desktop
+        // devices offline here, which breaks realtime delivery.
+        if (Platform.isAndroid || Platform.isWindows || Platform.isLinux || Platform.isMacOS) break;
         _presencePausedByLifecycle = true;
         _cancelPresenceRefreshTimer();
         unawaited(_markPresenceOffline('app_${state.name}'));
@@ -1584,6 +1600,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     _checkServerConnection();
     if (!_initStillCurrent(generation)) return;
     _schedulePresenceRefresh();
+    // registerDevice (inside _checkServerConnection) overwrites the device
+    // row without a URL, wiping one registered earlier by _startLanReceiver —
+    // re-announce the serving URL now that registration has completed.
+    if (!_effectiveOffline) {
+      final servingUrl = _lanReceiver?.lanHttpUrl;
+      if (servingUrl != null && servingUrl.isNotEmpty) {
+        unawaited(updateDevice(_deviceId, lanHttpUrl: servingUrl));
+      }
+    }
+    // Keep-alive must not depend on the realtime socket coming up: start the
+    // heartbeat and the Android foreground service as soon as the chat screen
+    // is initialized (the service itself is idempotent).
+    _ensurePresenceHeartbeat();
+    if (Platform.isAndroid) {
+      unawaited(TransferKeepAlive.instance.enablePersistent());
+    }
   }
 
   void _scheduleIosLanRetry() {
@@ -3466,7 +3498,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   }
 
   Future<void> _startLanReceiver() async {
-    if (_deviceId.isEmpty) return;
+    if (_deviceId.isEmpty) {
+      logChat.warning('_startLanReceiver skip: deviceId empty');
+      return;
+    }
+    logChat.info('_startLanReceiver begin deviceId=$_deviceId');
     try {
       _lanReceiver = LanReceiver(
         deviceId: _deviceId,
@@ -3662,8 +3698,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         onRegisterLanHttpUrl: (url) async {
           if (!mounted) return;
           _lanDiscovery?.setMyLanHttpUrl(url);
+          // mDNS broadcast registration can hang on some platforms; never let
+          // it block the server-side URL registration below.
           if (_lanDiscovery != null) {
-            await _lanDiscovery!.startBroadcast(url);
+            unawaited(_lanDiscovery!.startBroadcast(url));
           }
           if (!mounted) return;
           if (!_effectiveOffline) {
@@ -4364,8 +4402,20 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
           }
           if (msg.type == 'text' && msg.fromDeviceId != _deviceId) {
             unawaited(_maybeAutoCopyLatestReceivedText());
+            final textPayload = msg.payload is Map
+                ? (msg.payload as Map)['text']?.toString() ?? ''
+                : '';
+            _notifyIncomingIfBackground(
+              fromDeviceId: msg.fromDeviceId,
+              body: textPayload.isNotEmpty ? textPayload : '收到一条文本消息',
+            );
           }
           if (msg.type == 'file' && msg.payload is Map) {
+            _notifyIncomingIfBackground(
+              fromDeviceId: msg.fromDeviceId,
+              body:
+                  '收到文件：${(msg.payload as Map)['fileName']?.toString() ?? ''}',
+            );
             _maybeAutoDownloadIncomingS3File(
               message: message,
               payload: msg.payload as Map,
@@ -4390,6 +4440,31 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   void _onLanMessageReceived(String text, String fromDeviceId, String? _) {
     if (!mounted) return;
     unawaited(_persistLanTextMessage(text, fromDeviceId));
+    _notifyIncomingIfBackground(fromDeviceId: fromDeviceId, body: text);
+  }
+
+  /// Fires a system notification for a message that arrives while the app is
+  /// backgrounded (or the sender's conversation is not open). Foreground +
+  /// open-conversation arrivals stay silent — the bubble is visible already.
+  void _notifyIncomingIfBackground({
+    required String fromDeviceId,
+    required String body,
+  }) {
+    if (fromDeviceId == _deviceId) return;
+    if (_appInForeground &&
+        ref.read(selectedDeviceIdProvider) == fromDeviceId) {
+      return;
+    }
+    final trimmed = body.trim();
+    if (trimmed.isEmpty) return;
+    final preview =
+        trimmed.length > 80 ? '${trimmed.substring(0, 80)}…' : trimmed;
+    unawaited(
+      MessageNotifier.instance.showMessage(
+        title: '虾传 · 新消息',
+        body: preview,
+      ),
+    );
   }
 
   /// Copy the most recently received text (from another device) to the
@@ -8777,6 +8852,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     unawaited(_markPresenceOffline('dispose'));
     WidgetsBinding.instance.removeObserver(this);
     _cancelPresenceRefreshTimer();
+    _presenceHeartbeatTimer?.cancel();
+    _presenceHeartbeatTimer = null;
     _newPeerProbeDebounce?.cancel();
     _dirtyProbeDebounce?.cancel();
     _lanLostPeerSub?.cancel();

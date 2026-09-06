@@ -7,6 +7,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   flutter_secure_storage_linux
   flutter_webrtc
   irondash_engine_context
+  local_notifier
   pasteboard
   screen_retriever_linux
   super_native_extensions

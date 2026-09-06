@@ -9,7 +9,6 @@ String _dioExceptionTypeLabel(DioExceptionType type) {
     DioExceptionType.badResponse => '响应错误',
     DioExceptionType.cancel => '已取消',
     DioExceptionType.connectionError => '连接错误',
-    DioExceptionType.transformTimeout => '转换超时',
     DioExceptionType.unknown => '网络错误',
   };
 }

@@ -9,6 +9,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   flutter_secure_storage_windows
   flutter_webrtc
   irondash_engine_context
+  local_notifier
   pasteboard
   permission_handler_windows
   screen_retriever_windows

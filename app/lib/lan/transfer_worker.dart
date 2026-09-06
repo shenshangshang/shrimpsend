@@ -91,8 +91,19 @@ class _ReceiveProgress extends _ToMain {
 }
 
 class _WorkerReady extends _ToMain {
-  _WorkerReady(this.commandPort);
+  _WorkerReady(this.commandPort, this.port);
   final SendPort commandPort;
+
+  /// Actual bound port — differs from the requested one when the caller
+  /// passes 0 to let the OS pick a free ephemeral port.
+  final int port;
+}
+
+/// Sent by a worker isolate when its HTTP bind fails, so start() can fail
+/// fast instead of waiting forever for [_WorkerReady].
+class _WorkerBindFailed {
+  _WorkerBindFailed(this.error);
+  final String error;
 }
 
 sealed class _ToWorker {}
@@ -254,7 +265,12 @@ class HttpTransferServer {
     String? deviceId,
     String? deviceName,
     String? platform,
+    String? announceAddress,
   }) async {
+    // Workers share one port (SO_REUSEADDR). Pass port=0 to have the OS pick
+    // a free ephemeral port: the first worker reports the actual port and the
+    // remaining workers bind to it explicitly.
+    int effectivePort = port;
     for (int i = 0; i < workerCount; i++) {
       final mainPort = ReceivePort();
       _mainPorts.add(mainPort);
@@ -262,7 +278,7 @@ class HttpTransferServer {
       final isolate = await Isolate.spawn(_workerEntry, [
         mainPort.sendPort,
         bindAddress,
-        port,
+        effectivePort,
         saveDir,
         deviceId ?? '',
         deviceName ?? '',
@@ -270,20 +286,27 @@ class HttpTransferServer {
       ], debugName: 'http-worker-$i');
       _workers.add(isolate);
 
-      final readyCompleter = Completer<SendPort>();
+      final readyCompleter = Completer<_WorkerReady>();
       mainPort.listen((msg) {
         if (msg is _WorkerReady) {
-          readyCompleter.complete(msg.commandPort);
+          if (!readyCompleter.isCompleted) readyCompleter.complete(msg);
+        } else if (msg is _WorkerBindFailed) {
+          if (!readyCompleter.isCompleted) {
+            readyCompleter.completeError(
+              StateError('worker bind failed: ${msg.error}'),
+            );
+          }
         } else if (msg is _ToMain) {
           _handleWorkerMessage(msg);
         }
       });
 
-      final cmdPort = await readyCompleter.future;
-      _workerPorts.add(cmdPort);
+      final ready = await readyCompleter.future;
+      _workerPorts.add(ready.commandPort);
+      if (effectivePort == 0) effectivePort = ready.port;
     }
 
-    _lanHttpUrl = buildLanHttpBaseUrl(bindAddress, port);
+    _lanHttpUrl = buildLanHttpBaseUrl(announceAddress ?? bindAddress, effectivePort);
     _log.info(
       'HttpTransferServer started at $_lanHttpUrl ($workerCount workers)',
     );
@@ -488,12 +511,16 @@ void _workerEntry(List<dynamic> args) async {
   late HttpServer server;
   try {
     server = await HttpServer.bind(address, port, shared: true);
-  } catch (_) {
+  } catch (e) {
+    // Report the failure instead of dying silently — otherwise start()
+    // waits forever for _WorkerReady and the caller never tries the next
+    // port (observed when another process holds the port on 127.0.0.1).
+    mainPort.send(_WorkerBindFailed('$e'));
     return;
   }
 
   final commandPort = ReceivePort();
-  mainPort.send(_WorkerReady(commandPort.sendPort));
+  mainPort.send(_WorkerReady(commandPort.sendPort, server.port));
 
   commandPort.listen((msg) {
     if (msg is _RegisterPull) {

@@ -198,7 +198,11 @@ public class DeviceService {
         if (req.getPlatform() != null) {
             device.setPlatform(req.getPlatform());
         }
-        device.setLanHttpUrl(req.getLanHttpUrl());
+        // 周期性 register 通常不带 lanHttpUrl；置空会抹掉 LanReceiver 刚注册的
+        // 直连地址，导致对端探测失败。仅在请求明确携带时才覆盖。
+        if (req.getLanHttpUrl() != null && !req.getLanHttpUrl().isBlank()) {
+            device.setLanHttpUrl(req.getLanHttpUrl());
+        }
         Instant now = Instant.now();
         device.setLastSeen(now);
         markDevicePresence(device, PRESENCE_ONLINE, now);

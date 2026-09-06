@@ -49,8 +49,8 @@ class LanReceiver {
   HttpTransferServer? _httpServer;
   String? _lanHttpUrl;
   String? _tempDirPath;
-  static const int _portMin = 9080;
-  static const int _portMax = 9100;
+  // The transfer port is OS-assigned (bind port 0); peers get it from the
+  // announced URL, so there is no fixed port range to exhaust.
   /// Fewer workers reduces concurrent partial writes on the receiver cache.
   static const int _workerCount = 2;
   static const Duration _pullExpiry = Duration(minutes: 5);
@@ -104,8 +104,24 @@ class LanReceiver {
     return (pullUrl, completer.future);
   }
 
-  /// Picks a LAN IPv4 address: prefer WiFi IP, then first non-loopback from NetworkInterface.list.
+  /// Picks a LAN IPv4 address: prefer the actual IPv4 egress address (a real
+  /// working NIC), then WiFi IP, then first non-loopback from
+  /// NetworkInterface.list. Multi-NIC machines often carry stale static IPs on
+  /// a disconnected adapter — announcing that address makes every peer probe
+  /// fail, so the egress probe must win over plain enumeration.
   static Future<String?> _getLanIp() async {
+    try {
+      final sock = await Socket.connect(
+        InternetAddress('223.5.5.5'),
+        53,
+        timeout: const Duration(seconds: 2),
+      );
+      final local = sock.address.address;
+      sock.destroy();
+      if (_isPrivateIpv4(local)) return local;
+    } catch (e) {
+      _log.info('LanReceiver egress probe failed: $e');
+    }
     try {
       final info = NetworkInfo();
       final wifiIp = await info.getWifiIP();
@@ -148,7 +164,10 @@ class LanReceiver {
     return false;
   }
 
-  /// Starts the HTTP transfer server on a free port, gets LAN IP, and registers lanHttpUrl.
+  /// Starts the HTTP transfer server on an OS-assigned ephemeral port, gets
+  /// the LAN IP, and registers the lanHttpUrl. The port is never hardcoded:
+  /// peers learn it from the announced URL (server signalling / mDNS), so a
+  /// fixed range would only ever collide with other local services.
   Future<String?> start() async {
     if (_httpServer != null) return _lanHttpUrl;
 
@@ -158,39 +177,43 @@ class LanReceiver {
       _log.warning('LanReceiver no usable LAN IP');
       return null;
     }
+    _log.info('LanReceiver start lanIp=$lanIp');
 
-    for (int port = _portMin; port <= _portMax; port++) {
-      HttpTransferServer? tentative;
-      try {
-        tentative = HttpTransferServer(
-          onFileReceived: onFileReceived,
-          onReceiveProgress: onReceiveProgress,
-          onReceiveError: onReceiveError,
-          onMessageReceived: onMessageReceived,
-          onPeerRegistered: onPeerRegistered,
-        );
-        await tentative.start(
-          lanIp,
-          port,
-          _workerCount,
-          _tempDirPath!,
-          deviceId: deviceId,
-          deviceName: deviceName,
-          platform: platform,
-        );
-        final url = buildLanHttpBaseUrl(lanIp, port);
-        _log.info('LanReceiver serving at $url');
-        await _onRegisterLanHttpUrl(url);
-        _httpServer = tentative;
-        _lanHttpUrl = url;
-        return _lanHttpUrl;
-      } catch (e) {
-        await tentative?.stop();
-        _log.fine('LanReceiver bind port $port failed: $e');
-      }
+    HttpTransferServer? tentative;
+    try {
+      tentative = HttpTransferServer(
+        onFileReceived: onFileReceived,
+        onReceiveProgress: onReceiveProgress,
+        onReceiveError: onReceiveError,
+        onMessageReceived: onMessageReceived,
+        onPeerRegistered: onPeerRegistered,
+      );
+      // Bind to anyIPv4 port 0 so a stale/wrong interface guess or an
+      // occupied port can never silently kill the receiver; the announced
+      // URL still uses the picked LAN IP and the actual bound port.
+      await tentative
+          .start(
+            InternetAddress.anyIPv4.address,
+            0,
+            _workerCount,
+            _tempDirPath!,
+            deviceId: deviceId,
+            deviceName: deviceName,
+            platform: platform,
+            announceAddress: lanIp,
+          )
+          .timeout(const Duration(seconds: 8));
+      final url = tentative.lanHttpUrl!;
+      _log.info('LanReceiver serving at $url');
+      await _onRegisterLanHttpUrl(url);
+      _httpServer = tentative;
+      _lanHttpUrl = url;
+      return _lanHttpUrl;
+    } catch (e) {
+      await tentative?.stop();
+      _log.warning('LanReceiver start failed: $e');
+      return null;
     }
-    _log.warning('LanReceiver no free port in $_portMin-$_portMax');
-    return null;
   }
 
   /// Cancel an ongoing receive for the given [fileName]. Pass [fileId] when

@@ -46,3 +46,10 @@ backend/.env
 **/.dart_tool/
 app/android/build/
 .vscode/
+
+# Selfhost local artifacts
+*.zip
+*.log
+build-*.log
+gradle.properties.append
+gradle.properties.proxy
