@@ -28,6 +28,7 @@ dependencies {
     runtimeOnly("io.jsonwebtoken:jjwt-jackson:0.12.3")
     implementation("com.alipay.sdk:alipay-sdk-java:4.40.272.ALL")
     implementation("com.tencentcloudapi:tencentcloud-sdk-java-sms:3.1.1124")
+    implementation("org.springframework.boot:spring-boot-starter-mail")
     compileOnly("org.projectlombok:lombok")
     annotationProcessor("org.projectlombok:lombok")
     testImplementation("org.springframework.boot:spring-boot-starter-test")

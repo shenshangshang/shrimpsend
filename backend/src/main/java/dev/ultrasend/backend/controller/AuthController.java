@@ -8,6 +8,7 @@ import dev.ultrasend.backend.dto.RefreshRequest;
 import dev.ultrasend.backend.dto.RegisterRequest;
 import dev.ultrasend.backend.dto.SendCodeRequest;
 import dev.ultrasend.backend.entity.EmailVerificationCode;
+import dev.ultrasend.backend.service.AppSettingsService;
 import dev.ultrasend.backend.repository.UserRepository;
 import dev.ultrasend.backend.service.AuthService;
 import dev.ultrasend.backend.service.DeviceService;
@@ -29,6 +30,7 @@ public class AuthController {
     private final VerificationCodeService verificationCodeService;
     private final UserRepository userRepository;
     private final DeviceService deviceService;
+    private final AppSettingsService appSettingsService;
 
     @PostMapping("/send-code")
     public ResponseEntity<Void> sendCode(@Valid @RequestBody SendCodeRequest req) {
@@ -38,6 +40,10 @@ public class AuthController {
             type = EmailVerificationCode.TYPE_REGISTER;
         } else if (!EmailVerificationCode.TYPE_REGISTER.equals(type) && !EmailVerificationCode.TYPE_LOGIN.equals(type)) {
             throw new IllegalArgumentException("type 只能为 REGISTER 或 LOGIN");
+        }
+        if (EmailVerificationCode.TYPE_REGISTER.equals(type)
+                && !appSettingsService.getBool("register.enabled", true)) {
+            throw new IllegalArgumentException("当前未开放注册，请联系管理员");
         }
         if (EmailVerificationCode.TYPE_LOGIN.equals(type)) {
             if (req.getDeviceId() == null || req.getDeviceId().isBlank()) {

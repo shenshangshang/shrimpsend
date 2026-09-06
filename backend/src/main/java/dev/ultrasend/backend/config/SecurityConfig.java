@@ -49,6 +49,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/centrifugo/proxy/refresh").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/centrifugo/proxy/disconnect").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/app/version", "/api/app/versions", "/api/app/desktop-update.json", "/api/app/public-download").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/admin", "/admin/**").permitAll()
                         .requestMatchers("/api/**").authenticated()
                         .anyRequest().authenticated())
                 .exceptionHandling(e -> e

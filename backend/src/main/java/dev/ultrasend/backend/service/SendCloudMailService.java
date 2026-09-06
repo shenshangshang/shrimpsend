@@ -111,7 +111,7 @@ public class SendCloudMailService {
         }
     }
 
-    private boolean isConfigured() {
+    public boolean isConfigured() {
         return apiUser != null && !apiUser.isBlank()
                 && apiKey != null && !apiKey.isBlank();
     }

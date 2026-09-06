@@ -42,6 +42,7 @@ public class MembershipService {
     private final Environment environment;
     private final ClusterDeploymentService clusterDeploymentService;
     private final HostedQuotaService hostedQuotaService;
+    private final AppSettingsService appSettingsService;
     private final OverseasSubscriptionService overseasSubscriptionService;
 
     @Value("${app.membership.web-base-url:https://shrimpsend.com}")
@@ -265,9 +266,18 @@ public class MembershipService {
         if (clusterDeploymentService.isOverseasDeployment()) {
             return hostedQuotaService.effectiveTier(userId).getDeviceLimit();
         }
+        // 管理后台可运行时覆盖默认免费档限额（app_settings.default-device-limit）
+        int parsedLimit;
+        try {
+            parsedLimit = Integer.parseInt(appSettingsService.get("default-device-limit",
+                    String.valueOf(freeDeviceLimit)));
+        } catch (NumberFormatException e) {
+            parsedLimit = freeDeviceLimit;
+        }
+        final int freeLimit = parsedLimit;
         return membershipEntitlementRepository.findByUserId(userId)
-                .map(e -> e.getDeviceLimit() != null ? e.getDeviceLimit() : freeDeviceLimit)
-                .orElse(freeDeviceLimit);
+                .map(e -> e.getDeviceLimit() != null ? e.getDeviceLimit() : freeLimit)
+                .orElse(freeLimit);
     }
 
     /** 与 {@link DeviceService#countEffectiveDevicesForLimit} 一致：非 Web 全计；Web 多条记录统计上仍只占 1 名额。 */

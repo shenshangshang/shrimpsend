@@ -24,7 +24,29 @@ public class VerificationCodeService {
 
     private final EmailVerificationCodeRepository codeRepo;
     private final SendCloudMailService mailService;
+    private final SmtpMailService smtpMailService;
+    private final AppSettingsService settings;
     private final SecureRandom random = new SecureRandom();
+
+    /** SendCloud first (backward compatible), then generic SMTP from admin settings. */
+    private void dispatchMail(String email, String code) {
+        String provider = settings.get("mail.provider", "auto");
+        if ("smtp".equalsIgnoreCase(provider)) {
+            smtpMailService.sendVerificationCode(email, code);
+            return;
+        }
+        if (mailService.isConfigured()) {
+            mailService.sendVerificationCode(email, code);
+            return;
+        }
+        if ("sendcloud".equalsIgnoreCase(provider) || smtpMailService.isConfigured()) {
+            if (smtpMailService.isConfigured()) {
+                smtpMailService.sendVerificationCode(email, code);
+                return;
+            }
+        }
+        throw new RuntimeException("邮件服务未配置：请在管理后台配置 SMTP 或 SendCloud");
+    }
 
     @Transactional
     public void sendCode(String email, String type) {
@@ -50,7 +72,7 @@ public class VerificationCodeService {
         codeRepo.save(entity);
         log.info("verification code created email={} type={}", normalizedEmail, type);
 
-        mailService.sendVerificationCode(normalizedEmail, code);
+        dispatchMail(normalizedEmail, code);
     }
 
     public boolean verify(String email, String type, String code) {

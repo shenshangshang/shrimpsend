@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>虾传 · 自托管管理后台</title>
+<style>
+  :root { --bg:#f3f4f6; --card:#fff; --line:#e5e7eb; --txt:#111827; --sub:#6b7280; --pri:#0f766e; --danger:#dc2626; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:system-ui,-apple-system,"Segoe UI",sans-serif; background:var(--bg); color:var(--txt); font-size:14px; }
+  header { background:var(--pri); color:#fff; padding:14px 24px; display:flex; justify-content:space-between; align-items:center; }
+  header h1 { font-size:17px; font-weight:600; }
+  header .who { font-size:12px; opacity:.85; cursor:pointer; }
+  main { max-width:1080px; margin:20px auto; padding:0 16px; }
+  .tabs { display:flex; gap:6px; margin-bottom:16px; flex-wrap:wrap; }
+  .tabs button { border:1px solid var(--line); background:var(--card); padding:8px 16px; border-radius:8px; cursor:pointer; font-size:14px; }
+  .tabs button.on { background:var(--pri); color:#fff; border-color:var(--pri); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; margin-bottom:16px; }
+  .card h2 { font-size:15px; margin-bottom:12px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; }
+  .stat { background:#f9fafb; border:1px solid var(--line); border-radius:10px; padding:14px; }
+  .stat .v { font-size:22px; font-weight:700; margin-top:4px; }
+  .stat .k { color:var(--sub); font-size:12px; }
+  table { width:100%; border-collapse:collapse; }
+  th,td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); font-size:13px; vertical-align:middle; }
+  th { color:var(--sub); font-weight:500; }
+  input,select { border:1px solid var(--line); border-radius:6px; padding:7px 10px; font-size:13px; width:100%; }
+  input:focus,select:focus { outline:2px solid var(--pri); border-color:transparent; }
+  button.act { background:var(--pri); color:#fff; border:none; border-radius:6px; padding:7px 14px; cursor:pointer; font-size:13px; }
+  button.act.ghost { background:#fff; color:var(--txt); border:1px solid var(--line); }
+  button.act.warn { background:var(--danger); }
+  button.act:disabled { opacity:.5; cursor:default; }
+  .row { display:flex; gap:10px; align-items:end; flex-wrap:wrap; }
+  .row > div { flex:1; min-width:150px; }
+  label { display:block; font-size:12px; color:var(--sub); margin-bottom:4px; }
+  .msg { padding:10px 14px; border-radius:8px; margin-bottom:12px; font-size:13px; display:none; }
+  .msg.ok { background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0; display:block; }
+  .msg.err { background:#fef2f2; color:#991b1b; border:1px solid #fecaca; display:block; }
+  .badge { display:inline-block; padding:2px 8px; border-radius:99px; font-size:11px; background:#e5e7eb; }
+  .badge.on { background:#d1fae5; color:#065f46; }
+  .login { max-width:360px; margin:80px auto; }
+  .login .card { padding:28px; }
+  .muted { color:var(--sub); font-size:12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>虾传 · 自托管管理后台</h1>
+  <span class="who" id="whoami" title="点击退出登录" onclick="logout()"></span>
+</header>
+<main>
+  <div class="msg" id="msg"></div>
+
+  <div id="loginBox" class="login" style="display:none">
+    <div class="card">
+      <h2 style="font-size:17px;margin-bottom:16px">管理员登录</h2>
+      <label>邮箱</label><input id="liEmail" type="email" placeholder="admin@example.com">
+      <div style="height:10px"></div>
+      <label>密码</label><input id="liPass" type="password">
+      <div style="height:14px"></div>
+      <button class="act" style="width:100%" onclick="doLogin()">登录</button>
+      <p class="muted" style="margin-top:10px">仅 <code>APP_ADMIN_EMAILS</code> 中的邮箱可进入。</p>
+    </div>
+  </div>
+
+  <div id="app" style="display:none">
+    <div class="tabs">
+      <button class="on" data-tab="overview" onclick="tab(this)">概览</button>
+      <button data-tab="users" onclick="tab(this)">用户与设备</button>
+      <button data-tab="mail" onclick="tab(this)">邮件与验证码</button>
+      <button data-tab="settings" onclick="tab(this)">配置项</button>
+    </div>
+    <div id="tab-overview"></div>
+    <div id="tab-users" style="display:none"></div>
+    <div id="tab-mail" style="display:none"></div>
+    <div id="tab-settings" style="display:none"></div>
+  </div>
+</main>
+<script>
+const API = location.origin;
+let TOKEN = localStorage.getItem('admin_token') || '';
+let ME = localStorage.getItem('admin_email') || '';
+
+function msg(text, ok=true) {
+  const el = document.getElementById('msg');
+  el.textContent = text; el.className = 'msg ' + (ok ? 'ok' : 'err');
+  setTimeout(() => el.className = 'msg', 4000);
+}
+async function api(path, opts={}) {
+  const res = await fetch(API + path, {
+    ...opts,
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN, ...(opts.headers||{}) },
+  });
+  if (res.status === 401) { logout(); throw new Error('登录已过期'); }
+  if (res.status === 403) throw new Error('需要管理员权限（APP_ADMIN_EMAILS）');
+  if (!res.ok) {
+    let m = res.status + ' ' + res.statusText;
+    try { m = (await res.json()).message || m; } catch (_) {}
+    throw new Error(m);
+  }
+  return res.status === 204 ? null : res.json();
+}
+function logout() { TOKEN=''; ME=''; localStorage.removeItem('admin_token'); localStorage.removeItem('admin_email'); renderAuth(); }
+function renderAuth() {
+  document.getElementById('loginBox').style.display = TOKEN ? 'none' : 'block';
+  document.getElementById('app').style.display = TOKEN ? 'block' : 'none';
+  document.getElementById('whoami').textContent = ME ? ME + ' · 退出' : '';
+  if (TOKEN) loadOverview();
+}
+async function doLogin() {
+  const email = document.getElementById('liEmail').value.trim();
+  const password = document.getElementById('liPass').value;
+  try {
+    const r = await fetch(API + '/api/auth/login', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({email, password, deviceId: 'admin_console_web', platform: 'web'}) });
+    if (!r.ok) throw new Error((await r.json()).message || '登录失败');
+    const j = await r.json();
+    TOKEN = j.accessToken || j.token; ME = email;
+    localStorage.setItem('admin_token', TOKEN); localStorage.setItem('admin_email', ME);
+    msg('登录成功'); renderAuth();
+  } catch (e) { msg(e.message, false); }
+}
+function tab(btn) {
+  document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b === btn));
+  ['overview','users','mail','settings'].forEach(t =>
+    document.getElementById('tab-' + t).style.display = btn.dataset.tab === t ? 'block' : 'none');
+  ({overview:loadOverview, users:loadUsers, mail:loadMail, settings:loadSettings})[btn.dataset.tab]();
+}
+
+// ---------------- overview ----------------
+async function loadOverview() {
+  try {
+    const j = await api('/api/admin/overview');
+    const s = (k,v) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`;
+    document.getElementById('tab-overview').innerHTML = `
+      <div class="card"><h2>系统状态</h2><div class="grid">
+        ${s('用户数', j.users)} ${s('设备数', j.devices)}
+        ${s('SendCloud', j.sendcloudConfigured ? '已配置' : '未配置')}
+        ${s('SMTP', j.smtpConfigured ? '已配置' : '未配置')}
+        ${s('邮件通道', j.mailProvider)} ${s('开放注册', j.registerEnabled ? '开' : '关')}
+      </div>
+      <p class="muted" style="margin-top:12px">管理员邮箱：${(j.adminEmails||'').split(',').join('、')}</p></div>`;
+  } catch (e) { msg(e.message, false); }
+}
+
+// ---------------- users & devices ----------------
+async function loadUsers() {
+  try {
+    const users = await api('/api/admin/users');
+    const devices = await api('/api/admin/devices');
+    const dmap = {};
+    devices.forEach(d => { (dmap[d.userId] ||= []).push(d); });
+    const devRows = Object.entries(dmap).map(([uid, list]) =>
+      `<details style="margin-top:8px"><summary style="cursor:pointer;font-size:12px;color:var(--sub)">用户 #${uid} 的 ${list.length} 台设备</summary>
+       <table><tr><th>名称</th><th>平台</th><th>状态</th><th>最后在线</th><th>LAN URL</th><th></th></tr>
+       ${list.map(d => `<tr><td>${d.name||''}</td><td>${d.platform||''}</td>
+         <td><span class="badge ${d.presenceStatus==='online'?'on':''}">${d.presenceStatus||''}</span></td>
+         <td>${d.lastSeen?d.lastSeen.replace('T',' ').slice(0,19):''}</td>
+         <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${d.lanHttpUrl||''}</td>
+         <td><button class="act warn" onclick="delDevice('${d.deviceId}',${d.userId})">解绑</button></td></tr>`).join('')}
+       </table></details>`).join('');
+    document.getElementById('tab-users').innerHTML = `
+      <div class="card"><h2>用户</h2>
+      <table><tr><th>ID</th><th>邮箱</th><th>会员档</th><th>设备限额</th><th>设备数</th><th>调整</th></tr>
+      ${users.map(u => `<tr>
+        <td>${u.id}</td><td>${u.email}</td>
+        <td><input id="tier-${u.id}" value="${u.tierCode||'FREE'}" style="width:90px"></td>
+        <td><input id="lim-${u.id}" value="${u.deviceLimit??''}" style="width:70px" placeholder="默认"></td>
+        <td>${u.deviceCount}</td>
+        <td><button class="act" onclick="saveUser(${u.id})">保存</button></td></tr>`).join('')}
+      </table>
+      <p class="muted" style="margin-top:10px">会员档：FREE / MINI / PRO；限额为 9999 等同不限。</p></div>
+      <div class="card"><h2>设备</h2>${devRows || '<p class="muted">无</p>'}</div>`;
+  } catch (e) { msg(e.message, false); }
+}
+async function saveUser(id) {
+  try {
+    await api('/api/admin/users/' + id, { method:'PATCH', body: JSON.stringify({
+      tierCode: document.getElementById('tier-'+id).value.trim(),
+      deviceLimit: parseInt(document.getElementById('lim-'+id).value) || null }) });
+    msg('用户 #' + id + ' 已更新');
+  } catch (e) { msg(e.message, false); }
+}
+async function delDevice(deviceId, userId) {
+  if (!confirm('解绑设备 ' + deviceId + ' ？')) return;
+  try { await api('/api/admin/devices/' + encodeURIComponent(deviceId) + '?userId=' + userId, { method:'DELETE' }); msg('已解绑'); loadUsers(); }
+  catch (e) { msg(e.message, false); }
+}
+
+// ---------------- mail & codes ----------------
+async function loadMail() {
+  try {
+    const settings = await api('/api/admin/settings');
+    const mailKeys = settings.filter(s => s.key.startsWith('smtp.') || s.key === 'mail.provider');
+    document.getElementById('tab-mail').innerHTML = `
+      <div class="card"><h2>SMTP 邮件服务</h2>
+      <div class="grid">${mailKeys.map(s => `
+        <div><label>${s.description}（${s.key}）</label>
+        <input id="set-${s.key}" value="${s.value||''}" ${s.key==='smtp.password'?'type="password"':''}></div>`).join('')}
+      </div>
+      <div class="row" style="margin-top:14px">
+        <div><label>测试收件邮箱</label><input id="testTo" type="email"></div>
+        <div style="flex:0"><button class="act ghost" onclick="saveSettings('mail')">保存配置</button></div>
+        <div style="flex:0"><button class="act" onclick="testMail()">发送测试邮件</button></div>
+      </div>
+      <p class="muted" style="margin-top:10px">QQ 邮箱等需填授权码；587+STARTTLS 或 465+SSL。保存后立即生效，无需重启。</p></div>
+      <div class="card"><h2>直接签发验证码（不发邮件）</h2>
+      <div class="row">
+        <div><label>邮箱</label><input id="codeEmail" type="email"></div>
+        <div><label>类型</label><select id="codeType"><option>REGISTER</option><option>LOGIN</option><option>RESET</option></select></div>
+        <div style="flex:0"><button class="act" onclick="issueCode()">签发</button></div>
+      </div>
+      <p class="muted" style="margin-top:10px">签发结果会显示在上方消息条，验证码 10 分钟内有效。</p></div>`;
+  } catch (e) { msg(e.message, false); }
+}
+async function issueCode() {
+  try {
+    const j = await api('/api/admin/codes', { method:'POST', body: JSON.stringify({
+      email: document.getElementById('codeEmail').value.trim(), type: document.getElementById('codeType').value }) });
+    msg('验证码 ' + j.code + '（' + j.email + ' / ' + j.type + '，10 分钟有效）');
+  } catch (e) { msg(e.message, false); }
+}
+async function testMail() {
+  try {
+    await saveSettings('mail');
+    await api('/api/admin/mail/test', { method:'POST', body: JSON.stringify({ to: document.getElementById('testTo').value.trim() }) });
+    msg('测试邮件已发送');
+  } catch (e) { msg(e.message, false); }
+}
+
+// ---------------- settings (all) ----------------
+async function loadSettings() {
+  try {
+    const settings = await api('/api/admin/settings');
+    document.getElementById('tab-settings').innerHTML = `
+      <div class="card"><h2>全部配置项</h2>
+      <table><tr><th>键</th><th>说明</th><th>值</th><th>状态</th></tr>
+      ${settings.map(s => `<tr><td><code>${s.key}</code></td><td>${s.description}</td>
+        <td><input id="set-${s.key}" value="${s.value||''}" ${s.key.toLowerCase().includes('password')?'type="password"':''}></td>
+        <td><span class="badge ${s.set?'on':''}">${s.set?'已设置':'默认'}</span></td></tr>`).join('')}
+      </table>
+      <button class="act" style="margin-top:12px" onclick="saveSettings('all')">保存全部修改</button>
+      <p class="muted" style="margin-top:10px">留空 = 恢复默认；密码字段保持 •••••• 表示不修改。保存即时生效。</p></div>`;
+  } catch (e) { msg(e.message, false); }
+}
+async function saveSettings(scope) {
+  try {
+    const all = await api('/api/admin/settings');
+    const prefix = scope === 'mail' ? (k) => k.startsWith('smtp.') || k === 'mail.provider' : () => true;
+    const values = {};
+    for (const s of all) {
+      if (!prefix(s.key)) continue;
+      const el = document.getElementById('set-' + s.key);
+      if (!el) continue;
+      if (s.key.toLowerCase().includes('password') && el.value === '••••••') continue;
+      values[s.key] = el.value;
+    }
+    await api('/api/admin/settings', { method:'PUT', body: JSON.stringify({ values }) });
+    msg('配置已保存并生效');
+    if (scope === 'mail') loadMail();
+  } catch (e) { msg(e.message, false); }
+}
+
+renderAuth();
+</script>
+</body>
+</html>
