@@ -32,7 +32,12 @@ public class AppSettingsService {
             Map.entry("smtp.ssl", "SSL/TLS (true/false)"),
             Map.entry("mail.provider", "邮件通道 (auto|sendcloud|smtp)"),
             Map.entry("register.enabled", "开放注册 (true/false)"),
-            Map.entry("default-device-limit", "默认设备数限制")
+            Map.entry("default-device-limit", "默认设备数限制"),
+            Map.entry("webrtc.stun-urls", "STUN 服务器 (逗号分隔)"),
+            Map.entry("webrtc.turn-urls", "TURN 服务器 (逗号分隔, 留空禁用)"),
+            Map.entry("webrtc.turn-username", "TURN 用户名"),
+            Map.entry("webrtc.turn-credential", "TURN 凭证"),
+            Map.entry("webrtc.vip-only", "TURN 仅会员可用 (true/false)")
     );
 
     private static final long CACHE_TTL_MS = 15_000;

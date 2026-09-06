@@ -7,6 +7,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:uuid/uuid.dart';
 
 import '../logger.dart';
+import '../api/webrtc.dart';
 import '../services/file_times_apply.dart';
 import '../services/mtime_util.dart';
 import '../services/receive_dir_resolver.dart';
@@ -87,11 +88,7 @@ class WebRTCSession {
 
   Future<void> _initPeerConnection() async {
     final config = <String, dynamic>{
-      'iceServers': <Map<String, dynamic>>[
-        {'urls': 'stun:stun.miwifi.com:3478'},
-        {'urls': 'stun:stun.qq.com:3478'},
-        {'urls': 'stun:stun.l.google.com:19302'},
-      ],
+      'iceServers': await IceServersStore.current(),
     };
     _pc = await createPeerConnection(config);
 
@@ -1240,11 +1237,7 @@ Future<IceCandidateSummary> gatherIceCandidates() async {
   }
 
   final config = <String, dynamic>{
-    'iceServers': <Map<String, dynamic>>[
-      {'urls': 'stun:stun.miwifi.com:3478'},
-      {'urls': 'stun:stun.qq.com:3478'},
-      {'urls': 'stun:stun.l.google.com:19302'},
-    ],
+    'iceServers': await IceServersStore.current(),
   };
 
   RTCPeerConnection? pc;
