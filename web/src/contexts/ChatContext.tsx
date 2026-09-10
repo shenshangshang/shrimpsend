@@ -3,7 +3,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import { useCentrifuge, type CentrifugeLifecycle } from '@/hooks/useCentrifuge';
+import { useRealtime } from '@/contexts/RealtimeContext';
 import { useSendTargetProbes, isReachOnline, type ReachStatus, type DeviceReachEntry, type DeviceReachDetail } from '@/hooks/useSendTargetProbes';
 import { listDevices, registerDevice, updateDevicePresence, sendMessage, getMessageHistory, deleteMessage, deleteThreadMessages, hasS3Config, checkS3Online, updateDevice } from '@/lib/api';
 import type { DeviceDto, MessageEnvelope, ChatMessage } from '@/lib/api';
@@ -72,7 +72,7 @@ const cloudTransfer: CloudTransferService = new S3TransferService();
 const CHAT_PAGE_SIZE = 20;
 const EPHEMERAL_TYPES = new Set([
   'lan_file_offer', 'lan_pull_probe', 'lan_pull_probe_result',
-  'lan_http_probe', 'lan_http_probe_result',
+  'lan_http_probe', 'lan_http_probe_result', 'lan_pull_cancelled',
   'webrtc_probe', 'webrtc_probe_result',
   'webrtc_offer', 'webrtc_answer', 'webrtc_ice_candidate', 'webrtc_transfer_cancel',
 ]);
@@ -838,36 +838,26 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     listDevices().then(setDevices).catch((e) => logger.warn(TAG, 'listDevices failed', e));
   }, []);
 
-  // ─── Centrifugo connection ────────────────────────────────────────────
+  // ─── App-level realtime (survives leaving /chat) ──────────────────────
 
-  const centrifugeLifecycle = useMemo<CentrifugeLifecycle>(
-    () => ({
-      onConnected: () => {
-        void (async () => {
-          try {
-            await registerDevice(getOrCreateDeviceId(), getDeviceName(), {
-              platform: 'web',
-              sessionId: presenceSessionId,
-            });
-          } catch (e) {
-            logger.warn(TAG, 'registerDevice onConnected', e);
-          }
-          loadDevices();
-        })();
-      },
-    }),
-    [loadDevices, presenceSessionId],
-  );
-  const centrifugeConnectData = useMemo(
-    () => ({
-      deviceId: getOrCreateDeviceId(),
-      name: getDeviceName(),
-      platform: 'web',
-      sessionId: presenceSessionId,
-    }),
-    [presenceSessionId],
-  );
-  const { connected } = useCentrifuge(!!userId, onMessage, centrifugeLifecycle, centrifugeConnectData);
+  const { connected, subscribe } = useRealtime();
+
+  useEffect(() => subscribe(onMessage), [subscribe, onMessage]);
+
+  useEffect(() => {
+    if (!connected || !userId) return;
+    void (async () => {
+      try {
+        await registerDevice(getOrCreateDeviceId(), getDeviceName(), {
+          platform: 'web',
+          sessionId: presenceSessionId,
+        });
+      } catch (e) {
+        logger.warn(TAG, 'registerDevice onConnected', e);
+      }
+      loadDevices();
+    })();
+  }, [connected, userId, loadDevices, presenceSessionId]);
 
   // ─── Device lists ─────────────────────────────────────────────────────
 

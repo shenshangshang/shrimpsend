@@ -17,6 +17,7 @@ export 'devices.dart';
 export 'messages.dart';
 export 's3.dart';
 export 'centrifugo.dart';
+export 'mailbox.dart';
 export 'user.dart';
 export 'app_version.dart';
 export 'membership.dart';

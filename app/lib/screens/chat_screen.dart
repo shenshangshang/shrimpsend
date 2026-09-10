@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 import 'package:http/http.dart' as http;
-import 'package:centrifuge/centrifuge.dart' as centrifuge;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -17,13 +16,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path/path.dart' as p;
 import '../l10n/generated/app_localizations.dart';
 import '../api/api.dart';
-import '../config/env.dart';
 import '../device_id.dart';
 import '../preferences/clipboard_preferences.dart';
 import '../providers/app_locale.dart';
 import '../providers/auth_provider.dart';
 import '../providers/app_mode_provider.dart';
 import '../providers/auth_session_provider.dart';
+import '../providers/realtime_hub_provider.dart';
 import '../services/auth_session_controller.dart';
 import '../providers/device_provider.dart';
 import '../providers/webdav_provider.dart';
@@ -262,8 +261,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   bool _connected = false;
   String _deviceId = '';
   String _deviceName = '';
-  final String _presenceSessionId = const Uuid().v4();
-  centrifuge.Client? _client;
+  StreamSubscription<Map<String, dynamic>>? _realtimePublicationSub;
+  StreamSubscription<bool>? _realtimeConnectedSub;
   late final InMemoryChatController _chatController;
   final Map<String, GlobalKey<ChatComposerState>> _composerKeysBySession = {};
   final Map<String, ScrollController> _scrollControllersBySession = {};
@@ -601,6 +600,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   ProviderSubscription? _selectedDeviceSub;
   ProviderSubscription<ConnectionOrchestratorState>? _connectionOrchestratorSub;
   StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
+  String get _presenceSessionId =>
+      ref.read(realtimeHubProvider).presenceSessionId;
   String? _lastNetworkSignature;
   bool _lanRepairInProgress = false;
   bool _isIOS26OrLater = false;
@@ -650,8 +651,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         logChat.info('chat_screen auth changed: loggedIn=${next.isLoggedIn}');
         _userId = null;
         _connected = false;
-        _client?.disconnect();
-        _client = null;
         if (!next.isLoggedIn) {
           if (!mounted) return;
           // Tear down the always-on foreground service on logout.
@@ -1555,6 +1554,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     _deviceName = await getDeviceName();
     if (!_initStillCurrent(generation)) return;
     logChat.info('chat_screen init deviceId=$_deviceId offline=$_isOffline');
+    _bindRealtimeHub();
 
     if (mounted) setState(() => _statusCheckDone = false);
 
@@ -1585,30 +1585,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     if (!_initStillCurrent(generation)) return;
     await _loadHistory();
     if (!_initStillCurrent(generation)) return;
-    await _lanReceiver?.stop();
+    final previousReceiver = _lanReceiver;
+    _lanReceiver = null;
+    await previousReceiver?.stop();
     await _lanDiscovery?.stopDiscovery();
     if (!_initStillCurrent(generation)) return;
-    await _startLanReceiver();
-    if (!_initStillCurrent(generation)) return;
-    if (_lanDiscovery != null) {
-      _lanLostPeerSub = _lanDiscovery!.lostDiscoveredDeviceIds.listen((
-        deviceId,
-      ) {
-        if (!mounted) return;
-        logChat.fine(
-          'LanDiscovery peer lost id=$deviceId → reachability offline',
-        );
-        ref
-            .read(deviceReachabilityProvider.notifier)
-            .setDetail(deviceId, DeviceReachDetail.offlineDetail);
-      });
-      _lanDiscovery!.startDiscovery();
-    }
 
-    // iOS: the initial Bonjour operations may silently fail while
-    // the local-network permission dialog is on screen.  Schedule
-    // a retry so that once the user taps "Allow", we restart.
-    _scheduleIosLanRetry();
+    // LAN HTTP + Bonsoir can hang on some Windows setups (WiFi IP / isolate
+    // bind / mDNS). Never block cloud realtime (Centrifugo) on it — kick LAN
+    // off in parallel, then immediately check the server and connect WS.
+    unawaited(_bootstrapLanStack(generation));
 
     // Check S3 configuration
     _checkS3Config();
@@ -1618,6 +1604,37 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     _checkServerConnection();
     if (!_initStillCurrent(generation)) return;
     _schedulePresenceRefresh();
+  }
+
+  /// Starts LAN receiver + discovery without gating cloud connect.
+  Future<void> _bootstrapLanStack(int generation) async {
+    try {
+      logChat.info('_bootstrapLanStack begin gen=$generation');
+      await _startLanReceiver(initGeneration: generation);
+      if (!_initStillCurrent(generation)) return;
+      if (_lanDiscovery != null) {
+        await _lanLostPeerSub?.cancel();
+        _lanLostPeerSub = _lanDiscovery!.lostDiscoveredDeviceIds.listen((
+          deviceId,
+        ) {
+          if (!mounted) return;
+          logChat.fine(
+            'LanDiscovery peer lost id=$deviceId → reachability offline',
+          );
+          ref
+              .read(deviceReachabilityProvider.notifier)
+              .setDetail(deviceId, DeviceReachDetail.offlineDetail);
+        });
+        _lanDiscovery!.startDiscovery();
+      }
+      _scheduleIosLanRetry();
+      logChat.info(
+        '_bootstrapLanStack done gen=$generation '
+        'lanUrl=${_lanReceiver?.lanHttpUrl ?? 'null'}',
+      );
+    } catch (e) {
+      logChat.warning('_bootstrapLanStack failed gen=$generation: $e');
+    }
   }
 
   void _scheduleIosLanRetry() {
@@ -2638,6 +2655,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     }
 
     final isOfflineMode = ref.read(isOfflineModeProvider);
+    logChat.info(
+      '_checkServerConnection begin offlineMode=$isOfflineMode gen=$checkGeneration',
+    );
     if (isOfflineMode) {
       if (!isCurrentCheck()) return;
       setState(() => _statusCheckDone = true);
@@ -2655,6 +2675,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       if (!isCurrentCheck()) return;
       setState(() => _statusCheckDone = true);
       _showStatusCheckToast();
+      logChat.info('_checkServerConnection ok → post-connect setup');
       unawaited(
         _runPostServerConnectSetup(
           checkGeneration: checkGeneration,
@@ -2697,6 +2718,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   }) async {
     bool isCurrentCheck() =>
         mounted && checkGeneration == _serverConnectionCheckGeneration;
+    logChat.info('_runPostServerConnectSetup begin gen=$checkGeneration');
 
     try {
       await registerDevice(
@@ -2704,7 +2726,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         _deviceName,
         platform: Platform.operatingSystem,
         sessionId: _presenceSessionId,
-      );
+      ).timeout(const Duration(seconds: 12));
     } catch (e) {
       logChat.warning(
         '_runPostServerConnectSetup registerDevice failed (non-blocking): $e',
@@ -2714,7 +2736,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
 
     _hasNoMoreHistory = false;
     try {
-      await _refreshCloudDeviceRosterSnapshot();
+      await _refreshCloudDeviceRosterSnapshot().timeout(
+        const Duration(seconds: 12),
+      );
     } catch (e) {
       logChat.warning(
         '_runPostServerConnectSetup refresh roster failed: $e',
@@ -2740,7 +2764,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     }
     if (!isCurrentCheck()) return;
 
-    _connectCentrifuge();
     try {
       await _loadHistory();
     } catch (e) {
@@ -2748,6 +2771,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     }
     if (!isCurrentCheck()) return;
     probeDevicesIfCurrent();
+    logChat.info('_runPostServerConnectSetup done gen=$checkGeneration');
   }
 
   void _showStatusCheckToast() {
@@ -2783,6 +2807,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     'webrtc_answer',
     'webrtc_ice_candidate',
     'webrtc_transfer_cancel',
+    'lan_pull_cancelled',
   };
 
   static const _renderableTypes = {'text', 'file'};
@@ -3498,10 +3523,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     );
   }
 
-  Future<void> _startLanReceiver() async {
+  Future<void> _startLanReceiver({int? initGeneration}) async {
     if (_deviceId.isEmpty) return;
+    final generation = initGeneration;
+    bool stillCurrent() =>
+        generation == null || _initStillCurrent(generation);
     try {
-      _lanReceiver = LanReceiver(
+      final receiver = LanReceiver(
         deviceId: _deviceId,
         deviceName: _deviceName,
         platform: Platform.operatingSystem,
@@ -3693,18 +3721,44 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
               _lanDiscovery?.addManualDevice(dto);
             },
         onRegisterLanHttpUrl: (url) async {
-          if (!mounted) return;
+          if (!mounted || !stillCurrent()) return;
           _lanDiscovery?.setMyLanHttpUrl(url);
           if (_lanDiscovery != null) {
-            await _lanDiscovery!.startBroadcast(url);
+            try {
+              await _lanDiscovery!.startBroadcast(url);
+            } catch (e) {
+              logChat.warning('_startLanReceiver startBroadcast failed: $e');
+            }
           }
-          if (!mounted) return;
+          if (!mounted || !stillCurrent()) return;
           if (!_effectiveOffline) {
-            await updateDevice(_deviceId, lanHttpUrl: url);
+            try {
+              await updateDevice(
+                _deviceId,
+                lanHttpUrl: url,
+              ).timeout(const Duration(seconds: 8));
+            } catch (e) {
+              logChat.warning('_startLanReceiver updateDevice failed: $e');
+            }
           }
         },
       );
-      final url = await _lanReceiver!.start();
+      if (!stillCurrent()) {
+        await receiver.stop();
+        return;
+      }
+      // Publish before start so concurrent repair/init can stop this instance.
+      _lanReceiver = receiver;
+      logChat.info('_startLanReceiver calling start()');
+      final url = await receiver.start();
+      if (!stillCurrent()) {
+        await receiver.stop();
+        if (identical(_lanReceiver, receiver)) {
+          _lanReceiver = null;
+        }
+        return;
+      }
+      logChat.info('_startLanReceiver done url=${url ?? 'null'}');
       if (mounted && url != null) setState(() {});
     } catch (e) {
       logChat.warning('_startLanReceiver failed: $e');
@@ -3987,73 +4041,39 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     }
   }
 
-  Future<void> _connectCentrifuge() async {
-    logChat.info('chat_screen connectCentrifuge');
+  void _bindRealtimeHub() {
+    _realtimePublicationSub?.cancel();
+    _realtimeConnectedSub?.cancel();
+    final hub = ref.read(realtimeHubProvider);
+    _connected = hub.isConnected;
+    _realtimePublicationSub = hub.listenPublications((map) {
+      unawaited(_handleRealtimePublication(map));
+    });
+    _realtimeConnectedSub = hub.connectedChanges.listen((connected) {
+      if (!mounted) return;
+      setState(() => _connected = connected);
+      if (connected) {
+        unawaited(_onRealtimeConnected());
+      }
+    });
+    if (hub.isConnected) {
+      unawaited(_onRealtimeConnected());
+    }
+  }
+
+  Future<void> _onRealtimeConnected() async {
+    if (!mounted) return;
+    logChat.info('chat_screen realtime connected');
+    unawaited(_markPresenceOnline('centrifugo_connected'));
+    unawaited(_refreshRosterAndProbeSelected('centrifugo_connected'));
+    unawaited(_loadHistory());
+    if (Platform.isAndroid) {
+      unawaited(TransferKeepAlive.instance.enablePersistent());
+    }
+  }
+
+  Future<void> _handleRealtimePublication(Map<String, dynamic> map) async {
     try {
-      final tokens = await getCentrifugoToken();
-      final client = centrifuge.createClient(
-        Env.centrifugoWs,
-        centrifuge.ClientConfig(
-          token: tokens.connectionToken,
-          data: utf8.encode(
-            jsonEncode({
-              'deviceId': _deviceId,
-              'name': _deviceName,
-              'platform': Platform.operatingSystem,
-              'sessionId': _presenceSessionId,
-            }),
-          ),
-          getData: () async => utf8.encode(
-            jsonEncode({
-              'deviceId': _deviceId,
-              'name': _deviceName,
-              'platform': Platform.operatingSystem,
-              'sessionId': _presenceSessionId,
-            }),
-          ),
-          getToken: (_) async {
-            final r = await getCentrifugoToken();
-            return r.connectionToken;
-          },
-        ),
-      );
-      client.connect();
-      client.connected.listen((_) {
-        logChat.info('chat_screen Centrifugo connected');
-        if (mounted) {
-          setState(() => _connected = true);
-          unawaited(_markPresenceOnline('centrifugo_connected'));
-          unawaited(_refreshRosterAndProbeSelected('centrifugo_connected'));
-          // Android: keep an always-on foreground service so the realtime
-          // connection survives backgrounding / screen lock and the device
-          // stays online and able to receive new transfers. Started here
-          // (app is foreground) to satisfy Android 12+ background-start rules.
-          if (Platform.isAndroid) {
-            unawaited(TransferKeepAlive.instance.enablePersistent());
-          }
-        }
-      });
-      client.disconnected.listen((e) {
-        logChat.info('chat_screen Centrifugo disconnected: ${e.reason}');
-        if (mounted) setState(() => _connected = false);
-      });
-      final sub = client.newSubscription(
-        tokens.channel,
-        centrifuge.SubscriptionConfig(
-          token: tokens.subscriptionToken,
-          getToken: (_) async {
-            final r = await getCentrifugoToken();
-            return r.subscriptionToken;
-          },
-        ),
-      );
-      sub.publication.listen((e) async {
-        try {
-          final raw = e.data;
-          if (raw.isEmpty) return;
-          final map =
-              jsonDecode(utf8.decode(Uint8List.fromList(raw)))
-                  as Map<String, dynamic>;
           final msg = MessageEnvelope.fromJson(map);
           if (msg.type == 'device_roster_patch') {
             _handleDeviceRosterPatch(map);
@@ -4408,16 +4428,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         } catch (e, st) {
           logChat.warning('chat_screen Centrifugo publication failed: $e\n$st');
         }
-      });
-      sub.subscribe();
-      _client = client;
-      logChat.info(
-        'chat_screen Centrifugo subscribe channel=${tokens.channel}',
-      );
-    } catch (e) {
-      logChat.warning('chat_screen connectCentrifuge failed: $e');
-      if (mounted) setState(() => _connected = false);
-    }
   }
 
   void _onLanMessageReceived(String text, String fromDeviceId, String? _) {
@@ -8828,7 +8838,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     for (final token in _activeDownloads.values) {
       token.cancel();
     }
-    unawaited(TransferKeepAlive.instance.disablePersistent());
     TransferKeepAlive.instance.releaseAll();
     _activeTransfers.clear();
     _activeDownloads.clear();
@@ -8839,9 +8848,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     _authSub?.close();
     _selectedDeviceSub?.close();
     _connectionOrchestratorSub?.close();
+    _realtimePublicationSub?.cancel();
+    _realtimeConnectedSub?.cancel();
     _chatController.dispose();
     _disposeSessionUiResources();
-    _client?.disconnect();
     if (_isDesktopPlatform) {
       DesktopFileDropDispatcher.instance.unregister(this);
     }

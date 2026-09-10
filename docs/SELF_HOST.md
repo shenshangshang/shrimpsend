@@ -179,11 +179,20 @@ cd app && ./scripts/package_ios.sh --all
 
 HarmonyOS: copy `build-profile.example.json5` → `build-profile.json5` or sync from ops.
 
+## China realtime (Centrifugo on the API host)
+
+Official CN clients connect to **`wss://api.xiachuan.net/connection/websocket`** (same host as the REST API). Nginx must reverse-proxy `/connection/` to Centrifugo `:8000` with WebSocket `Upgrade` and a long `proxy_read_timeout`. HTTP-stream / SSE are enabled in Centrifugo config so Web can fall back when WSS is blocked.
+
+See [nginx-api-centrifugo.example.conf](nginx-api-centrifugo.example.conf). Keep `ws.xiachuan.net` as an optional alias.
+
+Signaling mailbox: `GET /api/mailbox/pending?deviceId=` returns ephemeral LAN/WebRTC envelopes that were missed while a device was offline (TTL ~120s). Apply `backend/scripts/migration_signaling_mailbox.sql` if `ddl-auto=update` is not used.
+
 ## Dual cluster (cn vs overseas)
 
 | | China (xiachuan) | Overseas (ShrimpSend) |
 |--|------------------|-------------------------|
 | API | `api.xiachuan.net` | `api.shrimpsend.com` |
+| Realtime | `wss://api.xiachuan.net/connection/websocket` | `wss://ws.shrimpsend.com/connection/websocket` |
 | Spring profile | `prod` | `prod-overseas` |
 | Centrifugo config | `config.prod.bare.json` | `config.prod-overseas.bare.json` |
 | Flutter | `--dart-define=OVERSEAS_BUILD=false`, flavor `cn` | `OVERSEAS_BUILD=true`, flavor `intl` |

@@ -18,19 +18,28 @@ export class CentrifugoClient {
   private onPublication: (channel: string, dataUtf8: string) => void = () => {
   };
 
+  private onClose: () => void = () => {
+  };
+  private stopping: boolean = false;
+
   connect(
     wsUrl: string,
     connectionToken: string,
     channel: string,
     subscriptionToken: string,
-    onPublication: (channel: string, dataUtf8: string) => void
+    onPublication: (channel: string, dataUtf8: string) => void,
+    onClose?: () => void
   ): void {
     this.disconnect();
+    this.stopping = false;
     this.connectDone = false;
     this.pendingConnToken = connectionToken;
     this.pendingChannel = channel;
     this.pendingSubToken = subscriptionToken;
     this.onPublication = onPublication;
+    if (onClose !== undefined) {
+      this.onClose = onClose;
+    }
     this.ws = webSocket.createWebSocket();
 
     this.ws.on('open', (err: BusinessError | null) => {
@@ -58,16 +67,23 @@ export class CentrifugoClient {
     this.ws.on('close', (err: BusinessError | null) => {
       Log.warn(TAG, 'socket close %{public}s', err !== null ? JSON.stringify(err) : 'ok');
       this.connectDone = false;
+      if (!this.stopping) {
+        this.onClose();
+      }
     });
 
     this.ws.connect(wsUrl, (err: BusinessError | null) => {
       if (err != null) {
         Log.error(TAG, 'connect failed %{public}s', JSON.stringify(err));
+        if (!this.stopping) {
+          this.onClose();
+        }
       }
     });
   }
 
   disconnect(): void {
+    this.stopping = true;
     if (this.ws !== null) {
       try {
         this.ws.close();

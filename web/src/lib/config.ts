@@ -4,7 +4,7 @@
  * 规则：
  *   SSR（服务端渲染）→ 后端在同一台机器，统一用 localhost
  *   浏览器-本地网络 → 始终连接同 hostname 的本机服务端口
- *   非局域网（公网 Web）→ 始终 api.{当前 host} / ws.{当前 host}，不以本地国家码覆盖（区域由部署域名决定）
+ *   非局域网（公网 Web）→ 始终 api.{当前 host}（WSS/HTTP-stream 也走 API 同域，由 nginx 反代 Centrifugo）
  */
 
 const BACKEND_PORT = 9000;
@@ -27,15 +27,54 @@ export function getApiUrl(): string {
   return `${window.location.protocol}//api.${window.location.host}`;
 }
 
-export function getCentrifugoWsUrl(): string {
-  if (typeof window === 'undefined') {
+export type CentrifugeEndpoint = {
+  transport: 'websocket' | 'http_stream';
+  endpoint: string;
+};
+
+export function wsUrlFromHttpApi(apiUrl: string): string {
+  try {
+    const u = new URL(apiUrl);
+    u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:';
+    u.pathname = '/connection/websocket';
+    u.search = '';
+    u.hash = '';
+    return u.toString();
+  } catch {
     return `ws://localhost:${CENTRIFUGO_PORT}/connection/websocket`;
   }
-  if (isLocalNetwork()) {
-    return `ws://${window.location.hostname}:${CENTRIFUGO_PORT}/connection/websocket`;
+}
+
+export function httpStreamUrlFromHttpApi(apiUrl: string): string {
+  try {
+    const u = new URL(apiUrl);
+    u.pathname = '/connection/http_stream';
+    u.search = '';
+    u.hash = '';
+    return u.toString();
+  } catch {
+    return `http://localhost:${CENTRIFUGO_PORT}/connection/http_stream`;
   }
-  const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${wsProto}//ws.${window.location.host}/connection/websocket`;
+}
+
+export function getCentrifugoWsUrl(): string {
+  if (typeof window === 'undefined' || isLocalNetwork()) {
+    const host = typeof window === 'undefined' ? 'localhost' : window.location.hostname;
+    return `ws://${host}:${CENTRIFUGO_PORT}/connection/websocket`;
+  }
+  return wsUrlFromHttpApi(getApiUrl());
+}
+
+/** WebSocket first, HTTP-stream fallback (Centrifugo). Local dev is WS-only on :8000. */
+export function getCentrifugoEndpoints(): Array<string | CentrifugeEndpoint> {
+  if (typeof window === 'undefined' || isLocalNetwork()) {
+    return [getCentrifugoWsUrl()];
+  }
+  const api = getApiUrl();
+  return [
+    { transport: 'websocket', endpoint: wsUrlFromHttpApi(api) },
+    { transport: 'http_stream', endpoint: httpStreamUrlFromHttpApi(api) },
+  ];
 }
 
 /** 当前环境下解析出的 HTTP API 根 URL */

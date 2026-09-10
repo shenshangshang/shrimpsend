@@ -13,6 +13,7 @@ final Logger logDevices = Logger('$_rootName.devices');
 final Logger logSettings = Logger('$_rootName.settings');
 final Logger logUpdate = Logger('$_rootName.update');
 final Logger logBoot = Logger('$_rootName.boot');
+final Logger logRealtime = Logger('$_rootName.realtime');
 
 /// Call from main() after [AppLogFile.instance.init] to wire Logger output to debugPrint and log file.
 void initLogging() {

@@ -143,5 +143,8 @@ centrifugo:
   token-hmac-secret: "${CENTRIFUGO_TOKEN_HMAC_SECRET:dev-centrifugo-hmac-secret-change-me}"
   connection-token-expiration-sec: 3600
   subscription-token-expiration-sec: 3600
+  publish-timeout-ms: 2000
+  mailbox-ttl-sec: 120
+  mailbox-sweep-ms: 60000
   proxy:
     connection-expire-sec: 60

@@ -25,5 +25,11 @@
   },
   "http_api": {
     "key": "dev-centrifugo-http-api-key"
+  },
+  "http_stream": {
+    "enabled": true
+  },
+  "sse": {
+    "enabled": true
   }
 }

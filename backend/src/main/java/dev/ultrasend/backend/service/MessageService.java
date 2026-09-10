@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import dev.ultrasend.backend.chat.ThreadKeyUtil;
 import dev.ultrasend.backend.centrifugo.CentrifugoPublishService;
 import dev.ultrasend.backend.entity.Message;
+import dev.ultrasend.backend.realtime.RealtimeEnvelopeTypes;
 import dev.ultrasend.backend.repository.MessageRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -16,7 +17,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -26,14 +26,9 @@ public class MessageService {
 
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
-    private static final Set<String> EPHEMERAL_TYPES = Set.of(
-            "lan_file_offer", "lan_pull_probe", "lan_pull_probe_result",
-            "lan_http_probe", "lan_http_probe_result",
-            "webrtc_probe", "webrtc_probe_result",
-            "webrtc_offer", "webrtc_answer", "webrtc_ice_candidate", "webrtc_transfer_cancel");
-
     private final MessageRepository messageRepository;
     private final CentrifugoPublishService centrifugoPublishService;
+    private final MailboxService mailboxService;
     private final ObjectMapper objectMapper;
     private final MessageCryptoService messageCryptoService;
     private final UserDataEncryptionService userDataEncryption;
@@ -53,7 +48,7 @@ public class MessageService {
             if (t != null) type = t.toString();
         }
 
-        boolean ephemeral = type != null && EPHEMERAL_TYPES.contains(type);
+        boolean ephemeral = RealtimeEnvelopeTypes.isEphemeral(type);
         if (!ephemeral) {
             String json;
             try {
@@ -72,9 +67,10 @@ public class MessageService {
             messageRepository.save(msg);
             log.debug("message saved userId={} id={}", userId, msg.getId());
         } else {
-            log.debug("ephemeral message (type={}) not persisted, broadcast only", type);
+            mailboxService.storeIfEphemeral(uid, data);
+            log.debug("ephemeral message (type={}) mailbox + broadcast", type);
         }
-        centrifugoPublishService.publishToUser(userId, data);
+        centrifugoPublishService.publishToUserBestEffort(userId, data);
     }
 
     /** Ensures persisted envelopes carry a canonical {@code threadKey}. */
@@ -187,7 +183,7 @@ public class MessageService {
                 .filter(m -> m != null)
                 .filter(m -> {
                     Object type = m.get("type");
-                    return type == null || !EPHEMERAL_TYPES.contains(type.toString());
+                    return type == null || !RealtimeEnvelopeTypes.isEphemeral(type.toString());
                 })
                 .collect(Collectors.toList());
     }

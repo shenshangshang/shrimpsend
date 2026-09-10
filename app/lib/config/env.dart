@@ -64,9 +64,55 @@ class Env {
 
   static String get _prodCentrifugoWsResolved =>
       switch (_prodServiceRegion) {
-        ServiceRegion.mainlandChina => _prodWsXiachuan,
+        ServiceRegion.mainlandChina =>
+          _mainlandChinaWs(_prodApiXiachuan, _prodWsXiachuan),
         ServiceRegion.international => _prodWsShrimpsend,
       };
+
+  /// Same-origin WSS on the API host (nginx proxies `/connection/` to Centrifugo).
+  /// Legacy `ws.<domain>` overrides are ignored so CN clients do not depend on
+  /// a separate websocket subdomain.
+  static String _mainlandChinaWs(String apiUrl, String wsOverride) {
+    if (wsOverride.isNotEmpty && !_isLegacyWsSubdomain(wsOverride)) {
+      return wsOverride;
+    }
+    return websocketEndpointFromHttpApi(apiUrl);
+  }
+
+  static bool _isLegacyWsSubdomain(String wsUrl) {
+    final host = Uri.tryParse(wsUrl)?.host ?? '';
+    return host.startsWith('ws.');
+  }
+
+  /// `https://api.example.com` → `wss://api.example.com/connection/websocket`.
+  /// Local `http://host:9000` keeps its port (dev nginx-less setups should
+  /// still pass [CENTRIFUGO_WS] pointing at :8000).
+  static String websocketEndpointFromHttpApi(String apiUrl) {
+    return _connectionEndpointFromHttpApi(apiUrl, 'websocket', asWebsocket: true);
+  }
+
+  static String httpStreamEndpointFromHttpApi(String apiUrl) {
+    return _connectionEndpointFromHttpApi(
+      apiUrl,
+      'http_stream',
+      asWebsocket: false,
+    );
+  }
+
+  static String _connectionEndpointFromHttpApi(
+    String apiUrl,
+    String pathSuffix, {
+    required bool asWebsocket,
+  }) {
+    final uri = Uri.parse(apiUrl);
+    final https = uri.scheme == 'https';
+    return Uri(
+      scheme: asWebsocket ? (https ? 'wss' : 'ws') : (https ? 'https' : 'http'),
+      host: uri.host,
+      port: uri.hasPort ? uri.port : null,
+      path: '/connection/$pathSuffix',
+    ).toString();
+  }
 
   /// RevenueCat Test Store 公钥（本地 debug/profile 默认使用）。
   /// 值来自 gitignored [env.secrets.dart] 或 `--dart-define=RC_TEST_STORE_API_KEY`。

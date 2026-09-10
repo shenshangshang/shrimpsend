@@ -35,13 +35,17 @@ struct ChatPage {
   @State draft: string = '';
   @State busy: boolean = false;
   private selfDeviceId: string = '';
+  private realtimeCb?: (channel: string, data: string) => void;
 
   aboutToAppear(): void {
     void this.bootstrap();
   }
 
   aboutToDisappear(): void {
-    RealtimeHub.disconnect();
+    const cb = this.realtimeCb;
+    if (cb !== undefined) {
+      RealtimeHub.removeListener(cb);
+    }
   }
 
   private async bootstrap(): Promise<void> {
@@ -52,9 +56,10 @@ struct ChatPage {
       await DevicesApi.register(this.selfDeviceId, name, platform);
       await this.pullHistory();
       await this.refreshFromDb();
-      await RealtimeHub.connect((_: string, data: string) => {
+      this.realtimeCb = (_channel: string, data: string): void => {
         void this.onRealtimePayload(data);
-      });
+      };
+      await RealtimeHub.connect(this.realtimeCb);
       const n = ShareInbox.peekCount();
       if (n > 0) {
         ShareInbox.takeAll();

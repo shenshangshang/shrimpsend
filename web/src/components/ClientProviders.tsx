@@ -2,6 +2,7 @@
 
 import { useEffect, type ReactNode } from 'react';
 import { AuthProvider } from '@/contexts/AuthContext';
+import { RealtimeProvider } from '@/contexts/RealtimeContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { ColorThemeProvider } from '@/contexts/ColorThemeContext';
 import { TypographyProvider } from '@/contexts/TypographyContext';
@@ -31,10 +32,12 @@ export function ClientProviders({ children }: { children: ReactNode }) {
     <I18nProvider>
       <TypographyProvider>
         <AuthProvider>
-          <OpenPanelRouteTracker />
-          <ThemeProvider>
-            <ColorThemeProvider>{children}</ColorThemeProvider>
-          </ThemeProvider>
+          <RealtimeProvider>
+            <OpenPanelRouteTracker />
+            <ThemeProvider>
+              <ColorThemeProvider>{children}</ColorThemeProvider>
+            </ThemeProvider>
+          </RealtimeProvider>
         </AuthProvider>
       </TypographyProvider>
     </I18nProvider>

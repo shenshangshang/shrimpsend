@@ -3,7 +3,7 @@ import { getApiUrl, TAG, AuthError, getToken, isAuthFailure, withAuthRetry } fro
 
 export type MessageEnvelope = {
   type: 'text' | 'file' | 'control' | 'lan_file_offer' | 'lan_pull_probe' | 'lan_pull_probe_result'
-    | 'lan_http_probe' | 'lan_http_probe_result'
+    | 'lan_http_probe' | 'lan_http_probe_result' | 'lan_pull_cancelled'
     | 'webrtc_probe' | 'webrtc_probe_result'
     | 'webrtc_offer' | 'webrtc_answer' | 'webrtc_ice_candidate' | 'webrtc_transfer_cancel'
     | 'device_roster_patch';

@@ -35,6 +35,8 @@ class MessageServiceTest {
     @Mock
     private CentrifugoPublishService centrifugoPublishService;
     @Mock
+    private MailboxService mailboxService;
+    @Mock
     private UserRepository userRepository;
     @Mock
     private Environment environment;
@@ -67,6 +69,7 @@ class MessageServiceTest {
         messageService = new MessageService(
                 messageRepository,
                 centrifugoPublishService,
+                mailboxService,
                 objectMapper,
                 cryptoService,
                 userDataEncryption);
@@ -94,7 +97,22 @@ class MessageServiceTest {
         @SuppressWarnings("unchecked")
         Map<String, Object> payload = (Map<String, Object>) stored.get("payload");
         assertTrue(userDataEncryption.isUserEncrypted(payload.get("text").toString()));
-        verify(centrifugoPublishService).publishToUser(eq("1"), same(envelope));
+        verify(centrifugoPublishService).publishToUserBestEffort(eq("1"), same(envelope));
+    }
+
+    @Test
+    void sendEphemeralStoresMailboxInsteadOfHistory() {
+        Map<String, Object> envelope = new java.util.HashMap<>();
+        envelope.put("type", "lan_file_offer");
+        envelope.put("payload", Map.of("pullUrl", "http://10.0.0.2/f"));
+        envelope.put("fromDeviceId", "device_a");
+        envelope.put("ts", 1L);
+
+        messageService.send("1", envelope);
+
+        verify(messageRepository, never()).save(any());
+        verify(mailboxService).storeIfEphemeral(eq(1L), same(envelope));
+        verify(centrifugoPublishService).publishToUserBestEffort(eq("1"), same(envelope));
     }
 
     @Test

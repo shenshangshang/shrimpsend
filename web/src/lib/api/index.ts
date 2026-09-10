@@ -40,6 +40,8 @@ export {
 } from './s3';
 export type { CentrifugoTokenResponse } from './centrifugo';
 export { getCentrifugoToken } from './centrifugo';
+export type { MailboxPendingItem } from './mailbox';
+export { getMailboxPending } from './mailbox';
 export type { UserProfile } from './user';
 export {
   fetchUserProfile,

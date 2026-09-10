@@ -7,7 +7,7 @@ import { getCentrifugoToken } from '@/lib/api';
 import type { MessageEnvelope } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { logger } from '@/lib/logger';
-import { getCentrifugoWsUrl } from '@/lib/config';
+import { getCentrifugoEndpoints } from '@/lib/config';
 
 const TAG = 'useCentrifuge';
 
@@ -79,7 +79,7 @@ export function useCentrifuge(
       }
       if (cancelled || !mountedRef.current) return;
 
-      const centrifuge = new Centrifuge(getCentrifugoWsUrl(), {
+      const centrifuge = new Centrifuge(getCentrifugoEndpoints(), {
         token: tokens.connectionToken,
         data: connectData,
         getToken: async () => {
