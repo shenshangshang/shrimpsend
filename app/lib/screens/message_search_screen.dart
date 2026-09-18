@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -13,6 +12,7 @@ import '../services/analytics/analytics.dart';
 import '../services/analytics/analytics_events.dart';
 import '../services/chat_message_dao.dart';
 import '../ui/app_ui.dart';
+import '../utils/runtime_platform.dart';
 import '../widgets/app_confirm_dialog.dart';
 import '../utils/helpers.dart';
 import '../utils/toast.dart';
@@ -36,7 +36,7 @@ class _MessageSearchScreenState extends State<MessageSearchScreen> {
   String _query = '';
   int? _hoveredIndex;
 
-  bool get _isMobile => Platform.isAndroid || Platform.isIOS;
+  bool get _isMobile => RuntimePlatform.isMobile;
 
   @override
   void initState() {

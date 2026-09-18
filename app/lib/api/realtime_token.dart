@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../logger.dart';
+import '../utils/runtime_platform.dart';
 import 'client.dart';
 
 class RealtimeTokenResponse {
@@ -63,5 +64,6 @@ Future<RealtimeTokenResponse> getRealtimeToken({
 
 String realtimePlatformName() {
   if (kIsWeb) return 'web';
+  if (RuntimePlatform.isOhos) return 'harmonyos';
   return defaultTargetPlatform.name;
 }

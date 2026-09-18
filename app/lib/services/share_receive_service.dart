@@ -8,6 +8,7 @@ import 'package:flutter_sharing_intent/flutter_sharing_intent.dart';
 import 'package:flutter_sharing_intent/model/sharing_file.dart';
 import 'package:logging/logging.dart';
 
+import '../utils/runtime_platform.dart';
 import 'share/android_multi_uri_adapter.dart';
 import 'share/fl_shared_link_ios_adapter.dart';
 import 'share/ios_share_extension_adapter.dart';
@@ -56,7 +57,11 @@ class ShareReceiveService {
   List<PlatformFile>? takePendingFromShare() => _pending.takePendingFromShare();
 
   void init() {
-    _logShare.info('init platform=${Platform.operatingSystem}');
+    _logShare.info('init platform=${RuntimePlatform.osName}');
+    if (!OhosCapabilities.inboundShare) {
+      _logShare.info('share inbound skipped on HarmonyOS');
+      return;
+    }
     if (Platform.isAndroid) {
       FlSharedLink().receiveHandler(onIntent: _onAndroidFlIntent);
       WidgetsBinding.instance.addPostFrameCallback((_) {

@@ -41,6 +41,7 @@ import '../utils/save_as_feedback.dart';
 import '../utils/webdav_membership_gate.dart';
 import '../utils/reveal_file_in_folder.dart';
 import '../utils/toast.dart';
+import '../utils/runtime_platform.dart';
 import '../widgets/app_confirm_dialog.dart';
 import '../widgets/attachment_picker_sheet.dart';
 import '../widgets/chat/chat_composer.dart';
@@ -1012,7 +1013,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         _deviceId,
         sessionId: _presenceSessionId,
         status: 'online',
-        platform: Platform.operatingSystem,
+        platform: RuntimePlatform.osName,
       );
       ref.read(cloudDeviceRosterProvider.notifier).applyUpsert(dto);
       logChat.fine('presence online reason=$reason');
@@ -1028,7 +1029,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         _deviceId,
         sessionId: _presenceSessionId,
         status: 'offline',
-        platform: Platform.operatingSystem,
+        platform: RuntimePlatform.osName,
       );
       if (mounted) {
         ref.read(cloudDeviceRosterProvider.notifier).applyUpsert(dto);
@@ -1563,7 +1564,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     _lanDiscovery = LanDiscoveryService.ensureInstance(
       deviceId: _deviceId,
       deviceName: _deviceName,
-      platform: Platform.operatingSystem,
+      platform: RuntimePlatform.osName,
     );
 
     await _refreshReceiveDir();
@@ -2724,7 +2725,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       await registerDevice(
         _deviceId,
         _deviceName,
-        platform: Platform.operatingSystem,
+        platform: RuntimePlatform.osName,
         sessionId: _presenceSessionId,
       ).timeout(const Duration(seconds: 12));
     } catch (e) {
@@ -3532,7 +3533,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       final receiver = LanReceiver(
         deviceId: _deviceId,
         deviceName: _deviceName,
-        platform: Platform.operatingSystem,
+        platform: RuntimePlatform.osName,
         onFileReceived:
             (
               filePath,
@@ -4229,6 +4230,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
             return;
           }
           if (isWebRTCSignalType(msg.type) && msg.payload is Map) {
+            if (!OhosCapabilities.webrtc) return;
             final signal = Map<String, dynamic>.from(msg.payload as Map);
             if (msg.type == 'webrtc_offer') {
               _handleWebRTCOffer(signal, msg.fromDeviceId);
@@ -7718,7 +7720,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     }
   }
 
-  bool get _isMobile => Platform.isAndroid || Platform.isIOS;
+  bool get _isMobile => RuntimePlatform.isMobile;
 
   /// Resolve the actual on-disk path for a chat file message, with a
   /// four-tier fallback so `localPath`-stale or "the user changed/moved the

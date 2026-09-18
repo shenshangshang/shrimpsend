@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,6 +12,7 @@ import '../../providers/app_locale.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/device_provider.dart';
 import '../../ui/app_ui.dart';
+import '../../utils/runtime_platform.dart';
 import '../busy_status_indicator.dart';
 import 'transfer_mode_dot_legend.dart';
 
@@ -64,7 +64,7 @@ class TransferModeBar extends ConsumerWidget {
               candidates: orchestrator.candidates,
               currentMode: sendMode,
               l10n: l10n,
-              localOs: Platform.operatingSystem,
+              localOs: RuntimePlatform.osName,
               isLoggedIn: isLoggedIn,
               isRegisteredPeer: isRegisteredPeer,
               transferBarLabels: true,

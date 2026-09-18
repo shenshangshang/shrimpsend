@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 
 import '../api/devices.dart';
 import '../logger.dart';
+import '../utils/runtime_platform.dart';
 import 'lan_url.dart';
 import 'transfer_worker.dart';
 
@@ -98,6 +99,10 @@ class LanDiscoveryService {
 
   /// Start advertising this device on the LAN (call after HTTP server is up).
   Future<void> startBroadcast(String lanHttpUrl) async {
+    if (!OhosCapabilities.lanMdns) {
+      _log.info('LanDiscovery broadcast skipped (no mDNS on HarmonyOS yet)');
+      return;
+    }
     await stopBroadcast();
     try {
       final uri = Uri.parse(lanHttpUrl);
@@ -133,6 +138,10 @@ class LanDiscoveryService {
 
   /// Start discovering other ultrasend devices on the LAN.
   void startDiscovery() {
+    if (!OhosCapabilities.lanMdns) {
+      _log.info('LanDiscovery discovery skipped (no mDNS on HarmonyOS yet)');
+      return;
+    }
     if (_discovery != null) return;
     final discovery = BonsoirDiscovery(type: kUltrasendServiceType);
     _discovery = discovery;

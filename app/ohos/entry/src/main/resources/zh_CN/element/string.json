@@ -1,0 +1,16 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "虾传 HarmonyOS"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "虾传"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "虾传"
+    }
+  ]
+}

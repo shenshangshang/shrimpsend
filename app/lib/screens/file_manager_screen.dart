@@ -28,6 +28,7 @@ import '../ui/app_ui.dart';
 import '../widgets/desktop_paste_shortcuts.dart';
 import '../utils/file_utils.dart';
 import '../utils/open_directory.dart';
+import '../utils/runtime_platform.dart';
 import '../utils/open_received_file.dart';
 import '../utils/received_file_actions.dart';
 import '../utils/save_as_feedback.dart';
@@ -527,7 +528,7 @@ class _FileManagerScreenState extends State<FileManagerScreen>
     }
   }
 
-  bool get _isMobile => Platform.isAndroid || Platform.isIOS;
+  bool get _isMobile => RuntimePlatform.isMobile;
 
   EdgeInsets _listVerticalPadding(BuildContext context) {
     return EdgeInsets.only(

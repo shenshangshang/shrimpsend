@@ -8,6 +8,7 @@ IconData platformIcon(String? platform) => switch (platform) {
   'windows' => LucideIcons.monitor,
   'linux' => SimpleIcons.linux,
   'web' => LucideIcons.globe,
+  'harmonyos' || 'ohos' || 'harmony' => LucideIcons.smartphone,
   _ => LucideIcons.monitorSmartphone,
 };
 
@@ -19,6 +20,7 @@ Color platformColor(String? platform, Brightness brightness) {
     'windows' => const Color(0xFF0078D7),
     'linux' => isDark ? SimpleIconColors.linux : const Color(0xFFE5A400),
     'web' => const Color(0xFF2196F3),
+    'harmonyos' || 'ohos' || 'harmony' => const Color(0xFFE84026),
     _ => isDark ? const Color(0xFF9E9E9E) : const Color(0xFF757575),
   };
 }

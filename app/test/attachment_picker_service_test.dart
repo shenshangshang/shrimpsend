@@ -3,10 +3,10 @@ import 'package:app/utils/runtime_platform.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('imageVideoUsesDesktopFilePicker matches RuntimePlatform.isDesktop', () {
+  test('imageVideoUsesDesktopFilePicker follows desktop or ohos photo gate', () {
     expect(
       AttachmentPickerService.imageVideoUsesDesktopFilePicker,
-      RuntimePlatform.isDesktop,
+      RuntimePlatform.isDesktop || !OhosCapabilities.photoManagerPicker,
     );
   });
 }

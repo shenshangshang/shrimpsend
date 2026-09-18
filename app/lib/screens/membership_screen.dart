@@ -130,8 +130,8 @@ class _MembershipScreenState extends ConsumerState<MembershipScreen> {
       'channel': _resolvePurchaseSurface(tier).name,
     });
 
-    // Desktop: no native IAP — open the appropriate web payment in the browser.
-    if (RuntimePlatform.isDesktop) {
+    // Desktop / HarmonyOS: no native IAP — open web payment in the browser.
+    if (RuntimePlatform.isDesktop || RuntimePlatform.isOhos) {
       if (overseasCtx && tier.productType == 'SUBSCRIPTION') {
         await _buyOverseasStripe(tier, isUpgrade: _isOverseasUpgrade(tier));
         return;
@@ -412,7 +412,7 @@ class _MembershipScreenState extends ConsumerState<MembershipScreen> {
 
   PurchaseSurface _resolvePurchaseSurface(MembershipTier tier) {
     final overseas = isOverseasAppContext(_tiers);
-    if (RuntimePlatform.isDesktop) {
+    if (RuntimePlatform.isDesktop || RuntimePlatform.isOhos) {
       return overseas ? PurchaseSurface.stripeWeb : PurchaseSurface.alipayPcWeb;
     }
     if (overseas && tier.productType == 'SUBSCRIPTION') {
@@ -707,7 +707,7 @@ class _MembershipScreenState extends ConsumerState<MembershipScreen> {
         final rcConfigured = RevenueCatService.instance.canUseOverseasStorePurchase;
         // On desktop we replace RC with Stripe-via-browser; don't require RC config.
         final purchaseBlocked =
-            disabled || (useStoreRc && !rcConfigured && !RuntimePlatform.isDesktop);
+            disabled || (useStoreRc && !rcConfigured && !RuntimePlatform.isDesktop && !RuntimePlatform.isOhos);
 
         return Padding(
           padding: const EdgeInsets.only(bottom: AppSpacing.sm),
@@ -897,7 +897,7 @@ class _MembershipScreenState extends ConsumerState<MembershipScreen> {
     if (_purchasingApple) return l10n.membershipPurchasing;
     if (_openingStripe) return l10n.membershipOpeningStripe;
     if (_pendingOrderNo != null) return l10n.membershipWaitingPayment;
-    if (RuntimePlatform.isDesktop) {
+    if (RuntimePlatform.isDesktop || RuntimePlatform.isOhos) {
       return _isOverseasUpgrade(tier)
           ? l10n.membershipUpgradeStripe
           : l10n.membershipSubscribeStripe;

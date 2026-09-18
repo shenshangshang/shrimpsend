@@ -154,7 +154,7 @@ void _installBootErrorHandlers() {
 Future<void> _bootstrap(List<String> args) async {
   // Step markers ('boot: ...'): on a hang or crash before the first frame, the
   // last logged step localizes the failing init phase from the user's log.
-  logBoot.info('boot: begin (platform=${Platform.operatingSystem})');
+  logBoot.info('boot: begin (platform=${RuntimePlatform.osName})');
   FlutterForegroundTask.initCommunicationPort();
   await TransferKeepAlive.ensureInitialized();
   await TransferCompletionNotifier.ensureInitialized();

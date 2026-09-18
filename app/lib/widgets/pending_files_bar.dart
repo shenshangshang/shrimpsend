@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io' show Platform;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -14,6 +13,7 @@ import '../services/webdav_upload_concurrency_pref.dart';
 import '../services/webdav_upload_layout.dart';
 import '../ui/app_ui.dart';
 import '../utils/file_utils.dart';
+import '../utils/runtime_platform.dart';
 import '../utils/toast.dart';
 import 'attachment_picker_sheet.dart';
 import 'file_icon_widget.dart';
@@ -67,7 +67,7 @@ Future<void> showPendingFilesManageSheet(BuildContext context) {
   return showPendingOutboxSheet(context);
 }
 
-bool get _isMobilePlatform => Platform.isAndroid || Platform.isIOS;
+bool get _isMobilePlatform => RuntimePlatform.isMobile;
 
 _PendingBarColors _pendingBarColors(BuildContext context) {
   final theme = Theme.of(context);

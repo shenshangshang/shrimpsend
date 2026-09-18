@@ -67,7 +67,8 @@ final class AttachmentPickerService {
 
   /// Desktop uses the native file picker; mobile uses the gallery asset picker.
   @visibleForTesting
-  static bool get imageVideoUsesDesktopFilePicker => RuntimePlatform.isDesktop;
+  static bool get imageVideoUsesDesktopFilePicker =>
+      RuntimePlatform.isDesktop || !OhosCapabilities.photoManagerPicker;
 
   static Future<({bool proceed, bool hideLimitedOverlay})>
       _ensureGalleryReadForPicker(BuildContext context) async {

@@ -84,7 +84,6 @@ flowchart LR
   subgraph clients [客户端]
     Flutter[Flutter 应用]
     Web[Next.js Web]
-    OHOS[HarmonyOS app_ohos]
   end
   subgraph server [自托管服务栈]
     API[Spring_Boot :9000]
@@ -114,8 +113,8 @@ flowchart LR
 
 - **后端**: Spring Boot (Java 17)，数据库 **MySQL 8**
 - **Web**: Next.js (React)
-- **跨平台客户端**: Flutter (macOS / Windows / Linux / iOS / Android)
-- **鸿蒙**: `app_ohos/`
+- **跨平台客户端**: Flutter (macOS / Windows / Linux / iOS / Android / HarmonyOS `app/ohos`)
+- **鸿蒙 ArkTS 旧端**: `app_ohos/`（已冻结，勿加功能）
 - **实时**: WuKongIM
 
 ## 部署指南
@@ -282,8 +281,8 @@ OpenPanel 与客户端统计说明：[app/README.md](../app/README.md)。
 shrimpsend/
 ├── backend/          # Spring Boot
 ├── web/              # Next.js
-├── app/              # Flutter (iOS/Android/desktop)
-├── app_ohos/         # HarmonyOS
+├── app/              # Flutter (iOS/Android/desktop/HarmonyOS ohos/)
+├── app_ohos/         # 已冻结的 ArkTS 鸿蒙端
 ├── ops/              # 生产配置模板（敏感子目录 gitignored，见 ops/README.md）
 ├── config.json       # 旧 Centrifugo 模板（仅回滚）
 ├── shared/           # 协议说明

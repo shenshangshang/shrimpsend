@@ -7,6 +7,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:uuid/uuid.dart';
 
 import '../logger.dart';
+import '../utils/runtime_platform.dart';
 import '../services/file_times_apply.dart';
 import '../services/mtime_util.dart';
 import '../services/receive_dir_resolver.dart';
@@ -1077,6 +1078,9 @@ class WebRTCManager {
     required String localDeviceId,
     required List<({String filePath, WebRTCFileMeta meta})> files,
   }) async {
+    if (!OhosCapabilities.webrtc) {
+      throw UnsupportedError('WebRTC is not available on HarmonyOS yet');
+    }
     final sessionId = const Uuid().v4();
     final session = _createSession(sessionId, targetDeviceId, localDeviceId);
     final pendingSends = files
@@ -1087,13 +1091,17 @@ class WebRTCManager {
   }
 
   void handleSignal(Map<String, dynamic> signal, String localDeviceId) {
+    if (!OhosCapabilities.webrtc) {
+      return;
+    }
     final type = signal['type'] as String?;
     final sessionId = signal['sessionId'] as String?;
     final targetDeviceId = signal['targetDeviceId'] as String?;
     final senderDeviceId = signal['senderDeviceId'] as String?;
 
-    if (type == null || sessionId == null || targetDeviceId != localDeviceId)
+    if (type == null || sessionId == null || targetDeviceId != localDeviceId) {
       return;
+    }
 
     switch (type) {
       case 'webrtc_offer':

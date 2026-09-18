@@ -1,0 +1,24 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "虾传 HarmonyOS"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "虾传"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "虾传"
+    },
+    {
+      "name": "perm_internet_reason",
+      "value": "访问后端 API、实时通道与文件传输"
+    },
+    {
+      "name": "perm_wifi_reason",
+      "value": "局域网传输与网络状态"
+    }
+  ]
+}

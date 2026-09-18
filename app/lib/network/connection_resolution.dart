@@ -1,11 +1,10 @@
-import 'dart:io';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/devices.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../providers/auth_provider.dart';
 import '../providers/device_provider.dart';
+import '../utils/runtime_platform.dart';
 import 'link_models.dart';
 import 'link_strategy.dart';
 
@@ -68,7 +67,7 @@ SelectedConnectionContext? watchSelectedConnectionContext(Ref ref) {
   }
 
   final peer = findDeviceById(ref, selected);
-  final localOs = Platform.operatingSystem;
+  final localOs = RuntimePlatform.osName;
   final isLoggedIn = ref.watch(authProvider).isLoggedIn;
   final isRegisteredPeer = ref
       .watch(myDevicesProvider)
@@ -319,6 +318,13 @@ List<({SendMode mode, SmartLinkKind kind})> _expandKind(SmartLinkKind kind) {
             : 'HTTP 直连不可达',
       );
     case SendMode.webrtc:
+      if (!OhosCapabilities.webrtc) {
+        return (
+          available: false,
+          attemptable: false,
+          reason: '当前平台暂不支持 WebRTC',
+        );
+      }
       if (!allowsAccountTransferModes(context)) {
         return (
           available: false,

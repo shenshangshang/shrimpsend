@@ -8,16 +8,25 @@ import 'package:mobile_device_identifier/mobile_device_identifier.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
+import 'utils/runtime_platform.dart';
+
 const _keyDeviceId = 'ultrasend_device_id';
 const _keyDeviceName = 'ultrasend_device_name';
 
 String get _platformPrefix {
-  if (Platform.isAndroid) return 'android';
-  if (Platform.isIOS) return 'ios';
-  if (Platform.isWindows) return 'windows';
-  if (Platform.isLinux) return 'linux';
-  if (Platform.isMacOS) return 'macos';
-  return 'unknown';
+  if (kIsWeb) return 'web';
+  return RuntimePlatform.osName;
+}
+
+Future<String?> _getOhosDeviceId(DeviceInfoPlugin info) async {
+  try {
+    final data = (await info.deviceInfo).data;
+    for (final key in ['ODID', 'odid', 'udid', 'UDID', 'deviceId']) {
+      final v = data[key];
+      if (v is String && v.isNotEmpty) return v;
+    }
+  } catch (_) {}
+  return null;
 }
 
 Future<String?> _getPcDeviceId(DeviceInfoPlugin info) async {
@@ -40,6 +49,8 @@ Future<String> _generateDeviceId() async {
     String? nativeId;
     if (Platform.isAndroid || Platform.isIOS) {
       nativeId = await MobileDeviceIdentifier().getDeviceId();
+    } else if (RuntimePlatform.isOhos) {
+      nativeId = await _getOhosDeviceId(DeviceInfoPlugin());
     } else {
       nativeId = await _getPcDeviceId(DeviceInfoPlugin());
     }
@@ -76,6 +87,17 @@ Future<String> _generateDeviceName() async {
     } else if (Platform.isLinux) {
       final linux = await info.linuxInfo;
       return linux.prettyName;
+    } else if (RuntimePlatform.isOhos) {
+      try {
+        final data = (await info.deviceInfo).data;
+        final brand = '${data['brand'] ?? data['manufacture'] ?? ''}'.trim();
+        final model =
+            '${data['marketName'] ?? data['productModel'] ?? data['model'] ?? ''}'
+                .trim();
+        final name = '$brand $model'.trim();
+        if (name.isNotEmpty) return name;
+      } catch (_) {}
+      return 'HarmonyOS';
     }
   } catch (_) {
     // fall through to default

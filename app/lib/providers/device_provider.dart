@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -7,6 +6,7 @@ import '../api/api.dart';
 import '../device_id.dart';
 import '../lan/lan_discovery.dart';
 import '../logger.dart';
+import '../utils/runtime_platform.dart';
 import 'auth_provider.dart';
 import 'auth_session_provider.dart';
 
@@ -55,13 +55,13 @@ final lanDiscoveryProvider = Provider<LanDiscoveryService>((ref) {
     return LanDiscoveryService(
       deviceId: 'pending',
       deviceName: 'pending',
-      platform: Platform.operatingSystem,
+      platform: RuntimePlatform.osName,
     );
   }
   final service = LanDiscoveryService.ensureInstance(
     deviceId: deviceInfo.id,
     deviceName: deviceInfo.name,
-    platform: Platform.operatingSystem,
+        platform: RuntimePlatform.osName,
   );
   return service;
 });

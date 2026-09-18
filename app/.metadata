@@ -30,6 +30,9 @@ migration:
     - platform: windows
       create_revision: 9f455d2486bcb28cad87b062475f42edc959f636
       base_revision: 9f455d2486bcb28cad87b062475f42edc959f636
+    - platform: ohos
+      create_revision: ohos-flutter-community
+      base_revision: ohos-flutter-community
 
   # User provided section
 

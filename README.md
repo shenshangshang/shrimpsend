@@ -84,7 +84,6 @@ flowchart LR
   subgraph clients [Clients]
     Flutter[Flutter app]
     Web[Next.js web]
-    OHOS[HarmonyOS app_ohos]
   end
   subgraph server [Self_host_stack]
     API[Spring_Boot :9000]
@@ -114,7 +113,7 @@ flowchart LR
 
 - **Backend:** Spring Boot (Java 17), MySQL 8
 - **Web:** Next.js (React)
-- **Clients:** Flutter (iOS, Android, macOS, Windows, Linux), HarmonyOS (`app_ohos/`)
+- **Clients:** Flutter (iOS, Android, macOS, Windows, Linux, HarmonyOS `app/ohos`). Legacy ArkTS `app_ohos/` is frozen.
 - **Real-time:** WuKongIM
 
 ## Deployment
@@ -242,8 +241,8 @@ Official hosted services (reference only): [shrimpsend.com](https://shrimpsend.c
 shrimpsend/
 ├── backend/          # Spring Boot API
 ├── web/              # Next.js web app
-├── app/              # Flutter clients
-├── app_ohos/         # HarmonyOS
+├── app/              # Flutter (iOS, Android, desktop, HarmonyOS ohos/)
+├── app_ohos/         # Frozen ArkTS HarmonyOS client
 ├── ops/              # Production templates (secrets gitignored)
 ├── shared/           # Protocol notes
 ├── config.json       # legacy Centrifugo template (rollback only)

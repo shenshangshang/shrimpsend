@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -14,6 +12,7 @@ import '../services/analytics/analytics_events.dart';
 import '../ui/app_ui.dart';
 import '../ui/platform_icon.dart';
 import '../utils/auth_route_guard.dart';
+import '../utils/runtime_platform.dart';
 import '../utils/toast.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../widgets/app_confirm_dialog.dart';
@@ -47,7 +46,7 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
     if (kIsWeb) {
       return MediaQuery.sizeOf(context).shortestSide < 600;
     }
-    return Platform.isAndroid || Platform.isIOS;
+    return RuntimePlatform.isMobile;
   }
 
   Future<void> _removeOtherDevice(DeviceDto d) async {

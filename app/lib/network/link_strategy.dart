@@ -10,7 +10,7 @@ List<SmartLinkKind> resolveStrategyChain({
   final peer = normalizeOs(peerPlatform);
 
   bool ios(String o) => o == 'ios';
-  bool android(String o) => o == 'android';
+  bool androidLike(String o) => o == 'android' || o == 'harmonyos';
   bool pcWinLinux(String o) => o == 'windows' || o == 'linux';
   bool pcAny(String o) => o == 'windows' || o == 'linux' || o == 'macos';
 
@@ -19,18 +19,18 @@ List<SmartLinkKind> resolveStrategyChain({
     return [SmartLinkKind.sameLan, SmartLinkKind.internetRelay];
   }
 
-  // Android × iOS
-  if ((android(local) && ios(peer)) || (ios(local) && android(peer))) {
+  // Android/HarmonyOS × iOS
+  if ((androidLike(local) && ios(peer)) || (ios(local) && androidLike(peer))) {
     return [SmartLinkKind.sameLan, SmartLinkKind.internetRelay];
   }
 
-  // Android × Android
-  if (android(local) && android(peer)) {
+  // Android/HarmonyOS × Android/HarmonyOS
+  if (androidLike(local) && androidLike(peer)) {
     return [SmartLinkKind.sameLan, SmartLinkKind.internetRelay];
   }
 
-  // Android × PC
-  if ((android(local) && pcAny(peer)) || (pcAny(local) && android(peer))) {
+  // Android/HarmonyOS × PC
+  if ((androidLike(local) && pcAny(peer)) || (pcAny(local) && androidLike(peer))) {
     return [
       SmartLinkKind.sameLan,
       SmartLinkKind.pcHotspot,
