@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 
 import '../api/api.dart';
 import '../api/realtime_token.dart';
+import '../config/env.dart';
 import '../logger.dart';
 import 'transfer_keep_alive.dart';
 import 'wukongim_jsonrpc.dart';
