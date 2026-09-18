@@ -252,6 +252,18 @@ class Env {
   /// Public WuKongIM websocket URL (debug override). Runtime prefers token.websocketUrl.
   static String get realtimeWs => centrifugoWs;
 
+  /// Phones cannot open `ws://127.0.0.1`. If the token still points at
+  /// loopback, rewrite the host to [apiUrl] and keep the WS port/path.
+  static String rewriteLoopbackRealtimeWs(String websocketUrl, {String? apiUrl}) {
+    final ws = Uri.tryParse(websocketUrl);
+    if (ws == null || ws.host.isEmpty) return websocketUrl;
+    if (ws.host != '127.0.0.1' && ws.host != 'localhost') return websocketUrl;
+    final api = Uri.tryParse(apiUrl ?? Env.apiUrl);
+    if (api == null || api.host.isEmpty) return websocketUrl;
+    if (api.host == '127.0.0.1' || api.host == 'localhost') return websocketUrl;
+    return ws.replace(host: api.host).toString();
+  }
+
   static String get label => _current == AppEnv.prod ? '线上' : '测试';
 
   static String get rcAppleApiKey {

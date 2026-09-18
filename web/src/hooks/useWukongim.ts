@@ -6,7 +6,8 @@ import { getRealtimeToken } from '@/lib/api';
 import type { MessageEnvelope } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { logger } from '@/lib/logger';
-import { unwrapWukongimPayload } from '@/lib/wukongim';
+import { getApiUrl } from '@/lib/config';
+import { unwrapWukongimPayload, rewriteLoopbackRealtimeWs } from '@/lib/wukongim';
 
 const TAG = 'useWukongim';
 
@@ -79,7 +80,8 @@ export function useWukongim(
       }
       if (cancelled || !mountedRef.current) return;
 
-      const ws = new WebSocket(tokens.websocketUrl);
+      const wsUrl = rewriteLoopbackRealtimeWs(tokens.websocketUrl, getApiUrl());
+      const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
       ws.onopen = () => {
         ws.send(JSON.stringify({

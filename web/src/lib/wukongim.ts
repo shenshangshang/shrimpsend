@@ -25,6 +25,21 @@ export function unwrapWukongimPayload(payload: unknown): WukongimEnvelope | null
   return null;
 }
 
+export function rewriteLoopbackRealtimeWs(websocketUrl: string, apiUrl: string): string {
+  try {
+    const ws = new URL(websocketUrl);
+    if (ws.hostname !== '127.0.0.1' && ws.hostname !== 'localhost') return websocketUrl;
+    const api = new URL(apiUrl);
+    if (!api.hostname || api.hostname === '127.0.0.1' || api.hostname === 'localhost') {
+      return websocketUrl;
+    }
+    ws.hostname = api.hostname;
+    return ws.toString().replace(/\/$/, '');
+  } catch {
+    return websocketUrl;
+  }
+}
+
 export function getWukongimWsUrl(): string {
   if (typeof window === 'undefined') {
     return 'ws://localhost:5200';

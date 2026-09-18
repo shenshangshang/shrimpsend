@@ -28,6 +28,11 @@ public class WukongimTokenService {
     private String managerToken;
 
     public RealtimeTokenResponse createToken(String userId, String platform, String deviceId) {
+        return createToken(userId, platform, deviceId, null);
+    }
+
+    public RealtimeTokenResponse createToken(
+            String userId, String platform, String deviceId, String requestHost) {
         int deviceFlag = WukongimDeviceFlags.fromPlatform(platform);
         String token = stableToken(userId, deviceFlag);
         wukongimApiClient.updateUserToken(
@@ -39,12 +44,50 @@ public class WukongimTokenService {
         return RealtimeTokenResponse.builder()
                 .uid(userId)
                 .token(token)
-                .websocketUrl(wsPublicUrl)
+                .websocketUrl(resolveWebsocketUrl(requestHost))
                 .deviceFlag(deviceFlag)
                 .deviceLevel(WukongimDeviceFlags.SECONDARY)
                 .channelId(userId)
                 .channelType(WukongimPublishService.CHANNEL_PERSON)
                 .build();
+    }
+
+    /**
+     * When the configured public URL is loopback (local Compose default) but the
+     * client reached us via a LAN host, return that host so phones can open WS.
+     */
+    String resolveWebsocketUrl(String requestHost) {
+        String configured = (wsPublicUrl == null || wsPublicUrl.isBlank())
+                ? "ws://127.0.0.1:5200"
+                : wsPublicUrl.trim();
+        if (requestHost == null || requestHost.isBlank() || isLoopbackHost(requestHost)) {
+            return configured;
+        }
+        try {
+            java.net.URI uri = java.net.URI.create(configured);
+            if (!isLoopbackHost(uri.getHost())) {
+                return configured;
+            }
+            return new java.net.URI(
+                    uri.getScheme(),
+                    uri.getUserInfo(),
+                    requestHost,
+                    uri.getPort(),
+                    uri.getPath(),
+                    uri.getQuery(),
+                    uri.getFragment())
+                    .toString();
+        } catch (Exception e) {
+            return configured;
+        }
+    }
+
+    static boolean isLoopbackHost(String host) {
+        if (host == null || host.isBlank()) {
+            return false;
+        }
+        String h = host.trim();
+        return "127.0.0.1".equals(h) || "localhost".equalsIgnoreCase(h) || "::1".equals(h);
     }
 
     String stableToken(String userId, int deviceFlag) {

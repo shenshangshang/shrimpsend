@@ -145,8 +145,9 @@ class RealtimeHub {
       );
       if (!_wantConnected || gen != _generation) return;
       await _tearDownClient();
+      final wsUrl = Env.rewriteLoopbackRealtimeWs(tokens.websocketUrl);
       final client = WukongimJsonRpcClient(
-        websocketUrl: tokens.websocketUrl,
+        websocketUrl: wsUrl,
         uid: tokens.uid,
         token: tokens.token,
         deviceId: _deviceId,
@@ -188,7 +189,7 @@ class RealtimeHub {
       await client.connect(timeout: const Duration(seconds: 20));
       if (!_wantConnected || gen != _generation) return;
       logRealtime.info(
-        'realtime hub connecting uid=${tokens.uid} ws=${tokens.websocketUrl} name=$_deviceName',
+        'realtime hub connecting uid=${tokens.uid} ws=$wsUrl name=$_deviceName',
       );
     } catch (e, st) {
       logRealtime.warning('realtime hub connect failed: $e\n$st');

@@ -29,6 +29,13 @@ class WukongimTokenServiceTest {
         assertEquals("42", token.getChannelId());
         assertEquals(1, token.getChannelType());
         assertEquals("ws://127.0.0.1:5200", token.getWebsocketUrl());
+        assertEquals(
+                "ws://192.168.0.101:5200",
+                service.createToken("42", "android", "phone-1", "192.168.0.101").getWebsocketUrl());
+        ReflectionTestUtils.setField(service, "wsPublicUrl", "wss://api.xiachuan.net/wkws");
+        assertEquals(
+                "wss://api.xiachuan.net/wkws",
+                service.createToken("42", "android", "phone-1", "192.168.0.101").getWebsocketUrl());
         assertEquals(service.stableToken("42", 2), token.getToken());
         var again = service.createToken("42", "macos", "mac-2");
         assertEquals(token.getToken(), again.getToken());

@@ -19,6 +19,26 @@ void main() {
       );
     });
 
+    test('rewrites loopback token WS to the API LAN host', () {
+      expect(
+        Env.rewriteLoopbackRealtimeWs(
+          'ws://127.0.0.1:5200',
+          apiUrl: 'http://192.168.0.101:9000',
+        ),
+        'ws://192.168.0.101:5200',
+      );
+    });
+
+    test('keeps production WS unchanged', () {
+      expect(
+        Env.rewriteLoopbackRealtimeWs(
+          'wss://api.xiachuan.net/wkws',
+          apiUrl: 'https://api.xiachuan.net',
+        ),
+        'wss://api.xiachuan.net/wkws',
+      );
+    });
+
     test('http_stream stays on https', () {
       expect(
         Env.httpStreamEndpointFromHttpApi('https://api.xiachuan.net'),
