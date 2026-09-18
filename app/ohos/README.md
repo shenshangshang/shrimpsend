@@ -38,6 +38,25 @@ hwsdk.dir=/Applications/DevEco-Studio.app/Contents/sdk
 
 鸿蒙先走 **账号 + 悟空 + S3/云中继**；局域网 HTTP 服务仍尝试 `dart:io`，发现需手动填 IP。
 
+## 依赖：一份 pubspec，不用换来换去
+
+大家**不是**打包前改依赖、打完再改回去。联邦插件的做法是：
+
+- `path_provider` 等 **主包仍用 pub.dev**（Android / iOS / 桌面）
+- 另外再声明 `path_provider_ohos` 等 **ohos 实现包**
+- 官方 Flutter 看不到 `ohos` 平台就跳过；鸿蒙 SDK 会注册它们
+- 一次 `flutter pub get` 两边都能用
+
+已经写在 [`pubspec.yaml`](../pubspec.yaml) 里，不要覆盖主包、也不要跑切换脚本。
+
+缺鸿蒙实现的插件（bonsoir、WebRTC、内购…）保持原依赖，HAP 链接跳过，运行时 [`OhosCapabilities`](../lib/utils/runtime_platform.dart) 门控。
+
+只有一种情况才需要 vendor 成本地 path：Hvigor 报 `srcPath` 必须相对路径（git 缓存在用户目录是绝对路径）。那时把 TPC 包放进仓库 `third_party/`，仍是一份 pubspec。
+
+可选更激进：团队只用鸿蒙 Flutter SDK 打全平台（3.41-ohos 接近官方 3.41）。能省一个 SDK，但 Android/iOS 要单独验收，这里不默认这么做。
+
+TPC：[flutter_packages](https://gitcode.com/openharmony-tpc/flutter_packages) · [plus_plugins](https://gitcode.com/openharmony-tpc/flutter_plus_plugins) · [CPF-Flutter packages](https://gitcode.com/CPF-Flutter/flutter_packages)
+
 ## 插件覆盖（Spike）
 
 | 能力 | 插件 | 鸿蒙 |
