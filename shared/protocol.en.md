@@ -41,7 +41,7 @@ After sign-in, the server coordinates reachability probes between the two device
 
 When neither HTTP path works directly but a peer connection can still be negotiated, ShrimpSend uses WebRTC.
 
-- Signaling messages travel over Centrifugo: `webrtc_offer`, `webrtc_answer`, `webrtc_ice_candidate`, and `webrtc_transfer_cancel`.
+- Signaling messages travel over the realtime control plane: `webrtc_offer`, `webrtc_answer`, `webrtc_ice_candidate`, and `webrtc_transfer_cancel`.
 - A `control` DataChannel carries JSON control messages; each file gets its own `file-{fileId}` DataChannel transferred in 16 KB chunks.
 - Control messages cover the full lifecycle: `file_start`, `file_end`, `file_ack`, `progress` (for end-to-end flow control), `file_resume_request` / `file_resume_accept` (for resume), and `session_complete`.
 - Resume flow: the receiver checks for a partially received temp file after `file_start`, sends `file_resume_request` with the bytes it already has, and the sender replies `file_resume_accept` with the offset to continue from. The receiver flushes partial data to a temp file roughly every 2 MB.
@@ -61,4 +61,4 @@ S3 is a fallback path, not a replacement for LAN transfer. It keeps delivery rel
 
 ## Real-time sync
 
-Centrifugo pushes updates to every signed-in client on the channel `user#<userId>`, which is also how WebRTC signaling and device/conversation state propagate across a user's devices in real time.
+WuKongIM pushes updates to every signed-in device of the same account, which is also how WebRTC signaling and device/conversation state propagate in real time.

@@ -21,7 +21,7 @@ Declared in [backend/build.gradle.kts](backend/build.gradle.kts):
 | Lombok | (compileOnly) | MIT |
 | JUnit / Spring Test | (test) | Apache-2.0 / EPL-2.0 |
 
-**Note:** Centrifugo runs as a **separate process** (not bundled). Upstream Centrifugo is MIT-licensed.
+**Note:** WuKongIM runs as a **separate process** (Docker, not bundled). Upstream WuKongIM is Apache-2.0. Centrifugo remains optional behind `REALTIME_BUS=centrifugo` for rollback.
 
 ## Web (`web/`)
 
@@ -32,7 +32,7 @@ Declared in [web/package.json](web/package.json) `dependencies`:
 | `@base-ui/react` | MIT |
 | `@openpanel/web` | MIT |
 | `@tanstack/react-virtual` | MIT |
-| `centrifuge` | MIT |
+| `web_socket_channel` | BSD-3-Clause |
 | `class-variance-authority` | Apache-2.0 |
 | `clsx` | MIT |
 | `js-sha256` | MIT |
@@ -57,7 +57,7 @@ Declared in [app/pubspec.yaml](app/pubspec.yaml) `dependencies` (representative;
 | Package | Typical license |
 | --- | --- |
 | `flutter` / `flutter_localizations` | BSD-3-Clause |
-| `centrifuge` | MIT |
+| `web_socket_channel` | BSD-3-Clause |
 | `flutter_chat_core` / `flutter_chat_ui` | MIT |
 | `flutter_riverpod` | MIT |
 | `flutter_webrtc` | MIT |

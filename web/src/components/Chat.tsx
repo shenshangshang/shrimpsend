@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useAuth } from '@/contexts/AuthContext';
 import { useI18n } from '@/contexts/I18nContext';
-import { useCentrifuge } from '@/hooks/useCentrifuge';
+import { useRealtime } from '@/contexts/RealtimeContext';
 import { sendMessage, getMessageHistory, listDevices, hasS3Config, registerDevice, updateDevicePresence, deleteMessage, updateDevice } from '@/lib/api';
 import { S3TransferService } from '@/lib/services/s3Transfer';
 import type { CloudTransferService } from '@/lib/services/cloudTransfer';
@@ -675,27 +675,15 @@ export function Chat({
     [pullFileFromOffer, handlePullProbe, handleWebRTCSignal, t]
   );
 
-  const centrifugeLifecycle = useMemo(
-    () => ({
-      onConnected: () => {
-        registerDevice(getOrCreateDeviceId(), getDeviceName(), {
-          platform: 'web',
-          sessionId: presenceSessionId,
-        }).catch((e) => logger.warn(TAG, 'registerDevice onConnected', e));
-      },
-    }),
-    [presenceSessionId]
-  );
-  const centrifugeConnectData = useMemo(
-    () => ({
-      deviceId: getOrCreateDeviceId(),
-      name: getDeviceName(),
+  const { connected, subscribe } = useRealtime();
+  useEffect(() => subscribe(onMessage), [subscribe, onMessage]);
+  useEffect(() => {
+    if (!connected || !userId) return;
+    registerDevice(getOrCreateDeviceId(), getDeviceName(), {
       platform: 'web',
       sessionId: presenceSessionId,
-    }),
-    [presenceSessionId],
-  );
-  const { connected } = useCentrifuge(!!userId, onMessage, centrifugeLifecycle, centrifugeConnectData);
+    }).catch((e) => logger.warn(TAG, 'registerDevice onConnected', e));
+  }, [connected, userId, presenceSessionId]);
 
   useEffect(() => {
     onConnectedChange?.(connected);

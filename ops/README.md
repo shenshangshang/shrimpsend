@@ -66,9 +66,9 @@ export ULTRASEND_OPS_DIR="$PWD/ops"
 
 | 用途 | 命令（在业务仓根目录） |
 |------|------------------------|
-| 同步本地配置 + 建库 | `./scripts/deploy-local.sh` 或 `./scripts/sync-to-local.sh` |
-| 启动 Centrifugo + 后端 + Web | `./scripts/start-dev.sh` / `./start-dev.sh` |
-| 停止 | `./scripts/stop-dev.sh` / `./stop-dev.sh` |
+| 同步本地配置 | `./scripts/deploy-local.sh` 或 `./scripts/sync-to-local.sh` |
+| 启动 Docker 服务端 + 宿主机 Web | `./scripts/start-dev.sh` |
+| 停止 | `./scripts/stop-dev.sh` |
 | 同步生产配置 | `./scripts/sync-to-build-machine.sh` |
 | 生产部署 | `./scripts/deploy.sh` |
 
@@ -124,11 +124,11 @@ ops/
 
 启动 / 停止（在**业务仓**根目录，勿在仅 clone 的 ops 仓内执行）：
 
-- 国内：`./scripts/start-dev.sh` 或 `./start-dev.sh`
+- 国内：`./scripts/start-dev.sh`
 - 海外：`./scripts/start-dev.sh --overseas`
-- 停止：`./scripts/stop-dev.sh` 或 `./stop-dev.sh`
+- 停止：`./scripts/stop-dev.sh`
 
-仅调试后端（不启 Centrifugo/Web）：`backend/scripts/run-dev-overseas.sh`
+仅调试后端（Docker 服务端、不启 Web）：`backend/scripts/run-dev-overseas.sh`
 
 ## 同步到业务仓（部署 / 打包前）
 

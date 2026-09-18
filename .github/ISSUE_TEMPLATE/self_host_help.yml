@@ -13,7 +13,7 @@ body:
       options:
         - Docker compose
         - Local dev scripts (start-dev.sh)
-        - Bare metal (deploy.sh)
+        - Production Docker stack (deploy.sh)
         - Other
     validations:
       required: true
@@ -28,7 +28,7 @@ body:
     id: what-happened
     attributes:
       label: What did you run and what happened?
-      description: Include the exact command and the error. Which service failed (MySQL :3306 / Centrifugo :8000 / backend :9000 / web :3000)? Redact secrets.
+      description: Include the exact command and the error. Which service failed (MySQL :3306 / WuKongIM :5200 / backend :9000 / web :3000)? Redact secrets.
     validations:
       required: true
   - type: textarea

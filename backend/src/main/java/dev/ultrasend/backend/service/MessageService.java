@@ -3,7 +3,7 @@ package dev.ultrasend.backend.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import dev.ultrasend.backend.chat.ThreadKeyUtil;
-import dev.ultrasend.backend.centrifugo.CentrifugoPublishService;
+import dev.ultrasend.backend.realtime.RealtimePublisher;
 import dev.ultrasend.backend.entity.Message;
 import dev.ultrasend.backend.realtime.RealtimeEnvelopeTypes;
 import dev.ultrasend.backend.repository.MessageRepository;
@@ -27,7 +27,7 @@ public class MessageService {
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
     private final MessageRepository messageRepository;
-    private final CentrifugoPublishService centrifugoPublishService;
+    private final RealtimePublisher realtimePublisher;
     private final MailboxService mailboxService;
     private final ObjectMapper objectMapper;
     private final MessageCryptoService messageCryptoService;
@@ -70,7 +70,7 @@ public class MessageService {
             mailboxService.storeIfEphemeral(uid, data);
             log.debug("ephemeral message (type={}) mailbox + broadcast", type);
         }
-        centrifugoPublishService.publishToUserBestEffort(userId, data);
+        realtimePublisher.publishToUserBestEffort(userId, data);
     }
 
     /** Ensures persisted envelopes carry a canonical {@code threadKey}. */

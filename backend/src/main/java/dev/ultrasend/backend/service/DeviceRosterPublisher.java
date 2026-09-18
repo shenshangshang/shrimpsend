@@ -1,6 +1,6 @@
 package dev.ultrasend.backend.service;
 
-import dev.ultrasend.backend.centrifugo.CentrifugoPublishService;
+import dev.ultrasend.backend.realtime.RealtimePublisher;
 import dev.ultrasend.backend.dto.DeviceDto;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
@@ -24,7 +24,7 @@ public class DeviceRosterPublisher {
     public static final String EVENT_TYPE = "device_roster_patch";
     private static final long DEBOUNCE_MS = 250L;
 
-    private final CentrifugoPublishService centrifugoPublishService;
+    private final RealtimePublisher realtimePublisher;
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread t = new Thread(r, "device-roster-publisher");
         t.setDaemon(true);
@@ -71,7 +71,7 @@ public class DeviceRosterPublisher {
                 "device", patch.device == null ? Map.of() : patch.device,
                 "updatedAtMs", Instant.now().toEpochMilli());
         try {
-            centrifugoPublishService.publishToUser(patch.userId.toString(), payload);
+            realtimePublisher.publishToUser(patch.userId.toString(), payload);
         } catch (Exception e) {
             log.warn("device roster publish failed userId={} deviceId={} action={}: {}",
                     patch.userId, patch.deviceId, patch.action, e.getMessage());

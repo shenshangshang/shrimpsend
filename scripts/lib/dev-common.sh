@@ -114,7 +114,29 @@ EOF
   echo "$msg"
 }
 
-# wait_service name pid timeout_seconds logfile mode
+wait_http() {
+  local name="$1"
+  local url="$2"
+  local timeout="$3"
+  local token="${4:-}"
+  local i
+  printf "等待 %s 就绪" "$name"
+  for i in $(seq 1 "$timeout"); do
+    if [ -n "$token" ]; then
+      if curl -sf -H "token: $token" "$url" >/dev/null 2>&1; then
+        echo " OK"
+        return 0
+      fi
+    elif curl -sf "$url" >/dev/null 2>&1; then
+      echo " OK"
+      return 0
+    fi
+    printf "."
+    sleep 1
+  done
+  echo ""
+  return 1
+}
 # mode: port_8000 | port_3000 | backend_refresh
 # Returns 0 when ready, 1 on timeout or process exit.
 wait_service() {

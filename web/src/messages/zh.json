@@ -303,7 +303,7 @@
       "title": "调试环境（后端地址）",
       "badge": "仅本地调试",
       "description": "仅在局域网访问且使用开发服务器时显示。本地调试会固定连接本机服务端口。",
-      "hint": "本地 Web 会固定访问当前主机的 :9000 后端和 :8000 WebSocket，不再直连线上 API。要验证海外会员、Stripe 或托管存储，请用本地后端的 dev-overseas 配置启动。"
+      "hint": "本地 Web 会固定访问当前主机的 :9000 后端和 :5200 WebSocket，不再直连线上 API。要验证海外会员、Stripe 或托管存储，请用本地后端的 dev-overseas 配置启动。"
     },
     "navAriaLabel": "设置分类",
     "sectionGeneral": "通用",
@@ -404,7 +404,7 @@
       "helpHttpDirectTitle": "HTTP 局域网直连",
       "helpHttpDirectBody": "本机直接向对端的局域网 HTTP 地址发起 /probe 请求，不经过云端服务器。\n\n用于确认：在已知对端局域网地址（如 mDNS 发现）且网络可达时，能否建立最快的 HTTP 文件传输路径。",
       "helpHttpSignalingTitle": "HTTP 信令检测",
-      "helpHttpSignalingBody": "通过云端消息（Centrifugo）通知对端自检其 HTTP 服务，并将结果回传。\n\n用于确认：即使尚未发现对端局域网地址，只要双方在线，对端 HTTP 服务是否正常，并可能获取或更新其局域网地址。",
+      "helpHttpSignalingBody": "通过云端消息通知对端自检其 HTTP 服务，并将结果回传。\n\n用于确认：即使尚未发现对端局域网地址，只要双方在线，对端 HTTP 服务是否正常，并可能获取或更新其局域网地址。",
       "helpHttpPullTitle": "HTTP 反向拉取",
       "helpHttpPullBody": "通过云端通知对端，尝试访问本机的 HTTP 服务。\n\n用于确认：在 NAT 或网络不对称（只能单向连通）时，对端能否反向拉取本机文件。这是 HTTP 直连不可用时的备选传输方向。",
       "helpWebrtcTitle": "WebRTC 连通性",

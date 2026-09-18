@@ -45,7 +45,7 @@ export function getToken(): string | null {
   return localStorage.getItem(KEY_ACCESS_TOKEN);
 }
 
-/** 供 Centrifugo connect proxy 鉴权：返回当前 accessToken，未登录时为 null */
+/** 返回当前 accessToken，未登录时为 null */
 export function getAccessToken(): string | null {
   return getToken();
 }

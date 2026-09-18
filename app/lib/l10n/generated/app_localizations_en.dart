@@ -2539,7 +2539,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get connectionDiagHelpHttpSignalingBody =>
-      'A cloud message (Centrifugo) asks the peer to self-check its HTTP service and report back.\n\nThis checks whether the peer\'s HTTP service is healthy when you don\'t yet know its LAN address, as long as both sides are online. The result may also include or update the peer\'s LAN URL.';
+      'A cloud message asks the peer to self-check its HTTP service and report back.\n\nThis checks whether the peer\'s HTTP service is healthy when you don\'t yet know its LAN address, as long as both sides are online. The result may also include or update the peer\'s LAN URL.';
 
   @override
   String get connectionDiagHelpHttpPullTitle => 'HTTP reverse pull';

@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # 从 ops 仓同步生产配置到业务仓（部署 / 官方打包前执行）
-# 若缺少 scripts/bin/linux/centrifugo，会从 centrifugo-bins 仓自动下载
 # 用法（在业务仓根目录）:
 #   ./scripts/sync-to-build-machine.sh
 #   ULTRASEND_OPS_DIR=/path/to/ops ./scripts/sync-to-build-machine.sh
@@ -9,11 +8,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=lib/ops-common.sh
 source "$ROOT/scripts/lib/ops-common.sh"
-# shellcheck source=lib/ensure-centrifugo.sh
-source "$ROOT/scripts/lib/ensure-centrifugo.sh"
 OPS_DIR="$(resolve_ultrasend_ops_dir "$ROOT")"
-
-ensure_centrifugo_linux_bin "$ROOT"
 
 echo "==> 同步 ops 配置 from $OPS_DIR"
 
@@ -27,7 +22,7 @@ if [ -f "$OPS_DIR/overseas/application-prod-overseas.yml" ]; then
   echo "  backend/application-prod-overseas.yml"
 fi
 
-# Centrifugo bare-metal
+# 旧 Centrifugo bare-metal 配置（仅回滚时仍可能存在）
 if [ -f "$OPS_DIR/cn/config.prod.bare.json" ]; then
   cp "$OPS_DIR/cn/config.prod.bare.json" "$ROOT/config.prod.bare.json"
   echo "  config.prod.bare.json"

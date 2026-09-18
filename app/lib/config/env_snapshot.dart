@@ -40,7 +40,7 @@ void scheduleBootEnvSnapshot() {
 ///
 /// Output is wrapped between divider lines so the snapshot is easy to spot
 /// in IDE console. Should be called after [LocaleRegionStore] resolves the
-/// service region so [Env.apiUrl] and [Env.centrifugoWs] reflect their
+/// service region so [Env.apiUrl] and [Env.realtimeWs] reflect their
 /// final values; [scheduleBootEnvSnapshot] guarantees this ordering when
 /// invoked at the end of `main()`.
 Future<void> _logBootEnvSnapshot() async {
@@ -81,7 +81,7 @@ List<MapEntry<String, String>> _buildEntries(PackageInfo? pkg) => [
       MapEntry('ANDROID_PLAY_DIST', '${Env.androidPlayDistribution}'),
       MapEntry('serviceRegion', Env.prodServiceRegion.name),
       MapEntry('apiUrl', Env.apiUrl),
-      MapEntry('centrifugoWs', Env.centrifugoWs),
+      MapEntry('realtimeWs', Env.realtimeWs),
       MapEntry('openpanel', OpenpanelBootstrap.snapshotSummary()),
       MapEntry('feedmatter', FeedmatterBootstrap.snapshotSummary()),
       MapEntry(

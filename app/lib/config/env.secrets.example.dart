@@ -16,7 +16,7 @@ class EnvSecrets {
   static const rcGoogleApiKeyProd = '';
 
   /// 生产 API（国内 xiachuan 集群）。CN WebSocket 默认与 API 同域
-  /// (`wss://api…/connection/websocket`)；`prodWsCn` 仅作非 `ws.` 子域的覆盖。
+  /// (`wss://api…/wkws`)；`prodWsCn` 仅作非 `ws.` 子域的覆盖。
   static const prodApiCn = '';
   static const prodWsCn = '';
 

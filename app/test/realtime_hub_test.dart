@@ -8,21 +8,21 @@ void main() {
     test('maps https API host to same-origin wss', () {
       expect(
         Env.websocketEndpointFromHttpApi('https://api.xiachuan.net'),
-        'wss://api.xiachuan.net/connection/websocket',
+        'wss://api.xiachuan.net/wkws',
       );
     });
 
     test('maps http API with port to ws on that port', () {
       expect(
         Env.websocketEndpointFromHttpApi('http://192.168.0.104:9000'),
-        'ws://192.168.0.104:9000/connection/websocket',
+        'ws://192.168.0.104:9000/wkws',
       );
     });
 
     test('http_stream stays on https', () {
       expect(
         Env.httpStreamEndpointFromHttpApi('https://api.xiachuan.net'),
-        'https://api.xiachuan.net/connection/http_stream',
+        'https://api.xiachuan.net/wkws',
       );
     });
   });
@@ -41,7 +41,8 @@ void main() {
   group('RealtimeHub mailbox ingest', () {
     test('dispatches envelopes and advances afterId', () async {
       final hub = RealtimeHub(
-        tokenFetcher: () async => throw StateError('unused'),
+        tokenFetcher: ({required deviceId, required platform}) async =>
+            throw StateError('unused'),
         mailboxFetcher: ({required deviceId, afterId = 0}) async => [],
       );
       final received = <Map<String, dynamic>>[];

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 虾传 线上部署脚本（纯 Ubuntu 环境）
+# 虾传 线上部署脚本（Docker 服务端 + 宿主机 Web）
 # 用法:
 #   ./scripts/deploy.sh          交互式部署（先选择国内/海外集群，再拉代码、构建、重启）
 #   ./scripts/deploy.sh stop     仅停止服务
@@ -8,11 +8,11 @@
 #
 # 集群选择：交互式部署时会在 git pull 之后立即询问「是否部署到海外集群 (ShrimpSend)」
 #   - 选 N (默认): 走国内集群 xiachuan
-#       后端 → application-prod.yml
-#       Centrifugo → config.prod.bare.json
+#       后端 → application-prod.yml（打进 backend 镜像）
+#       服务端 → docker compose: mysql + wukongim + backend
 #   - 选 Y      : 走海外集群 ShrimpSend
 #       后端 → application-prod-overseas.yml
-#       Centrifugo → config.prod-overseas.bare.json
+#       悟空 IM → 同一 compose 服务（WUKONGIM_WS_PUBLIC_URL 指向海外域名）
 #       Web 构建 → NEXT_PUBLIC_STRIPE_BILLING=live npm run build（与 .env 中 LIVE 价一致）
 # 也可通过环境变量预先指定（适合 CI 等非交互场景）：
 #   SPRING_PROFILE=prod-overseas CLUSTER_LABEL='海外 (ShrimpSend)' ./scripts/deploy.sh
@@ -24,6 +24,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 source "$ROOT/scripts/lib/dev-common.sh"
 # shellcheck source=lib/ops-common.sh
 source "$ROOT/scripts/lib/ops-common.sh"
+# shellcheck source=lib/docker-stack.sh
+source "$ROOT/scripts/lib/docker-stack.sh"
 cd "$ROOT"
 
 PID_FILE="$ROOT/scripts/.prod-pids"
@@ -58,18 +60,10 @@ assert_prod_config_present() {
       echo "  请 clone ops 到 ../ops 或设置 ULTRASEND_OPS_DIR，并运行 scripts/sync-to-build-machine.sh"
       exit 1
     fi
-    if [ ! -f "$ROOT/config.prod-overseas.bare.json" ]; then
-      echo "  [错误] 缺少 config.prod-overseas.bare.json"
-      exit 1
-    fi
   else
     if [ ! -f "$ROOT/backend/src/main/resources/application-prod.yml" ]; then
       echo "  [错误] 缺少 application-prod.yml"
       echo "  请 clone ops 到 ../ops 或设置 ULTRASEND_OPS_DIR，并运行 scripts/sync-to-build-machine.sh"
-      exit 1
-    fi
-    if [ ! -f "$ROOT/config.prod.bare.json" ]; then
-      echo "  [错误] 缺少 config.prod.bare.json"
       exit 1
     fi
   fi
@@ -114,7 +108,7 @@ web_standalone_server() {
 }
 
 stop_services() {
-  # 先杀 PID 文件中记录的进程
+  # 先杀 PID 文件中记录的进程（Web）
   if [ -f "$PID_FILE" ]; then
     while read -r pid; do
       [ -z "$pid" ] && continue
@@ -134,111 +128,100 @@ stop_services() {
     rm -f "$PID_FILE"
   fi
 
-  # 兜底：按端口清理残留进程（lsof 查 IPv4，fuser 兜底 IPv6）
-  local ports=(8000 9000 3000)
-  local names=("Centrifugo" "后端" "Web")
-  for i in "${!ports[@]}"; do
-    local port="${ports[$i]}"
-    local pids
-    pids=$(lsof -ti :"$port" 2>/dev/null || true)
-    if [ -n "$pids" ]; then
-      echo "  端口 $port (${names[$i]}) 仍被占用，清理 PID: $pids"
-      echo "$pids" | xargs kill -9 2>/dev/null || true
-    fi
-    fuser -k "$port/tcp" 2>/dev/null || true
-  done
+  local pids
+  pids=$(lsof -ti :3000 2>/dev/null || true)
+  if [ -n "$pids" ]; then
+    echo "  端口 3000 (Web) 仍被占用，清理 PID: $pids"
+    echo "$pids" | xargs kill -9 2>/dev/null || true
+  fi
+  fuser -k 3000/tcp 2>/dev/null || true
 
-  sleep 3
+  if command -v docker >/dev/null 2>&1; then
+    (cd "$ROOT" && docker_stack_stop)
+  fi
+  sleep 2
   echo "  已停止所有服务"
 }
 
 show_status() {
-  if [ ! -f "$PID_FILE" ]; then
-    echo "没有运行中的服务"
-    return
-  fi
   echo "服务状态:"
-  local idx=0
-  local names=("Centrifugo" "后端" "Web")
-  while read -r pid; do
-    [ -z "$pid" ] && continue
-    local name="${names[$idx]:-服务$idx}"
-    if kill -0 "$pid" 2>/dev/null; then
-      echo "  $name: 运行中 (PID $pid)"
-    else
-      echo "  $name: 已停止 (PID $pid 不存在)"
-    fi
-    idx=$((idx + 1))
-  done < "$PID_FILE"
+  if command -v docker >/dev/null 2>&1; then
+    docker_stack_ps || true
+  fi
+  if [ -f "$PID_FILE" ]; then
+    while read -r pid; do
+      [ -z "$pid" ] && continue
+      if kill -0 "$pid" 2>/dev/null; then
+        echo "  Web: 运行中 (PID $pid)"
+      else
+        echo "  Web: 已停止 (PID $pid 不存在)"
+      fi
+    done < "$PID_FILE"
+  else
+    echo "  Web: 未记录 PID"
+  fi
 }
 
 start_services() {
   echo ""
   echo "启动服务..."
 
-  rotate_log "$LOG_DIR/centrifugo.log"
-  rotate_log "$LOG_DIR/backend.log"
+  rotate_log "$LOG_DIR/docker-stack.log"
   rotate_log "$LOG_DIR/web.log"
 
-  # Centrifugo（按集群选择对应 bare 配置）
-  local centrifugo_config="$ROOT/config.prod.bare.json"
-  if [ "$SPRING_PROFILE" = "prod-overseas" ]; then
-    centrifugo_config="$ROOT/config.prod-overseas.bare.json"
-  fi
-  if [ ! -f "$centrifugo_config" ]; then
-    echo "  [错误] Centrifugo 配置不存在: $centrifugo_config"
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "  [错误] 需要 Docker 才能运行服务端（MySQL / 悟空 IM / 后端）"
     exit 1
   fi
-  echo "  Centrifugo 配置: $(basename "$centrifugo_config")"
-  local cfgo_bin
-  cfgo_bin="$(centrifugo_linux_bin)"
-  if ! centrifugo_runnable "$cfgo_bin"; then
-    echo "  [错误] 未找到可执行的 Centrifugo: $cfgo_bin"
-    echo "  请在 Linux 上运行 ./scripts/install-centrifugo.sh，或手动放置 Linux 二进制到该路径"
+  if ! docker info >/dev/null 2>&1; then
+    echo "  [错误] Docker 守护进程未运行"
     exit 1
   fi
-  "$cfgo_bin" -c "$centrifugo_config" >> "$LOG_DIR/centrifugo.log" 2>&1 &
-  local pid_c=$!
-  echo $pid_c >> "$PID_FILE"
 
-  printf "  等待 Centrifugo 就绪"
-  local cfgo_ready=0
-  for i in $(seq 1 10); do
-    if ! kill -0 "$pid_c" 2>/dev/null; then
-      break
-    fi
-    if curl -s -o /dev/null http://localhost:8000/ 2>/dev/null; then
-      cfgo_ready=1
+  export SPRING_PROFILES_ACTIVE="$SPRING_PROFILE"
+  export REALTIME_BUS="${REALTIME_BUS:-wukongim}"
+  export WUKONGIM_MANAGER_TOKEN="${WUKONGIM_MANAGER_TOKEN:-dev-wukongim-manager-token}"
+  export WUKONGIM_WEBHOOK_HTTPADDR="${WUKONGIM_WEBHOOK_HTTPADDR:-http://backend:9000/api/wukongim/webhook}"
+  export MYSQL_ROOT_PASSWORD="${MYSQL_ROOT_PASSWORD:-changeme}"
+  export MYSQL_USER="${MYSQL_USER:-ultrasend}"
+  export MYSQL_PASSWORD="${MYSQL_PASSWORD:-changeme}"
+  export SPRING_DATASOURCE_USERNAME="${SPRING_DATASOURCE_USERNAME:-$MYSQL_USER}"
+  export SPRING_DATASOURCE_PASSWORD="${SPRING_DATASOURCE_PASSWORD:-$MYSQL_PASSWORD}"
+  if [ "$SPRING_PROFILE" = "prod-overseas" ]; then
+    export WUKONGIM_WS_PUBLIC_URL="${WUKONGIM_WS_PUBLIC_URL:-wss://api.shrimpsend.com/wkws}"
+    export SPRING_DATASOURCE_URL="${SPRING_DATASOURCE_URL:-jdbc:mysql://mysql:3306/ultrasend_overseas?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true}"
+  else
+    export WUKONGIM_WS_PUBLIC_URL="${WUKONGIM_WS_PUBLIC_URL:-wss://api.xiachuan.net/wkws}"
+    export SPRING_DATASOURCE_URL="${SPRING_DATASOURCE_URL:-jdbc:mysql://mysql:3306/ultrasend?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true}"
+  fi
+  if [ ! -f "$ROOT/backend/.env" ]; then
+    touch "$ROOT/backend/.env"
+  fi
+  chmod +x "$ROOT/docker/mysql/init-databases.sh" 2>/dev/null || true
+
+  echo "  启动 Docker 服务端 (mysql + wukongim + backend)  profile=$SPRING_PROFILE"
+  docker_stack_up --build >> "$LOG_DIR/docker-stack.log" 2>&1
+  printf "  等待悟空 IM 就绪"
+  local wk_ready=0
+  for i in $(seq 1 60); do
+    if curl -sf -H "token: ${WUKONGIM_MANAGER_TOKEN}" http://127.0.0.1:5001/health >/dev/null 2>&1; then
+      wk_ready=1
       break
     fi
     printf "."
     sleep 1
   done
-  if [ $cfgo_ready -eq 1 ]; then
-    echo " OK (PID $pid_c, 端口 8000)"
+  if [ $wk_ready -eq 1 ]; then
+    echo " OK (5200 / 127.0.0.1:5001)"
   else
     echo " 失败！中止部署。"
-    echo "  最后几行日志:"
-    tail -5 "$LOG_DIR/centrifugo.log" 2>/dev/null | sed 's/^/    /'
+    docker compose logs --tail=20 wukongim 2>/dev/null | sed 's/^/    /' || true
     exit 1
   fi
 
-  # 后端（通过 --spring.profiles.active=$SPRING_PROFILE 激活对应 application-*.yml）
-  echo "  使用 Spring profile: $SPRING_PROFILE  集群: $CLUSTER_LABEL"
-  if compgen -G "$ROOT/backend/build/libs/ultrasend-backend-"*.jar > /dev/null 2>&1; then
-    (cd "$ROOT/backend" && exec java -jar build/libs/ultrasend-backend-*.jar --spring.profiles.active="$SPRING_PROFILE") >> "$LOG_DIR/backend.log" 2>&1 &
-  else
-    echo "  [警告] 未找到 jar 包，使用 gradlew bootRun"
-    (cd "$ROOT/backend" && exec ./gradlew bootRun --args="--spring.profiles.active=$SPRING_PROFILE") >> "$LOG_DIR/backend.log" 2>&1 &
-  fi
-  local pid_b=$!
-  echo $pid_b >> "$PID_FILE"
-  echo "  后端 API      已启动  PID $pid_b  端口 9000"
-
-  # 等待后端就绪
   printf "  等待后端就绪"
   local ready=0
-  for i in $(seq 1 60); do
+  for i in $(seq 1 90); do
     if curl -s -o /dev/null -w "%{http_code}" http://localhost:9000/ 2>/dev/null | grep -q '200'; then
       ready=1
       break
@@ -247,11 +230,10 @@ start_services() {
     sleep 1
   done
   if [ $ready -eq 1 ]; then
-    echo " OK (PID $pid_b, 端口 9000)"
+    echo " OK (端口 9000)"
   else
     echo " 失败！中止部署。"
-    echo "  最后几行日志:"
-    tail -10 "$LOG_DIR/backend.log" 2>/dev/null | sed 's/^/    /'
+    docker compose logs --tail=30 backend 2>/dev/null | sed 's/^/    /' || true
     exit 1
   fi
 
@@ -314,6 +296,8 @@ case "${1:-}" in
   logs)
     echo "日志目录: $LOG_DIR/"
     ls -lht "$LOG_DIR/" 2>/dev/null || echo "  暂无日志"
+    echo ""
+    echo "Docker 服务端日志: docker compose logs -f mysql wukongim backend"
     exit 0
     ;;
   help|--help|-h)
@@ -365,7 +349,7 @@ else
 fi
 echo ""
 
-# 从 ops 同步生产配置（application-prod*.yml、Centrifugo bare 配置等）
+# 从 ops 同步生产配置（application-prod*.yml 等）
 if confirm "是否从 ops 仓同步生产配置?"; then
   sync_ops_config
 else
@@ -374,17 +358,16 @@ fi
 assert_prod_config_present
 echo ""
 
-# [3/4] 构建后端
-if confirm "[3/4] 是否重新构建后端 (./gradlew bootJar)?"; then
-  echo "  -> 构建中（可能需要几分钟）..."
-  (cd "$ROOT/backend" && ./gradlew bootJar --no-daemon)
-  echo "  -> 构建完成:"
-  ls -lh "$ROOT/backend/build/libs/ultrasend-backend-"*.jar 2>/dev/null || echo "  [警告] 未找到 jar 文件"
-else
-  echo "  -> 跳过"
-  if ! compgen -G "$ROOT/backend/build/libs/ultrasend-backend-"*.jar > /dev/null 2>&1; then
-    echo "  [提示] 未发现已构建的 jar 包，启动时将使用 gradlew bootRun"
+# [3/4] 构建后端 Docker 镜像
+if confirm "[3/4] 是否现在构建后端 Docker 镜像 (docker compose build backend)?"; then
+  echo "  -> 构建中（首次可能需要几分钟）..."
+  if [ ! -f "$ROOT/backend/.env" ]; then
+    touch "$ROOT/backend/.env"
   fi
+  docker compose build backend
+  echo "  -> 构建完成"
+else
+  echo "  -> 跳过（启动时仍会 docker compose up --build）"
 fi
 echo ""
 
@@ -429,8 +412,9 @@ echo "=========================================="
 echo "            部署完成"
 echo "=========================================="
 echo "  集群        : $CLUSTER_LABEL  (profile: $SPRING_PROFILE)"
-echo "  Centrifugo : 8000   日志: $LOG_DIR/centrifugo.log"
-echo "  后端 API   : 9000   日志: $LOG_DIR/backend.log"
+echo "  MySQL      : 127.0.0.1:3306  (docker)"
+echo "  悟空 IM    : 5200   健康检查: http://127.0.0.1:5001/health"
+echo "  后端 API   : 9000   docker compose logs -f backend"
 echo "  Web        : 3000   日志: $LOG_DIR/web.log"
 echo ""
 echo "  停止服务: ./scripts/deploy.sh stop"

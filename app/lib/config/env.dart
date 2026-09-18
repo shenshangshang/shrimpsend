@@ -26,9 +26,12 @@ class Env {
     defaultValue: 'http://192.168.0.104:9000',
   );
 
-  static const _devCentrifugoWs = String.fromEnvironment(
-    'CENTRIFUGO_WS',
-    defaultValue: 'ws://192.168.0.104:8000/connection/websocket',
+  static const _devWs = String.fromEnvironment(
+    'WUKONGIM_WS',
+    defaultValue: String.fromEnvironment(
+      'CENTRIFUGO_WS',
+      defaultValue: 'ws://192.168.0.104:5200',
+    ),
   );
 
   static const _prodApiXiachuan = String.fromEnvironment(
@@ -36,16 +39,22 @@ class Env {
     defaultValue: EnvSecrets.prodApiCn,
   );
   static const _prodWsXiachuan = String.fromEnvironment(
-    'CENTRIFUGO_WS_PROD_CN',
-    defaultValue: EnvSecrets.prodWsCn,
+    'WUKONGIM_WS_PROD_CN',
+    defaultValue: String.fromEnvironment(
+      'CENTRIFUGO_WS_PROD_CN',
+      defaultValue: EnvSecrets.prodWsCn,
+    ),
   );
   static const _prodApiShrimpsend = String.fromEnvironment(
     'API_URL_PROD_INTL',
     defaultValue: EnvSecrets.prodApiIntl,
   );
   static const _prodWsShrimpsend = String.fromEnvironment(
-    'CENTRIFUGO_WS_PROD_INTL',
-    defaultValue: EnvSecrets.prodWsIntl,
+    'WUKONGIM_WS_PROD_INTL',
+    defaultValue: String.fromEnvironment(
+      'CENTRIFUGO_WS_PROD_INTL',
+      defaultValue: EnvSecrets.prodWsIntl,
+    ),
   );
 
   /// Resolved from [LocaleRegionStore] / prefs before networking.
@@ -69,7 +78,7 @@ class Env {
         ServiceRegion.international => _prodWsShrimpsend,
       };
 
-  /// Same-origin WSS on the API host (nginx proxies `/connection/` to Centrifugo).
+  /// Same-origin WSS on the API host (nginx proxies `/wkws/` to WuKongIM).
   /// Legacy `ws.<domain>` overrides are ignored so CN clients do not depend on
   /// a separate websocket subdomain.
   static String _mainlandChinaWs(String apiUrl, String wsOverride) {
@@ -84,17 +93,15 @@ class Env {
     return host.startsWith('ws.');
   }
 
-  /// `https://api.example.com` → `wss://api.example.com/connection/websocket`.
-  /// Local `http://host:9000` keeps its port (dev nginx-less setups should
-  /// still pass [CENTRIFUGO_WS] pointing at :8000).
+  /// `https://api.example.com` → `wss://api.example.com/wkws`.
   static String websocketEndpointFromHttpApi(String apiUrl) {
-    return _connectionEndpointFromHttpApi(apiUrl, 'websocket', asWebsocket: true);
+    return _connectionEndpointFromHttpApi(apiUrl, 'wkws', asWebsocket: true);
   }
 
   static String httpStreamEndpointFromHttpApi(String apiUrl) {
     return _connectionEndpointFromHttpApi(
       apiUrl,
-      'http_stream',
+      'wkws',
       asWebsocket: false,
     );
   }
@@ -110,7 +117,7 @@ class Env {
       scheme: asWebsocket ? (https ? 'wss' : 'ws') : (https ? 'https' : 'http'),
       host: uri.host,
       port: uri.hasPort ? uri.port : null,
-      path: '/connection/$pathSuffix',
+      path: '/$pathSuffix',
     ).toString();
   }
 
@@ -240,7 +247,10 @@ class Env {
       _current == AppEnv.prod ? _prodApiUrlResolved : _devApiUrl;
 
   static String get centrifugoWs =>
-      _current == AppEnv.prod ? _prodCentrifugoWsResolved : _devCentrifugoWs;
+      _current == AppEnv.prod ? _prodCentrifugoWsResolved : _devWs;
+
+  /// Public WuKongIM websocket URL (debug override). Runtime prefers token.websocketUrl.
+  static String get realtimeWs => centrifugoWs;
 
   static String get label => _current == AppEnv.prod ? '线上' : '测试';
 

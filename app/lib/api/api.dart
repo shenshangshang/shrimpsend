@@ -16,7 +16,7 @@ export 'auth.dart';
 export 'devices.dart';
 export 'messages.dart';
 export 's3.dart';
-export 'centrifugo.dart';
+export 'realtime_token.dart';
 export 'mailbox.dart';
 export 'user.dart';
 export 'app_version.dart';

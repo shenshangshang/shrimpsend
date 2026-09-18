@@ -1,7 +1,7 @@
 package dev.ultrasend.backend.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import dev.ultrasend.backend.centrifugo.CentrifugoPublishService;
+import dev.ultrasend.backend.realtime.RealtimePublisher;
 import dev.ultrasend.backend.config.MessageEncryptionProperties;
 import dev.ultrasend.backend.config.UserDataEncryptionProperties;
 import dev.ultrasend.backend.entity.Message;
@@ -33,7 +33,7 @@ class MessageServiceTest {
     @Mock
     private MessageRepository messageRepository;
     @Mock
-    private CentrifugoPublishService centrifugoPublishService;
+    private RealtimePublisher realtimePublisher;
     @Mock
     private MailboxService mailboxService;
     @Mock
@@ -68,7 +68,7 @@ class MessageServiceTest {
         objectMapper = new ObjectMapper();
         messageService = new MessageService(
                 messageRepository,
-                centrifugoPublishService,
+                realtimePublisher,
                 mailboxService,
                 objectMapper,
                 cryptoService,
@@ -97,7 +97,7 @@ class MessageServiceTest {
         @SuppressWarnings("unchecked")
         Map<String, Object> payload = (Map<String, Object>) stored.get("payload");
         assertTrue(userDataEncryption.isUserEncrypted(payload.get("text").toString()));
-        verify(centrifugoPublishService).publishToUserBestEffort(eq("1"), same(envelope));
+        verify(realtimePublisher).publishToUserBestEffort(eq("1"), same(envelope));
     }
 
     @Test
@@ -112,7 +112,7 @@ class MessageServiceTest {
 
         verify(messageRepository, never()).save(any());
         verify(mailboxService).storeIfEphemeral(eq(1L), same(envelope));
-        verify(centrifugoPublishService).publishToUserBestEffort(eq("1"), same(envelope));
+        verify(realtimePublisher).publishToUserBestEffort(eq("1"), same(envelope));
     }
 
     @Test

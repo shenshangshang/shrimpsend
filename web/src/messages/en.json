@@ -303,7 +303,7 @@
       "title": "Debug API environment",
       "badge": "Local dev only",
       "description": "Shown only on LAN-style hosts while running the Next.js dev server. Local debugging is pinned to local service ports.",
-      "hint": "Local Web always uses the current host's :9000 backend and :8000 WebSocket, and no longer connects directly to production APIs. To test overseas membership, Stripe, or hosted storage, run the local backend with the dev-overseas profile."
+      "hint": "Local Web always uses the current host's :9000 backend and :5200 WebSocket, and no longer connects directly to production APIs. To test overseas membership, Stripe, or hosted storage, run the local backend with the dev-overseas profile."
     },
     "navAriaLabel": "Settings sections",
     "sectionGeneral": "General",
@@ -404,7 +404,7 @@
       "helpHttpDirectTitle": "HTTP LAN direct",
       "helpHttpDirectBody": "This device sends a /probe request directly to the peer's LAN HTTP address without going through the cloud.\n\nConfirms whether the fastest HTTP file path works when a LAN address is known (e.g. via mDNS) and the network is reachable.",
       "helpHttpSignalingTitle": "HTTP signaling",
-      "helpHttpSignalingBody": "Via cloud messages (Centrifugo), asks the peer to self-check its HTTP service and report back.\n\nConfirms peer HTTP health when both sides are online, even before a LAN address is known, and may discover or refresh the LAN URL.",
+      "helpHttpSignalingBody": "Via cloud messages, asks the peer to self-check its HTTP service and report back.\n\nConfirms peer HTTP health when both sides are online, even before a LAN address is known, and may discover or refresh the LAN URL.",
       "helpHttpPullTitle": "HTTP reverse pull",
       "helpHttpPullBody": "Via cloud, asks the peer to reach this device's HTTP service.\n\nConfirms whether the peer can pull files when NAT or asymmetric routing blocks direct HTTP — a fallback when direct LAN HTTP fails.",
       "helpWebrtcTitle": "WebRTC connectivity",

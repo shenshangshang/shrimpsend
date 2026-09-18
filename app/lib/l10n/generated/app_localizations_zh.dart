@@ -2423,7 +2423,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get connectionDiagHelpHttpSignalingBody =>
-      '通过云端消息（Centrifugo）通知对端自检其 HTTP 服务，并将结果回传。\n\n用于确认：即使尚未发现对端局域网地址，只要双方在线，对端 HTTP 服务是否正常，并可能获取或更新其局域网地址。';
+      '通过云端消息通知对端自检其 HTTP 服务，并将结果回传。\n\n用于确认：即使尚未发现对端局域网地址，只要双方在线，对端 HTTP 服务是否正常，并可能获取或更新其局域网地址。';
 
   @override
   String get connectionDiagHelpHttpPullTitle => 'HTTP 反向拉取';

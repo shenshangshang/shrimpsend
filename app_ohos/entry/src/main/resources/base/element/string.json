@@ -14,7 +14,7 @@
     },
     {
       "name": "perm_internet_reason",
-      "value": "访问后端 API、Centrifugo 与文件传输"
+      "value": "访问后端 API、实时通道与文件传输"
     },
     {
       "name": "perm_wifi_reason",

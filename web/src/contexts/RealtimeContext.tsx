@@ -11,9 +11,9 @@ import {
   type ReactNode,
 } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useCentrifuge, type CentrifugeLifecycle } from '@/hooks/useCentrifuge';
+import { useWukongim, type WukongimLifecycle } from '@/hooks/useWukongim';
 import { getMailboxPending, type MessageEnvelope } from '@/lib/api';
-import { getOrCreateDeviceId, getDeviceName, getOrCreatePresenceSessionId } from '@/lib/deviceId';
+import { getOrCreateDeviceId, getOrCreatePresenceSessionId } from '@/lib/deviceId';
 import { logger } from '@/lib/logger';
 
 const TAG = 'Realtime';
@@ -76,7 +76,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
     }
   }, [userId, accessToken, dispatch]);
 
-  const lifecycle = useMemo<CentrifugeLifecycle>(
+  const lifecycle = useMemo<WukongimLifecycle>(
     () => ({
       onConnected: () => {
         void pollMailbox();
@@ -85,21 +85,11 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
     [pollMailbox],
   );
 
-  const connectData = useMemo(
-    () => ({
-      deviceId: getOrCreateDeviceId(),
-      name: getDeviceName(),
-      platform: 'web',
-      sessionId: presenceSessionId,
-    }),
-    [presenceSessionId],
-  );
-
-  const { connected } = useCentrifuge(
+  const { connected } = useWukongim(
     Boolean(userId && accessToken),
     dispatch,
     lifecycle,
-    connectData,
+    { deviceId: getOrCreateDeviceId() },
   );
 
   useEffect(() => {

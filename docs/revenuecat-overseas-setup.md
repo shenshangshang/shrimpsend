@@ -52,7 +52,7 @@ export REVENUECAT_WEBHOOK_AUTH="<your-secret-token>"
 本地调试：
 
 ```bash
-# 全栈（Centrifugo + dev-overseas 后端 + Web）
+# 全栈（Docker 服务端 + 宿主机 Web，dev-overseas）
 ./scripts/start-dev.sh --overseas
 
 # 另开终端：Stripe webhook（会员）

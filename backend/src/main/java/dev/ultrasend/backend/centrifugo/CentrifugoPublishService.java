@@ -4,22 +4,28 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import java.time.Duration;
 
+import dev.ultrasend.backend.realtime.RealtimePublisher;
+
 /**
  * Publishes messages to Centrifugo user channel via HTTP API.
  */
 @Service
+@ConditionalOnProperty(name = "realtime.bus", havingValue = "centrifugo")
 @RequiredArgsConstructor
 @Slf4j
-public class CentrifugoPublishService {
+public class CentrifugoPublishService implements RealtimePublisher {
 
     private static final String CHANNEL_PREFIX = "user#";
 
+    @Qualifier("centrifugoWebClient")
     private final WebClient centrifugoWebClient;
     private final ObjectMapper objectMapper;
 

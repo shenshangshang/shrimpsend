@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# 启动本地开发环境：Centrifugo、后端、Web
+# 启动本地开发环境：Docker 服务端（MySQL + 悟空 IM + 后端）+ 宿主机 Web
 # 用法:
 #   ./scripts/start-dev.sh              # 国内逻辑（默认 Spring profile）
 #   ./scripts/start-dev.sh --overseas   # 海外 ShrimpSend 逻辑（dev-overseas）
+#   ./scripts/start-dev.sh --rebuild    # 强制重建 backend 镜像
 # 停止：./scripts/stop-dev.sh
 
 if [ -z "${BASH_VERSION:-}" ]; then
@@ -12,29 +13,36 @@ fi
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=lib/dev-common.sh
 source "$ROOT/scripts/lib/dev-common.sh"
+# shellcheck source=lib/docker-stack.sh
+source "$ROOT/scripts/lib/docker-stack.sh"
 
 cd "$ROOT"
-platform="$(centrifugo_platform_subdir)"
-export PATH="$ROOT/scripts/bin${platform:+/$platform}:$ROOT/scripts/bin:$PATH"
 PID_FILE="$ROOT/scripts/.dev-pids"
 LOG_DIR="$ROOT/scripts/logs"
 mkdir -p "$LOG_DIR"
 
-CFGO_LOG="$LOG_DIR/centrifugo.log"
-BACKEND_LOG="$LOG_DIR/backend.log"
 WEB_LOG="$LOG_DIR/web.log"
+STACK_LOG="$LOG_DIR/docker-stack.log"
 
 OVERSEAS=false
 for arg in "$@"; do
   case "$arg" in
     --overseas) OVERSEAS=true ;;
+    --rebuild) echo "提示: start-dev 默认会重建 backend 镜像，--rebuild 可省略。" ;;
     *)
-      die "未知参数: $arg（支持: --overseas）"
+      die "未知参数: $arg（支持: --overseas --rebuild）"
       ;;
   esac
 done
 
 if [ -f "$ROOT/backend/.env" ]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$ROOT/backend/.env"
+  set +a
+elif [ -f "$ROOT/backend/.env.example" ]; then
+  cp "$ROOT/backend/.env.example" "$ROOT/backend/.env"
+  echo "已从 backend/.env.example 复制 backend/.env，请按需填写密钥。"
   set -a
   # shellcheck disable=SC1091
   source "$ROOT/backend/.env"
@@ -48,19 +56,25 @@ if [ "$OVERSEAS" = true ] && [ -f "$ROOT/.env" ]; then
   set +a
 fi
 
-# 与 config.json 中的 Centrifugo 密钥对齐（setup-local-config 可能已随机化 config.json）
-if [ -f "$ROOT/config.json" ] && command -v python3 >/dev/null 2>&1; then
-  eval "$(ROOT="$ROOT" python3 - <<'PY'
-import json, os
-from pathlib import Path
-cfg = json.loads(Path(os.environ["ROOT"], "config.json").read_text())
-print(f'export CENTRIFUGO_HTTP_API_KEY={cfg["http_api"]["key"]!r}')
-print(f'export CENTRIFUGO_TOKEN_HMAC_SECRET={cfg["client"]["token"]["hmac_secret_key"]!r}')
-PY
-)"
+export REALTIME_BUS="${REALTIME_BUS:-wukongim}"
+export WUKONGIM_MANAGER_TOKEN="${WUKONGIM_MANAGER_TOKEN:-dev-wukongim-manager-token}"
+export WUKONGIM_WEBHOOK_HTTPADDR="http://backend:9000/api/wukongim/webhook"
+export MYSQL_ROOT_PASSWORD="${MYSQL_ROOT_PASSWORD:-changeme}"
+export MYSQL_USER="${MYSQL_USER:-ultrasend}"
+export MYSQL_PASSWORD="${MYSQL_PASSWORD:-${SPRING_DATASOURCE_PASSWORD:-changeme}}"
+export SPRING_DATASOURCE_USERNAME="${SPRING_DATASOURCE_USERNAME:-$MYSQL_USER}"
+export SPRING_DATASOURCE_PASSWORD="${SPRING_DATASOURCE_PASSWORD:-$MYSQL_PASSWORD}"
+
+if [ "$OVERSEAS" = true ]; then
+  export SPRING_PROFILES_ACTIVE=dev-overseas
+  export SPRING_DATASOURCE_URL="${SPRING_DATASOURCE_URL:-jdbc:mysql://mysql:3306/ultrasend_overseas?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true}"
+  export WUKONGIM_WS_PUBLIC_URL="${WUKONGIM_WS_PUBLIC_URL:-ws://127.0.0.1:5200}"
+else
+  export SPRING_PROFILES_ACTIVE="${SPRING_PROFILES_ACTIVE:-}"
+  export SPRING_DATASOURCE_URL="${SPRING_DATASOURCE_URL:-jdbc:mysql://mysql:3306/ultrasend?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true}"
+  export WUKONGIM_WS_PUBLIC_URL="${WUKONGIM_WS_PUBLIC_URL:-ws://127.0.0.1:5200}"
 fi
 
-# 若已有进程，先尝试停止
 if [ -f "$PID_FILE" ]; then
   echo "发现已有 .dev-pids，先执行 stop-dev.sh"
   "$ROOT/scripts/stop-dev.sh" 2>/dev/null || true
@@ -74,51 +88,29 @@ else
 fi
 
 echo "==> 启动前检查"
-require_file "$ROOT/config.json" \
-  "缺少 config.json。请运行: ./scripts/setup-local-config.sh 或 ./scripts/deploy-local.sh"
-
-CFGO_BIN=""
-if ! CFGO_BIN="$(resolve_centrifugo_bin)"; then
-  die "$(centrifugo_resolve_error_msg)"
+if ! command -v docker >/dev/null 2>&1; then
+  die "需要 Docker 才能启动服务端（MySQL / 悟空 IM / 后端）。请安装 Docker 后重试。"
 fi
-
-if [ ! -x "$ROOT/backend/gradlew" ]; then
-  die "backend/gradlew 不可执行。请运行: chmod +x backend/gradlew"
+if ! docker info >/dev/null 2>&1; then
+  die "Docker 守护进程未运行。请先启动 Docker Desktop / dockerd。"
 fi
-
 if [ ! -x "$ROOT/web/node_modules/.bin/next" ]; then
   die "未找到 web 依赖（next）。请先执行: cd web && npm ci"
 fi
+chmod +x "$ROOT/docker/mysql/init-databases.sh" 2>/dev/null || true
 
-echo "  config.json、Centrifugo、Gradle、Web 依赖: OK"
-
-echo "启动 Centrifugo (config.json)..."
-: > "$CFGO_LOG"
-"$CFGO_BIN" -c "$ROOT/config.json" >> "$CFGO_LOG" 2>&1 &
-pid_c=$!
-echo "$pid_c" >> "$PID_FILE"
-
-if ! wait_service "Centrifugo" "$pid_c" 10 "$CFGO_LOG" port_8000; then
-  reason="$(service_fail_reason "$pid_c" "端口 8000 在 10 秒内未就绪")"
-  fail_and_cleanup "Centrifugo 启动失败：${reason}（请检查 $CFGO_BIN 与 config.json）" "$CFGO_LOG"
+echo "启动服务端 (docker compose --build: mysql + wukongim + backend)..."
+: > "$STACK_LOG"
+if ! docker_stack_up --build >> "$STACK_LOG" 2>&1; then
+  fail_and_cleanup "Docker 服务端启动失败" "$STACK_LOG"
 fi
 
-echo "启动后端 (Spring Boot)..."
-if [ "$OVERSEAS" = true ]; then
-  (
-    cd "$ROOT/backend"
-    export SPRING_PROFILES_ACTIVE=dev-overseas
-    exec ./gradlew bootRun
-  ) >> "$BACKEND_LOG" 2>&1 &
-else
-  (cd "$ROOT/backend" && exec ./gradlew bootRun) >> "$BACKEND_LOG" 2>&1 &
+if ! wait_http "悟空 IM" "http://127.0.0.1:5001/health" 60 "${WUKONGIM_MANAGER_TOKEN}"; then
+  fail_and_cleanup "悟空 IM 未在 60 秒内就绪（docker compose logs wukongim）" "$STACK_LOG"
 fi
-pid_b=$!
-echo "$pid_b" >> "$PID_FILE"
-
-if ! wait_service "后端 API" "$pid_b" 60 "$BACKEND_LOG" backend_refresh; then
-  reason="$(service_fail_reason "$pid_b" "http://localhost:9000 在 60 秒内未就绪")"
-  fail_and_cleanup "后端启动失败：${reason}（请检查 MySQL 与 backend/.env）" "$BACKEND_LOG"
+if ! wait_http "后端 API" "http://127.0.0.1:9000/" 90; then
+  docker compose logs --tail=40 backend >> "$STACK_LOG" 2>&1 || true
+  fail_and_cleanup "后端未在 90 秒内就绪（请检查 docker compose logs backend）" "$STACK_LOG"
 fi
 
 echo "启动 Web (Next.js)..."
@@ -133,11 +125,13 @@ fi
 
 echo ""
 echo "本地服务已启动："
-echo "  Centrifugo: http://localhost:8000"
-echo "  后端 API:  http://localhost:9000"
-echo "  Web:       http://localhost:3000"
+echo "  MySQL:       127.0.0.1:3306  (docker)"
+echo "  悟空 IM API: http://127.0.0.1:5001  (docker, 仅本机)"
+echo "  悟空 IM WS:  ws://localhost:5200"
+echo "  后端 API:    http://localhost:9000  (docker)"
+echo "  Web:         http://localhost:3000  (宿主机)"
 echo ""
-echo "日志: $LOG_DIR/ (centrifugo.log, backend.log, web.log)"
+echo "日志: $LOG_DIR/ (docker-stack.log, web.log) · docker compose logs -f"
 echo "停止: $ROOT/scripts/stop-dev.sh"
 if [ "$OVERSEAS" = true ]; then
   echo ""

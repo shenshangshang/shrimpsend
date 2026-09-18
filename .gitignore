@@ -5,6 +5,9 @@ scripts/bin/linux/centrifugo
 scripts/bin/centrifugo
 web/.npm-cache/
 
+# WuKongIM local volume (if bind-mounted)
+wukongim_data/
+
 # Dev / prod scripts runtime
 scripts/.dev-pids
 scripts/.prod-pids

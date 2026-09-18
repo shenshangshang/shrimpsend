@@ -47,7 +47,7 @@
 
 ### 信令
 
-通过 Centrifugo 发送：`webrtc_offer`, `webrtc_answer`, `webrtc_ice_candidate`, `webrtc_transfer_cancel`
+通过实时控制面发送：`webrtc_offer`, `webrtc_answer`, `webrtc_ice_candidate`, `webrtc_transfer_cancel`
 
 ### DataChannel
 

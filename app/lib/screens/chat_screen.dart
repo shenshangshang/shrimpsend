@@ -4064,8 +4064,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   Future<void> _onRealtimeConnected() async {
     if (!mounted) return;
     logChat.info('chat_screen realtime connected');
-    unawaited(_markPresenceOnline('centrifugo_connected'));
-    unawaited(_refreshRosterAndProbeSelected('centrifugo_connected'));
+    unawaited(_markPresenceOnline('realtime_connected'));
+    unawaited(_refreshRosterAndProbeSelected('realtime_connected'));
     unawaited(_loadHistory());
     if (Platform.isAndroid) {
       unawaited(TransferKeepAlive.instance.enablePersistent());

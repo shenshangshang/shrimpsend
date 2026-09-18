@@ -13,7 +13,6 @@
     "@base-ui/react": "^1.2.0",
     "@openpanel/web": "^1.4.1",
     "@tanstack/react-virtual": "^3.13.23",
-    "centrifuge": "^5.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "js-sha256": "^0.11.1",

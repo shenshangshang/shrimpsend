@@ -1,15 +1,15 @@
-import { Env } from '../common/Env';
 import { Log } from '../common/Logger';
 import { ApiSession } from '../network/ApiSession';
-import { CentrifugoHttpApi } from '../network/CentrifugoHttpApi';
+import { WukongimHttpApi } from '../network/WukongimHttpApi';
 import { MailboxApi } from '../network/MailboxApi';
-import { CentrifugoClient } from './CentrifugoClient';
+import { getOrCreateDeviceId } from '../storage/DeviceIdentity';
+import { WukongimClient } from './WukongimClient';
 
 const TAG = 'RealtimeHub';
 
-/** 登录后常驻的 Centrifugo 连接：断线退避重连 + mailbox 短轮询。 */
+/** 登录后常驻的悟空 IM 连接：断线退避重连 + mailbox 短轮询。 */
 export class RealtimeHub {
-  private static client: CentrifugoClient | null = null;
+  private static client: WukongimClient | null = null;
   private static wantConnected: boolean = false;
   private static reconnectAttempt: number = 0;
   private static reconnectTimer: number = -1;
@@ -37,9 +37,9 @@ export class RealtimeHub {
       RealtimeHub.addListener(onPublication);
     }
     RealtimeHub.wantConnected = true;
+    await RealtimeHub.pollMailbox();
     await RealtimeHub.openSocket();
     RealtimeHub.startMailboxPolling();
-    await RealtimeHub.pollMailbox();
   }
 
   static async ensureConnected(): Promise<void> {
@@ -83,7 +83,8 @@ export class RealtimeHub {
     }
     RealtimeHub.connecting = true;
     try {
-      const bundle = await CentrifugoHttpApi.getToken();
+      const deviceId = await getOrCreateDeviceId();
+      const bundle = await WukongimHttpApi.getToken(deviceId, 'harmonyos');
       if (!RealtimeHub.wantConnected) {
         return;
       }
@@ -91,15 +92,16 @@ export class RealtimeHub {
         RealtimeHub.client.disconnect();
         RealtimeHub.client = null;
       }
-      const c = new CentrifugoClient();
+      const c = new WukongimClient();
       RealtimeHub.client = c;
       c.connect(
-        Env.centrifugoWs,
-        bundle.connectionToken,
-        bundle.channel,
-        bundle.subscriptionToken,
-        (channel: string, dataUtf8: string) => {
-          RealtimeHub.dispatch(channel, dataUtf8);
+        bundle.websocketUrl,
+        bundle.uid,
+        bundle.token,
+        deviceId,
+        bundle.deviceFlag,
+        (dataUtf8: string) => {
+          RealtimeHub.dispatch('', dataUtf8);
         },
         () => {
           RealtimeHub.client = null;
@@ -161,6 +163,9 @@ export class RealtimeHub {
 
   private static async pollMailbox(): Promise<void> {
     if (!RealtimeHub.wantConnected || !ApiSession.hasLogin()) {
+      return;
+    }
+    if (RealtimeHub.client !== null) {
       return;
     }
     try {

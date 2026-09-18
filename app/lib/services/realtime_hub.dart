@@ -1,41 +1,41 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
-import 'package:centrifuge/centrifuge.dart' as centrifuge;
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import '../api/api.dart';
-import '../config/env.dart';
+import '../api/realtime_token.dart';
 import '../logger.dart';
 import 'transfer_keep_alive.dart';
+import 'wukongim_jsonrpc.dart';
 
-typedef RealtimeTokenFetcher = Future<CentrifugoTokenResponse> Function();
+typedef RealtimeTokenFetcher = Future<RealtimeTokenResponse> Function({
+  required String deviceId,
+  required String platform,
+});
 typedef RealtimeMailboxFetcher = Future<List<MailboxPendingItem>> Function({
   required String deviceId,
   int afterId,
 });
-typedef RealtimeClientFactory = centrifuge.Client Function(
-  String url,
-  centrifuge.ClientConfig config,
-);
 
-/// App-level Centrifugo connection. Survives ChatScreen dispose; start on login.
+/// App-level WuKongIM connection. Survives ChatScreen dispose; start on login.
 class RealtimeHub {
   RealtimeHub({
     RealtimeTokenFetcher? tokenFetcher,
     RealtimeMailboxFetcher? mailboxFetcher,
-    RealtimeClientFactory? clientFactory,
     Duration mailboxPollInterval = const Duration(seconds: 2),
-  })  : _tokenFetcher = tokenFetcher ?? getCentrifugoToken,
+  })  : _tokenFetcher = tokenFetcher ??
+            (({required deviceId, required platform}) => getRealtimeToken(
+                  deviceId: deviceId,
+                  platform: platform,
+                )),
         _mailboxFetcher = mailboxFetcher ?? getMailboxPending,
-        _clientFactory = clientFactory ?? centrifuge.createClient,
         _mailboxPollInterval = mailboxPollInterval;
 
   final RealtimeTokenFetcher _tokenFetcher;
   final RealtimeMailboxFetcher _mailboxFetcher;
-  final RealtimeClientFactory _clientFactory;
   final Duration _mailboxPollInterval;
 
   final String presenceSessionId = const Uuid().v4();
@@ -44,14 +44,15 @@ class RealtimeHub {
   final StreamController<bool> _connectedChanges =
       StreamController<bool>.broadcast();
   final List<Map<String, dynamic>> _recentPublications = [];
+  final Set<String> _seenMessageIds = {};
   static const _recentLimit = 64;
+  static const _seenLimit = 256;
 
-  centrifuge.Client? _client;
-  StreamSubscription<centrifuge.PublicationEvent>? _publicationSub;
-  StreamSubscription<centrifuge.ConnectedEvent>? _connectedSub;
-  StreamSubscription<centrifuge.DisconnectedEvent>? _disconnectedSub;
+  WukongimJsonRpcClient? _client;
   Timer? _mailboxTimer;
+  Timer? _reconnectTimer;
   int _mailboxAfterId = 0;
+  int _reconnectAttempt = 0;
   bool _wantConnected = false;
   bool _connecting = false;
   bool _connected = false;
@@ -61,7 +62,6 @@ class RealtimeHub {
 
   Stream<Map<String, dynamic>> get publications => _publications.stream;
 
-  /// Late subscribers receive the recent buffer (mailbox may arrive before ChatScreen).
   StreamSubscription<Map<String, dynamic>> listenPublications(
     void Function(Map<String, dynamic> map) onData,
   ) {
@@ -70,6 +70,7 @@ class RealtimeHub {
     }
     return _publications.stream.listen(onData);
   }
+
   Stream<bool> get connectedChanges => _connectedChanges.stream;
   bool get isConnected => _connected;
   String get deviceId => _deviceId;
@@ -89,10 +90,12 @@ class RealtimeHub {
   Future<void> stop() async {
     _wantConnected = false;
     _generation++;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
     _stopMailboxPolling();
     await _tearDownClient();
     _setConnected(false);
-    if (Platform.isAndroid) {
+    if (!kIsWeb && Platform.isAndroid) {
       unawaited(TransferKeepAlive.instance.disablePersistent());
     }
   }
@@ -115,94 +118,101 @@ class RealtimeHub {
     required String reason,
     bool forceReconnect = false,
   }) async {
-    final client = _client;
-    if (client == null) {
+    if (_client == null) {
       await _connect(reason: reason);
       return;
     }
-    if (forceReconnect || client.state != centrifuge.State.connected) {
-      logRealtime.info(
-        'realtime hub ensureConnect reason=$reason state=${client.state} force=$forceReconnect',
-      );
-      if (forceReconnect && client.state == centrifuge.State.connected) {
-        await client.disconnect();
-      }
+    if (forceReconnect || !_connected) {
+      logRealtime.info('realtime hub ensureConnect reason=$reason connected=$_connected');
+      await _tearDownClient();
       if (_wantConnected) {
-        await client.connect();
+        await _connect(reason: reason);
       }
     }
   }
 
   Future<void> _connect({required String reason}) async {
     if (!_wantConnected || _connecting) return;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
     _connecting = true;
     final gen = ++_generation;
-    logRealtime.info('realtime hub connect reason=$reason ws=${Env.centrifugoWs}');
+    logRealtime.info('realtime hub connect reason=$reason');
     try {
-      final tokens = await _tokenFetcher();
+      final tokens = await _tokenFetcher(
+        deviceId: _deviceId,
+        platform: realtimePlatformName(),
+      );
       if (!_wantConnected || gen != _generation) return;
       await _tearDownClient();
-      final identity = utf8.encode(
-        jsonEncode({
-          'deviceId': _deviceId,
-          'name': _deviceName,
-          'platform': Platform.operatingSystem,
-          'sessionId': presenceSessionId,
-        }),
+      final client = WukongimJsonRpcClient(
+        websocketUrl: tokens.websocketUrl,
+        uid: tokens.uid,
+        token: tokens.token,
+        deviceId: _deviceId,
+        deviceFlag: tokens.deviceFlag,
+        onMessage: (params) {
+          final id = params['messageId']?.toString();
+          if (id != null && id.isNotEmpty) {
+            if (_seenMessageIds.contains(id)) return;
+            _seenMessageIds.add(id);
+            if (_seenMessageIds.length > _seenLimit) {
+              _seenMessageIds.remove(_seenMessageIds.first);
+            }
+          }
+          final envelope = unwrapWukongimParams(params);
+          if (envelope != null) {
+            dispatchRaw(envelope);
+          }
+        },
+        onConnected: () {
+          logRealtime.info('realtime hub connected');
+          _reconnectTimer?.cancel();
+          _reconnectTimer = null;
+          _reconnectAttempt = 0;
+          _setConnected(true);
+          if (!kIsWeb && Platform.isAndroid) {
+            unawaited(TransferKeepAlive.instance.enablePersistent());
+          }
+        },
+        onDisconnected: (why) {
+          logRealtime.info('realtime hub disconnected: $why');
+          _setConnected(false);
+          if (_wantConnected) {
+            _startMailboxPolling();
+            _scheduleReconnect();
+          }
+        },
       );
-      final client = _clientFactory(
-        Env.centrifugoWs,
-        centrifuge.ClientConfig(
-          token: tokens.connectionToken,
-          data: identity,
-          getData: () async => identity,
-          minReconnectDelay: const Duration(milliseconds: 200),
-          maxReconnectDelay: const Duration(seconds: 8),
-          timeout: const Duration(seconds: 8),
-          getToken: (_) async {
-            final r = await _tokenFetcher();
-            return r.connectionToken;
-          },
-        ),
-      );
-      _connectedSub = client.connected.listen((_) {
-        logRealtime.info('realtime hub connected');
-        _setConnected(true);
-        if (Platform.isAndroid) {
-          unawaited(TransferKeepAlive.instance.enablePersistent());
-        }
-        unawaited(pollMailbox());
-      });
-      _disconnectedSub = client.disconnected.listen((e) {
-        logRealtime.info('realtime hub disconnected: ${e.reason}');
-        _setConnected(false);
-        if (_wantConnected) {
-          _startMailboxPolling();
-        }
-      });
-      final sub = client.newSubscription(
-        tokens.channel,
-        centrifuge.SubscriptionConfig(
-          token: tokens.subscriptionToken,
-          getToken: (_) async {
-            final r = await _tokenFetcher();
-            return r.subscriptionToken;
-          },
-        ),
-      );
-      _publicationSub = sub.publication.listen((e) {
-        _emitRaw(e.data);
-      });
-      sub.subscribe();
       _client = client;
-      await client.connect();
-      logRealtime.info('realtime hub subscribed channel=${tokens.channel}');
+      await client.connect(timeout: const Duration(seconds: 20));
+      if (!_wantConnected || gen != _generation) return;
+      logRealtime.info(
+        'realtime hub connecting uid=${tokens.uid} ws=${tokens.websocketUrl} name=$_deviceName',
+      );
     } catch (e, st) {
       logRealtime.warning('realtime hub connect failed: $e\n$st');
       _setConnected(false);
+      if (_wantConnected && gen == _generation) {
+        _scheduleReconnect();
+      }
     } finally {
       _connecting = false;
     }
+  }
+
+  void _scheduleReconnect() {
+    if (!_wantConnected) return;
+    _reconnectTimer?.cancel();
+    final exp = math.min(_reconnectAttempt, 4);
+    final delayMs = math.min(8000, 500 * (1 << exp));
+    _reconnectAttempt++;
+    logRealtime.info('realtime hub reconnect in ${delayMs}ms');
+    _reconnectTimer = Timer(Duration(milliseconds: delayMs), () {
+      if (_wantConnected) {
+        unawaited(_connect(reason: 'reconnect'));
+      }
+    });
   }
 
   Future<void> pollMailbox() async {
@@ -239,17 +249,6 @@ class RealtimeHub {
     _publications.add(map);
   }
 
-  void _emitRaw(List<int> raw) {
-    if (raw.isEmpty) return;
-    try {
-      final map = jsonDecode(utf8.decode(Uint8List.fromList(raw)))
-          as Map<String, dynamic>;
-      dispatchRaw(map);
-    } catch (e, st) {
-      logRealtime.warning('realtime hub publication decode failed: $e\n$st');
-    }
-  }
-
   void _startMailboxPolling() {
     _mailboxTimer ??= Timer.periodic(_mailboxPollInterval, (_) {
       if (_wantConnected && !_connected) {
@@ -272,12 +271,6 @@ class RealtimeHub {
   }
 
   Future<void> _tearDownClient() async {
-    await _publicationSub?.cancel();
-    await _connectedSub?.cancel();
-    await _disconnectedSub?.cancel();
-    _publicationSub = null;
-    _connectedSub = null;
-    _disconnectedSub = null;
     final client = _client;
     _client = null;
     if (client != null) {

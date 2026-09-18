@@ -6,7 +6,7 @@ spring:
       max-file-size: 512MB
       max-request-size: 520MB
   datasource:
-    url: jdbc:mysql://localhost:3306/ultrasend?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+    url: "${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/ultrasend?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true}"
     driver-class-name: com.mysql.cj.jdbc.Driver
     username: "${SPRING_DATASOURCE_USERNAME:root}"
     password: "${SPRING_DATASOURCE_PASSWORD:changeme}"
@@ -136,6 +136,19 @@ storage:
     public-host: "${STORAGE_S3_PUBLIC_HOST:}"
     presign-expire-seconds: ${STORAGE_S3_PRESIGN_EXPIRE_SECONDS:600}
     path-style-access-enabled: ${STORAGE_S3_PATH_STYLE:false}
+
+realtime:
+  bus: "${REALTIME_BUS:wukongim}"
+
+wukongim:
+  api-url: "${WUKONGIM_API_URL:http://127.0.0.1:5001}"
+  ws-public-url: "${WUKONGIM_WS_PUBLIC_URL:ws://127.0.0.1:5200}"
+  manager-token: "${WUKONGIM_MANAGER_TOKEN:dev-wukongim-manager-token}"
+  system-uid: "${WUKONGIM_SYSTEM_UID:ultrasend}"
+  publish-timeout-ms: 2000
+  signaling-expire-sec: 120
+  roster-expire-sec: 30
+  webhook-secret: "${WUKONGIM_WEBHOOK_SECRET:}"
 
 centrifugo:
   url: http://localhost:8000
