@@ -61,9 +61,10 @@ export WUKONGIM_MANAGER_TOKEN="${WUKONGIM_MANAGER_TOKEN:-dev-wukongim-manager-to
 export WUKONGIM_WEBHOOK_HTTPADDR="http://backend:9000/api/wukongim/webhook"
 export MYSQL_ROOT_PASSWORD="${MYSQL_ROOT_PASSWORD:-changeme}"
 export MYSQL_USER="${MYSQL_USER:-ultrasend}"
-export MYSQL_PASSWORD="${MYSQL_PASSWORD:-${SPRING_DATASOURCE_PASSWORD:-changeme}}"
-export SPRING_DATASOURCE_USERNAME="${SPRING_DATASOURCE_USERNAME:-$MYSQL_USER}"
-export SPRING_DATASOURCE_PASSWORD="${SPRING_DATASOURCE_PASSWORD:-$MYSQL_PASSWORD}"
+export MYSQL_PASSWORD="${MYSQL_PASSWORD:-changeme}"
+# 容器连 Compose MySQL，不要沿用 backend/.env 里本机 JDBC 的 root 账号。
+export SPRING_DATASOURCE_USERNAME="$MYSQL_USER"
+export SPRING_DATASOURCE_PASSWORD="$MYSQL_PASSWORD"
 
 if [ "$OVERSEAS" = true ]; then
   export SPRING_PROFILES_ACTIVE=dev-overseas
@@ -125,7 +126,7 @@ fi
 
 echo ""
 echo "本地服务已启动："
-echo "  MySQL:       127.0.0.1:3306  (docker)"
+echo "  MySQL:       127.0.0.1:3307  (docker, 容器内仍是 3306)"
 echo "  悟空 IM API: http://127.0.0.1:5001  (docker, 仅本机)"
 echo "  悟空 IM WS:  ws://localhost:5200"
 echo "  后端 API:    http://localhost:9000  (docker)"

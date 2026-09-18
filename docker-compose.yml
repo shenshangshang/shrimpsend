@@ -9,7 +9,8 @@ services:
   mysql:
     image: mysql:8.0
     ports:
-      - "127.0.0.1:3306:3306"
+      # Host 3306 is often taken by local MySQL / other compose stacks.
+      - "127.0.0.1:3307:3306"
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-changeme}
       MYSQL_DATABASE: ultrasend
@@ -62,8 +63,8 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-}
       SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL:-jdbc:mysql://mysql:3306/ultrasend?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true}
-      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-ultrasend}
-      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-changeme}
+      SPRING_DATASOURCE_USERNAME: ${MYSQL_USER:-ultrasend}
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD:-changeme}
       REALTIME_BUS: ${REALTIME_BUS:-wukongim}
       WUKONGIM_API_URL: http://wukongim:5001
       WUKONGIM_WS_PUBLIC_URL: ${WUKONGIM_WS_PUBLIC_URL:-ws://127.0.0.1:5200}

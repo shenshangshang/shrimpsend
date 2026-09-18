@@ -43,8 +43,8 @@ export SPRING_DATASOURCE_URL="${SPRING_DATASOURCE_URL:-jdbc:mysql://mysql:3306/u
 export MYSQL_ROOT_PASSWORD="${MYSQL_ROOT_PASSWORD:-changeme}"
 export MYSQL_USER="${MYSQL_USER:-ultrasend}"
 export MYSQL_PASSWORD="${MYSQL_PASSWORD:-changeme}"
-export SPRING_DATASOURCE_USERNAME="${SPRING_DATASOURCE_USERNAME:-ultrasend}"
-export SPRING_DATASOURCE_PASSWORD="${SPRING_DATASOURCE_PASSWORD:-changeme}"
+export SPRING_DATASOURCE_USERNAME="$MYSQL_USER"
+export SPRING_DATASOURCE_PASSWORD="$MYSQL_PASSWORD"
 
 chmod +x "$ROOT/docker/mysql/init-databases.sh" 2>/dev/null || true
 docker_stack_up --build
