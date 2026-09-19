@@ -21,7 +21,7 @@ typedef RealtimeMailboxFetcher = Future<List<MailboxPendingItem>> Function({
   int afterId,
 });
 
-/// App-level WuKongIM connection. Survives ChatScreen dispose; start on login.
+/// App-level WuKongIM connection. Survives ChatScreen dispose; start when online.
 class RealtimeHub {
   RealtimeHub({
     RealtimeTokenFetcher? tokenFetcher,

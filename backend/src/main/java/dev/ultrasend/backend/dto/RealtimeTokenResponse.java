@@ -18,4 +18,5 @@ public class RealtimeTokenResponse {
     private int deviceLevel;
     private String channelId;
     private int channelType;
+    private String deviceAccessToken;
 }

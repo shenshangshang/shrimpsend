@@ -30,7 +30,7 @@ public class MailboxService {
     private long mailboxTtlSec;
 
     @Transactional
-    public void storeIfEphemeral(long userId, Object data) {
+    public void storeIfEphemeral(Long userId, Object data) {
         if (!(data instanceof Map<?, ?> map)) {
             return;
         }
@@ -74,6 +74,46 @@ public class MailboxService {
                 after,
                 Instant.now(),
                 PageRequest.of(0, 100));
+        if (rows == null) {
+            rows = List.of();
+        }
+        List<MailboxItem> deviceRows = mailboxItemRepository.findPendingForDevice(
+                deviceId, after, Instant.now(), PageRequest.of(0, 100));
+        if (deviceRows == null) {
+            deviceRows = List.of();
+        }
+        java.util.LinkedHashMap<Long, MailboxItem> merged = new java.util.LinkedHashMap<>();
+        for (MailboxItem row : rows) {
+            merged.put(row.getId(), row);
+        }
+        for (MailboxItem row : deviceRows) {
+            merged.putIfAbsent(row.getId(), row);
+        }
+        List<MailboxPendingItemDto> out = new ArrayList<>(merged.size());
+        for (MailboxItem row : merged.values()) {
+            Object parsed;
+            try {
+                parsed = objectMapper.readValue(row.getData(), Object.class);
+            } catch (Exception e) {
+                log.warn("mailbox parse failed id={}: {}", row.getId(), e.getMessage());
+                continue;
+            }
+            out.add(MailboxPendingItemDto.builder().id(row.getId()).data(parsed).build());
+        }
+        return out;
+    }
+
+    @Transactional(readOnly = true)
+    public List<MailboxPendingItemDto> pendingForDevice(String deviceId, Long afterId) {
+        if (deviceId == null || deviceId.isBlank()) {
+            throw new IllegalArgumentException("deviceId required");
+        }
+        long after = afterId == null || afterId < 0 ? 0L : afterId;
+        List<MailboxItem> rows = mailboxItemRepository.findPendingForDevice(
+                deviceId, after, Instant.now(), PageRequest.of(0, 100));
+        if (rows == null) {
+            rows = List.of();
+        }
         List<MailboxPendingItemDto> out = new ArrayList<>(rows.size());
         for (MailboxItem row : rows) {
             Object parsed;

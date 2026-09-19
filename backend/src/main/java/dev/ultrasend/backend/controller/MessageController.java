@@ -1,6 +1,7 @@
 package dev.ultrasend.backend.controller;
 
 import dev.ultrasend.backend.dto.SendMessageRequest;
+import dev.ultrasend.backend.service.InMemoryRateLimiter;
 import dev.ultrasend.backend.service.MessageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,10 +19,11 @@ import java.util.Map;
 public class MessageController {
 
     private final MessageService messageService;
+    private final InMemoryRateLimiter rateLimiter;
 
     @PostMapping("/send")
     public ResponseEntity<Void> send(Authentication auth, @RequestBody SendMessageRequest req) {
-        if (auth == null || !auth.isAuthenticated()) {
+        if (auth == null || !auth.isAuthenticated() || AuthRoles.isDevice(auth)) {
             log.warn("messages/send unauthenticated 401");
             return ResponseEntity.status(401).build();
         }
@@ -30,6 +32,21 @@ public class MessageController {
         log.info("messages/send userId={}", userId);
         messageService.send(userId, data);
         log.debug("messages/send ok userId={}", userId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/device-send")
+    public ResponseEntity<Void> deviceSend(Authentication auth, @RequestBody SendMessageRequest req) {
+        if (auth == null || !auth.isAuthenticated() || !AuthRoles.isDevice(auth)) {
+            return ResponseEntity.status(401).build();
+        }
+        String deviceId = AuthRoles.deviceId(auth);
+        if (!rateLimiter.tryAcquire("device-send:" + deviceId, 60, 60_000L)) {
+            return ResponseEntity.status(429).build();
+        }
+        Object data = req.getData();
+        log.info("messages/device-send deviceId={}", deviceId);
+        messageService.sendFromDevice(deviceId, data);
         return ResponseEntity.noContent().build();
     }
 

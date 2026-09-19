@@ -27,5 +27,19 @@ public interface MailboxItemRepository extends JpaRepository<MailboxItem, Long> 
             @Param("now") Instant now,
             Pageable pageable);
 
+    @Query("""
+            SELECT m FROM MailboxItem m
+            WHERE m.id > :afterId
+              AND m.expiresAt > :now
+              AND (m.fromDeviceId IS NULL OR m.fromDeviceId <> :deviceId)
+              AND m.toDeviceId = :deviceId
+            ORDER BY m.id ASC
+            """)
+    List<MailboxItem> findPendingForDevice(
+            @Param("deviceId") String deviceId,
+            @Param("afterId") Long afterId,
+            @Param("now") Instant now,
+            Pageable pageable);
+
     void deleteByExpiresAtBefore(Instant time);
 }

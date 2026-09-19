@@ -53,6 +53,18 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         String token = authHeader.substring(7);
         try {
             AppJwtService.ParsedAuthToken parsed = jwtService.parseAccessToken(token);
+            if (parsed.deviceAuth()) {
+                UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
+                        parsed.deviceId(),
+                        null,
+                        Collections.singletonList(new SimpleGrantedAuthority("ROLE_DEVICE"))
+                );
+                auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                SecurityContextHolder.getContext().setAuthentication(auth);
+                log.debug("JWT device authenticated deviceId={} path={}", parsed.deviceId(), request.getRequestURI());
+                filterChain.doFilter(request, response);
+                return;
+            }
             String userId = parsed.userId();
             if (parsed.deviceId() != null && parsed.deviceSessionVersion() != null) {
                 Optional<Device> od = deviceRepository.findByUser_IdAndDeviceIdAndActiveTrue(

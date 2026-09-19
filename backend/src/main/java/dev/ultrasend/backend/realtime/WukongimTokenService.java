@@ -34,20 +34,21 @@ public class WukongimTokenService {
     public RealtimeTokenResponse createToken(
             String userId, String platform, String deviceId, String requestHost) {
         int deviceFlag = WukongimDeviceFlags.fromPlatform(platform);
-        String token = stableToken(userId, deviceFlag);
+        String uid = (deviceId != null && !deviceId.isBlank()) ? deviceId.trim() : userId;
+        String token = stableToken(uid, deviceFlag);
         wukongimApiClient.updateUserToken(
-                userId,
+                uid,
                 token,
                 deviceFlag,
                 WukongimDeviceFlags.SECONDARY,
                 deviceId);
         return RealtimeTokenResponse.builder()
-                .uid(userId)
+                .uid(uid)
                 .token(token)
                 .websocketUrl(resolveWebsocketUrl(requestHost))
                 .deviceFlag(deviceFlag)
                 .deviceLevel(WukongimDeviceFlags.SECONDARY)
-                .channelId(userId)
+                .channelId(uid)
                 .channelType(WukongimPublishService.CHANNEL_PERSON)
                 .build();
     }

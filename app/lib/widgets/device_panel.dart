@@ -188,11 +188,7 @@ class _DevicePanelState extends ConsumerState<DevicePanel>
         setState(() => _setLanReach(d.deviceId, 'offline'));
       }
     }
-    if (!isOffline && widget.onWebRTCProbe != null) {
-      unawaited(_probeWebRTC(d.deviceId));
-    } else if (mounted) {
-      setState(() => _setWebrtcReach(d.deviceId, 'offline'));
-    }
+    // WebRTC connectivity is not pre-probed; transfer remains a manual attempt.
   }
 
   void _startProbes(

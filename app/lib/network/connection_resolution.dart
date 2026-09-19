@@ -202,7 +202,6 @@ SendMode resolveSendModeAutoPreferHttp({
 
   const priority = [
     SendMode.lan,
-    SendMode.webrtc,
     SendMode.nearby,
     SendMode.s3,
   ];
@@ -332,18 +331,12 @@ List<({SendMode mode, SmartLinkKind kind})> _expandKind(SmartLinkKind kind) {
           reason: '仅支持账号下已注册设备',
         );
       }
-      final rtc = context.reach.webrtc;
-      if (rtc == true) {
-        return (available: true, attemptable: true, reason: 'WebRTC 可用');
-      }
-      if (rtc == false) {
-        return (
-          available: false,
-          attemptable: true,
-          reason: 'WebRTC 信令/ICE 不可达',
-        );
-      }
-      return (available: true, attemptable: true, reason: 'WebRTC 未检测');
+      // Connectivity is no longer pre-probed; keep transfer as a manual attempt.
+      return (
+        available: false,
+        attemptable: true,
+        reason: 'WebRTC 未检测，可尝试',
+      );
     case SendMode.s3:
       if (!allowsAccountTransferModes(context)) {
         return (

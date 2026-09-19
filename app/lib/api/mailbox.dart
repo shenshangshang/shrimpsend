@@ -27,19 +27,30 @@ Future<List<MailboxPendingItem>> getMailboxPending({
   int afterId = 0,
 }) async {
   logApi.info('getMailboxPending deviceId=$deviceId afterId=$afterId');
-  return withAuthRetry(() async {
+  Future<List<MailboxPendingItem>> fetch() async {
     final uri = Uri.parse('$apiBaseUrl/api/mailbox/pending').replace(
       queryParameters: {
         'deviceId': deviceId,
         if (afterId > 0) 'afterId': afterId.toString(),
       },
     );
-    final r = await http.get(uri, headers: apiHeaders);
-    checkAuthResponse(r, fallback: '加载待收信令失败');
+    final r = await http.get(uri, headers: realtimeApiHeaders);
+    if (!hasAccessToken) {
+      if (r.statusCode < 200 || r.statusCode >= 300) {
+        throw Exception(errorMessageFromResponse(r, '加载待收信令失败'));
+      }
+    } else {
+      checkAuthResponse(r, fallback: '加载待收信令失败');
+    }
     final list = (jsonDecode(r.body) as List)
         .map((e) => MailboxPendingItem.fromJson(e as Map<String, dynamic>))
         .toList();
     logApi.info('getMailboxPending success count=${list.length}');
     return list;
-  });
+  }
+
+  if (hasAccessToken) {
+    return withAuthRetry(fetch);
+  }
+  return fetch();
 }

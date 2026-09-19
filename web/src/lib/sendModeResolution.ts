@@ -17,7 +17,8 @@ export function buildTransferModeOptions(input: {
   const modes: TransferModeOption[] = [];
   if (input.peerIsWeb) {
     if (input.webrtcAvailable) {
-      modes.push({ value: 'webrtc', available: input.webrtcReachable === true, attemptable: true });
+      // WebRTC is no longer pre-probed; keep it as a manual attempt.
+      modes.push({ value: 'webrtc', available: false, attemptable: true });
     }
     modes.push({ value: 's3', available: input.s3Available, attemptable: input.s3Available });
   } else {
@@ -27,7 +28,7 @@ export function buildTransferModeOptions(input: {
       attemptable: true,
     });
     if (input.webrtcAvailable) {
-      modes.push({ value: 'webrtc', available: input.webrtcReachable === true, attemptable: true });
+      modes.push({ value: 'webrtc', available: false, attemptable: true });
     }
     modes.push({ value: 's3', available: input.s3Available, attemptable: input.s3Available });
   }
@@ -61,7 +62,7 @@ export function resolveSendModeAutoPreferHttp(
 ): WebSendMode {
   if (modes.length === 0) return fallback;
 
-  const order: WebSendMode[] = ['lan', 'webrtc', 's3'];
+  const order: WebSendMode[] = ['lan', 's3'];
   for (const value of order) {
     const entry = modes.find((m) => m.value === value);
     if (entry?.available) return value;

@@ -18,6 +18,7 @@ import java.util.Map;
 /**
  * WuKongIM webhook. Presence stays REST-authoritative; online events only
  * touch a device when the payload includes deviceId.
+ * {@code msg.before_send} is denied unless from_uid is the system account.
  */
 @RestController
 @RequestMapping("/api/wukongim")
@@ -30,8 +31,11 @@ public class WukongimWebhookController {
     @Value("${wukongim.webhook-secret:}")
     private String webhookSecret;
 
-    @PostMapping("/webhook")
-    public ResponseEntity<String> webhook(
+    @Value("${wukongim.system-uid:ultrasend}")
+    private String systemUid;
+
+    @PostMapping({"/webhook", "/before-send"})
+    public ResponseEntity<?> webhook(
             @RequestParam(required = false) String event,
             @RequestHeader(value = "X-Webhook-Secret", required = false) String secret,
             @RequestBody(required = false) Object body) {
@@ -39,10 +43,43 @@ public class WukongimWebhookController {
                 && (secret == null || !webhookSecret.equals(secret))) {
             return ResponseEntity.status(401).body("unauthorized");
         }
+        if (isBeforeSend(event, body)) {
+            boolean allow = allowSystemSend(body);
+            log.info("wukongim before_send allow={} event={}", allow, event);
+            return ResponseEntity.ok(Map.of("allow", allow));
+        }
         if ("user.onlinestatus".equals(event)) {
             applyOnlineStatus(body);
         }
         return ResponseEntity.ok("OK");
+    }
+
+    static boolean isBeforeSend(String event, Object body) {
+        if (event != null) {
+            String e = event.trim().toLowerCase();
+            if (e.contains("before_send") || e.contains("beforesend") || "msg.before_send".equals(e)) {
+                return true;
+            }
+        }
+        if (body instanceof Map<?, ?> map) {
+            return first(map, "from_uid", "fromUid", "channel_id", "channelId") != null
+                    && first(map, "payload") != null;
+        }
+        return false;
+    }
+
+    boolean allowSystemSend(Object body) {
+        if (!(body instanceof Map<?, ?> map)) {
+            return false;
+        }
+        Object nested = map.get("message");
+        Map<?, ?> src = nested instanceof Map<?, ?> m ? m : map;
+        Object from = first(src, "from_uid", "fromUid", "from_uid");
+        if (from == null) {
+            return false;
+        }
+        String expected = systemUid == null || systemUid.isBlank() ? "ultrasend" : systemUid.trim();
+        return expected.equals(from.toString());
     }
 
     private void applyOnlineStatus(Object body) {

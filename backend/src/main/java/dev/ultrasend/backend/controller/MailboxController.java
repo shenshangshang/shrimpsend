@@ -32,9 +32,18 @@ public class MailboxController {
         if (deviceId == null || deviceId.isBlank()) {
             return ResponseEntity.badRequest().build();
         }
-        Long userId = Long.parseLong((String) auth.getPrincipal());
-        List<MailboxPendingItemDto> items = mailboxService.pending(userId, deviceId, afterId);
-        log.debug("mailbox/pending userId={} deviceId={} afterId={} count={}", userId, deviceId, afterId, items.size());
+        List<MailboxPendingItemDto> items;
+        if (AuthRoles.isDevice(auth)) {
+            String authDeviceId = AuthRoles.deviceId(auth);
+            if (authDeviceId == null || !authDeviceId.equals(deviceId.trim())) {
+                return ResponseEntity.status(403).build();
+            }
+            items = mailboxService.pendingForDevice(deviceId.trim(), afterId);
+        } else {
+            Long userId = Long.parseLong((String) auth.getPrincipal());
+            items = mailboxService.pending(userId, deviceId, afterId);
+            log.debug("mailbox/pending userId={} deviceId={} afterId={} count={}", userId, deviceId, afterId, items.size());
+        }
         return ResponseEntity.ok(items);
     }
 }

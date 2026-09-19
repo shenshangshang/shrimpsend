@@ -6,11 +6,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../device_id.dart';
 import '../logger.dart';
-import '../providers/auth_session_provider.dart';
 import '../providers/realtime_hub_provider.dart';
-import '../services/auth_session_controller.dart';
 
-/// Keeps [RealtimeHub] running for the whole logged-in session.
+/// Keeps [RealtimeHub] running whenever the app has a chance of reaching the
+/// network. Login is not required; IM identity is the local device.
 class RealtimeHubLifecycle extends ConsumerStatefulWidget {
   const RealtimeHubLifecycle({super.key, required this.child});
 
@@ -30,8 +29,11 @@ class _RealtimeHubLifecycleState extends ConsumerState<RealtimeHubLifecycle>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _connectivitySub = Connectivity().onConnectivityChanged.listen((_) {
-      unawaited(ref.read(realtimeHubProvider).onConnectivityChanged());
+    _connectivitySub = Connectivity().onConnectivityChanged.listen((results) {
+      unawaited(_onConnectivity(results));
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_ensureStarted());
     });
   }
 
@@ -49,41 +51,35 @@ class _RealtimeHubLifecycleState extends ConsumerState<RealtimeHubLifecycle>
     }
   }
 
-  Future<void> _syncSession(AuthSessionPhase phase) async {
-    final hub = ref.read(realtimeHubProvider);
-    if (phase == AuthSessionPhase.authenticated) {
-      if (_started) {
-        unawaited(hub.onAppResumed());
-        return;
-      }
-      _started = true;
-      try {
-        final deviceId = await getOrCreateDeviceId();
-        final name = await getDeviceName();
-        await hub.start(deviceId: deviceId, deviceName: name);
-      } catch (e) {
-        logRealtime.warning('realtime hub lifecycle start failed: $e');
-        _started = false;
-      }
+  Future<void> _onConnectivity(List<ConnectivityResult> results) async {
+    final offline = results.isEmpty ||
+        results.every((r) => r == ConnectivityResult.none);
+    if (offline) {
       return;
     }
+    await _ensureStarted();
+    await ref.read(realtimeHubProvider).onConnectivityChanged();
+  }
+
+  Future<void> _ensureStarted() async {
+    final hub = ref.read(realtimeHubProvider);
     if (_started) {
+      unawaited(hub.onAppResumed());
+      return;
+    }
+    _started = true;
+    try {
+      final deviceId = await getOrCreateDeviceId();
+      final name = await getDeviceName();
+      await hub.start(deviceId: deviceId, deviceName: name);
+    } catch (e) {
+      logRealtime.warning('realtime hub lifecycle start failed: $e');
       _started = false;
-      await hub.stop();
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<AuthSessionPhase>(authSessionPhaseProvider, (prev, next) {
-      unawaited(_syncSession(next));
-    });
-    final phase = ref.watch(authSessionPhaseProvider);
-    if (!_started && phase == AuthSessionPhase.authenticated) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) unawaited(_syncSession(phase));
-      });
-    }
     return widget.child;
   }
 }

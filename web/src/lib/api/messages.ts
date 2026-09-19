@@ -1,5 +1,5 @@
 import { logger } from '../logger';
-import { getApiUrl, TAG, AuthError, getToken, isAuthFailure, withAuthRetry } from './client';
+import { getApiUrl, TAG, AuthError, getToken, getDeviceAccessToken, isAuthFailure, withAuthRetry } from './client';
 
 export type MessageEnvelope = {
   type: 'text' | 'file' | 'control' | 'lan_file_offer' | 'lan_pull_probe' | 'lan_pull_probe_result'
@@ -84,19 +84,47 @@ export async function deleteThreadMessages(threadKey: string): Promise<void> {
 
 export async function sendMessage(data: MessageEnvelope): Promise<void> {
   logger.info(TAG, 'sendMessage type=', data.type, 'fromDeviceId=', data.fromDeviceId);
-  return withAuthRetry(async () => {
-    const token = getToken();
-    if (!token) throw new Error('Not authenticated');
-    const res = await fetch(`${getApiUrl()}/api/messages/send`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ data }),
+  const userToken = getToken();
+  if (userToken) {
+    return withAuthRetry(async () => {
+      const token = getToken();
+      if (!token) throw new Error('Not authenticated');
+      const res = await fetch(`${getApiUrl()}/api/messages/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ data }),
+      });
+      if (isAuthFailure(res)) throw new AuthError();
+      if (!res.ok) {
+        logger.warn(TAG, 'sendMessage failed', res.status);
+        throw new Error('Failed to send message');
+      }
+      logger.debug(TAG, 'sendMessage ok');
     });
-    if (isAuthFailure(res)) throw new AuthError();
-    if (!res.ok) {
-      logger.warn(TAG, 'sendMessage failed', res.status);
-      throw new Error('Failed to send message');
-    }
-    logger.debug(TAG, 'sendMessage ok');
+  }
+  const deviceToken = getDeviceAccessToken();
+  if (!deviceToken) throw new Error('Not authenticated');
+  const res = await fetch(`${getApiUrl()}/api/messages/device-send`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${deviceToken}` },
+    body: JSON.stringify({ data }),
   });
+  if (!res.ok) {
+    logger.warn(TAG, 'sendMessage device-send failed', res.status);
+    throw new Error('Failed to send message');
+  }
+  logger.debug(TAG, 'sendMessage device-send ok');
+}
+
+export async function pairDevice(peerDeviceId: string): Promise<void> {
+  const deviceToken = getDeviceAccessToken();
+  if (!peerDeviceId || !deviceToken) return;
+  const res = await fetch(`${getApiUrl()}/api/devices/pair`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${deviceToken}` },
+    body: JSON.stringify({ peerDeviceId }),
+  });
+  if (!res.ok) {
+    logger.warn(TAG, 'pairDevice failed', res.status);
+  }
 }

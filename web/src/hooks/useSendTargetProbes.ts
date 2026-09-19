@@ -102,13 +102,12 @@ function mergeReachOnListChange(
   return next;
 }
 
-/** Probe all methods; skips signaling/WebRTC when direct HTTP succeeds. */
+/** Probe HTTP direct + LAN signaling. WebRTC transfer is not pre-probed. */
 async function probeDeviceAllMethods(
   device: DeviceDto,
   nearbyIds: Set<string>,
   onDirectHttpProbe: (url: string) => Promise<boolean>,
   onLanHttpProbe: (deviceId: string) => Promise<{ success: boolean; lanHttpUrl?: string; senderReachable?: boolean }>,
-  onWebRTCProbe: (deviceId: string) => Promise<boolean>,
   { forceFull = false }: { forceFull?: boolean } = {},
 ): Promise<{ methods: DeviceReachDetail; freshLanUrl?: string }> {
   if (!forceFull && shouldSkipAutoProbe(device, nearbyIds)) {
@@ -137,7 +136,6 @@ async function probeDeviceAllMethods(
   }
 
   const results = await Promise.allSettled([
-    Promise.resolve({ ok: false, url: undefined as string | undefined }),
     (async () => {
       const result = await onLanHttpProbe(device.deviceId);
       return {
@@ -146,13 +144,11 @@ async function probeDeviceAllMethods(
         url: result.lanHttpUrl,
       };
     })(),
-    onWebRTCProbe(device.deviceId),
   ]);
 
-  const lanResult = results[1].status === 'fulfilled'
-    ? results[1].value
+  const lanResult = results[0].status === 'fulfilled'
+    ? results[0].value
     : { peerOk: false, pullOk: false, url: undefined as string | undefined };
-  const webrtcOk = results[2].status === 'fulfilled' ? results[2].value : false;
 
   const freshLanUrl = lanResult.url;
   const peerHttpHealthy = lanResult.peerOk;
@@ -163,7 +159,7 @@ async function probeDeviceAllMethods(
       directHttp: false,
       peerHttpHealthy,
       pullReachable,
-      webrtc: webrtcOk,
+      webrtc: null,
       lanSignaling: peerHttpHealthy,
     },
     freshLanUrl,
@@ -176,7 +172,6 @@ export function useSendTargetProbes(
   connected: boolean,
   probeToken: number,
   probeForceAll: boolean,
-  onWebRTCProbe: (targetDeviceId: string) => Promise<boolean>,
   onLanHttpProbe: (
     targetDeviceId: string,
   ) => Promise<{ success: boolean; lanHttpUrl?: string; senderReachable?: boolean }>,
@@ -302,7 +297,6 @@ export function useSendTargetProbes(
           nearbyIdsRef.current,
           onDirectHttpProbe,
           onLanHttpProbe,
-          onWebRTCProbe,
           { forceFull },
         );
         applyResult(d.deviceId, methods, freshLanUrl);
@@ -326,7 +320,7 @@ export function useSendTargetProbes(
     })();
 
     return () => { cancelledRef.current = true; };
-  }, [probeToken, probeForceAll, connected, onWebRTCProbe, onLanHttpProbe, onDirectHttpProbe]);
+  }, [probeToken, probeForceAll, connected, onLanHttpProbe, onDirectHttpProbe]);
 
   const probeSingleDevice = useCallback((deviceId: string) => {
     if (!connected) return;
@@ -343,7 +337,6 @@ export function useSendTargetProbes(
         nearbyIdsRef.current,
         onDirectHttpProbe,
         onLanHttpProbe,
-        onWebRTCProbe,
         { forceFull: true },
       );
       if (freshLanUrl) {
@@ -354,7 +347,7 @@ export function useSendTargetProbes(
         [deviceId]: toResolvedEntry(methods),
       }));
     })();
-  }, [connected, onDirectHttpProbe, onLanHttpProbe, onWebRTCProbe]);
+  }, [connected, onDirectHttpProbe, onLanHttpProbe]);
 
   const applyDeviceReach = useCallback(
     (deviceId: string, entry: DeviceReachEntry, freshLanUrl?: string) => {

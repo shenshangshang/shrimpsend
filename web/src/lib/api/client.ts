@@ -25,6 +25,7 @@ const KEY_ACCESS_TOKEN = 'accessToken';
 const KEY_REFRESH_TOKEN = 'refreshToken';
 const KEY_USER_ID = 'userId';
 const KEY_ACCESS_TOKEN_EXPIRES_AT = 'accessTokenExpiresAt';
+const KEY_DEVICE_ACCESS_TOKEN = 'ultrasend_device_access_token';
 
 export class AuthError extends Error {
   constructor() {
@@ -54,6 +55,24 @@ export function getAccessToken(): string | null {
 export function getUserId(): string | null {
   if (typeof window === 'undefined') return null;
   return localStorage.getItem(KEY_USER_ID);
+}
+
+export function getDeviceAccessToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem(KEY_DEVICE_ACCESS_TOKEN);
+}
+
+export function setDeviceAccessToken(token: string | null): void {
+  if (typeof window === 'undefined') return;
+  if (!token) {
+    localStorage.removeItem(KEY_DEVICE_ACCESS_TOKEN);
+    return;
+  }
+  localStorage.setItem(KEY_DEVICE_ACCESS_TOKEN, token);
+}
+
+export function realtimeAuthToken(): string | null {
+  return getToken() ?? getDeviceAccessToken();
 }
 
 export function getRefreshToken(): string | null {

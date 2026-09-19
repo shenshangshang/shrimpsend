@@ -46,6 +46,17 @@ void main() {
       );
     });
 
+    test('does not auto-select webrtc even when marked available', () {
+      expect(
+        resolveSendModeAutoPreferHttp(
+          candidates: candidates(webrtc: true, s3: true),
+          isLoggedIn: true,
+          isRegisteredPeer: true,
+        ),
+        SendMode.s3,
+      );
+    });
+
     test('falls back to s3 when only s3 available', () {
       expect(
         resolveSendModeAutoPreferHttp(

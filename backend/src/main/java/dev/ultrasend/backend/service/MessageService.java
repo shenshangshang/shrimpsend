@@ -4,13 +4,17 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import dev.ultrasend.backend.chat.ThreadKeyUtil;
 import dev.ultrasend.backend.realtime.RealtimePublisher;
+import dev.ultrasend.backend.entity.Device;
 import dev.ultrasend.backend.entity.Message;
 import dev.ultrasend.backend.realtime.RealtimeEnvelopeTypes;
+import dev.ultrasend.backend.repository.DeviceRepository;
 import dev.ultrasend.backend.repository.MessageRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -32,6 +36,8 @@ public class MessageService {
     private final ObjectMapper objectMapper;
     private final MessageCryptoService messageCryptoService;
     private final UserDataEncryptionService userDataEncryption;
+    private final DevicePairingService devicePairingService;
+    private final DeviceRepository deviceRepository;
 
     @Transactional
     public void send(String userId, Object data) {
@@ -71,6 +77,48 @@ public class MessageService {
             log.debug("ephemeral message (type={}) mailbox + broadcast", type);
         }
         realtimePublisher.publishToUserBestEffort(userId, data);
+    }
+
+    /**
+     * Guest / device-authenticated signaling. Never persists chat; only paired
+     * (or same-account) peers may be addressed. Clients cannot broadcast.
+     */
+    @Transactional
+    public void sendFromDevice(String fromDeviceId, Object data) {
+        if (!(data instanceof Map<?, ?> rawMap)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid message data");
+        }
+        @SuppressWarnings("unchecked")
+        Map<String, Object> map = new LinkedHashMap<>((Map<String, Object>) rawMap);
+        Object typeObj = map.get("type");
+        String type = typeObj != null ? typeObj.toString() : null;
+        if (!RealtimeEnvelopeTypes.isEphemeral(type)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "device send only allows signaling envelopes");
+        }
+        String toDeviceId = map.get("toDeviceId") != null ? map.get("toDeviceId").toString() : null;
+        if (toDeviceId == null || toDeviceId.isBlank()) {
+            Object payload = map.get("payload");
+            if (payload instanceof Map<?, ?> p) {
+                Object target = p.get("targetDeviceId");
+                if (target != null) {
+                    toDeviceId = target.toString();
+                    map.put("toDeviceId", toDeviceId);
+                    data = map;
+                }
+            }
+        }
+        if (toDeviceId == null || toDeviceId.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "toDeviceId required");
+        }
+        if (!devicePairingService.canSignal(fromDeviceId, toDeviceId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "devices are not paired");
+        }
+        map.put("fromDeviceId", fromDeviceId);
+        Device boundTo = deviceRepository.findByDeviceId(toDeviceId).orElse(null);
+        Long mailboxUserId = (boundTo != null && boundTo.getUser() != null) ? boundTo.getUser().getId() : null;
+        mailboxService.storeIfEphemeral(mailboxUserId, map);
+        realtimePublisher.publishToDeviceBestEffort(toDeviceId, map);
+        log.debug("device send type={} from={} to={}", type, fromDeviceId, toDeviceId);
     }
 
     /** Ensures persisted envelopes carry a canonical {@code threadKey}. */

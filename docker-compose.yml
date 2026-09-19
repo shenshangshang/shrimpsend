@@ -36,6 +36,9 @@ services:
       - WK_MANAGERTOKEN=${WUKONGIM_MANAGER_TOKEN:-dev-wukongim-manager-token}
       - WK_EXTERNAL_IP=${WUKONGIM_EXTERNAL_IP:-127.0.0.1}
       - WK_WEBHOOK_HTTPADDR=${WUKONGIM_WEBHOOK_HTTPADDR:-http://backend:9000/api/wukongim/webhook}
+      - WK_WEBHOOK_BEFORESENDON=true
+      - WK_WEBHOOK_BEFORESEND_HTTPADDR=${WUKONGIM_BEFORE_SEND_URL:-http://backend:9000/api/wukongim/before-send}
+      - WK_WEBHOOK_BEFORESEND_ONTIMEOUT=deny
     healthcheck:
       test:
         [

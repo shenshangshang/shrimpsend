@@ -141,6 +141,7 @@ RefreshSessionOutcome outcomeFromRefreshFailure(RefreshSessionFailureKind kind) 
 String get apiBaseUrl => Env.apiUrl;
 
 String? _accessToken;
+String? _deviceAccessToken;
 
 Future<R> Function<R>(Future<R> Function())? _authRetryHandler;
 
@@ -161,9 +162,28 @@ class AuthException implements Exception {
   String toString() => message;
 }
 
+void setDeviceAccessToken(String? token) {
+  _deviceAccessToken = token;
+}
+
 Map<String, String> get apiHeaders => {
   'Content-Type': 'application/json',
   if (_accessToken != null) 'Authorization': 'Bearer $_accessToken',
+};
+
+/// User JWT if logged in, otherwise the device-session JWT for guest IM.
+Map<String, String> get realtimeApiHeaders => {
+  'Content-Type': 'application/json',
+  if (_accessToken != null)
+    'Authorization': 'Bearer $_accessToken'
+  else if (_deviceAccessToken != null)
+    'Authorization': 'Bearer $_deviceAccessToken',
+};
+
+Map<String, String> get deviceApiHeaders => {
+  'Content-Type': 'application/json',
+  if (_deviceAccessToken != null)
+    'Authorization': 'Bearer $_deviceAccessToken',
 };
 
 /// 仅 Content-Type，**不要**带 [apiHeaders] 里的 Bearer。
@@ -173,6 +193,8 @@ const Map<String, String> jsonHeadersOnly = {
 };
 
 bool get hasAccessToken => _accessToken != null;
+
+bool get hasDeviceAccessToken => _deviceAccessToken != null;
 
 /// 从失败响应体解析 Spring 返回的 `{"error":"..."}`，供未走 [checkAuthResponse] 的接口使用（如扫码轮询 GET）。
 String errorMessageFromResponse(http.Response r, String fallback) {

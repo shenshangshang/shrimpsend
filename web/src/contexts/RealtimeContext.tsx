@@ -10,7 +10,6 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
 import { useWukongim, type WukongimLifecycle } from '@/hooks/useWukongim';
 import { getMailboxPending, type MessageEnvelope } from '@/lib/api';
 import { getOrCreateDeviceId, getOrCreatePresenceSessionId } from '@/lib/deviceId';
@@ -29,7 +28,6 @@ type RealtimeContextValue = {
 const RealtimeContext = createContext<RealtimeContextValue | null>(null);
 
 export function RealtimeProvider({ children }: { children: ReactNode }) {
-  const { userId, accessToken } = useAuth();
   const handlersRef = useRef(new Set<Handler>());
   const recentRef = useRef<MessageEnvelope[]>([]);
   const afterIdRef = useRef(0);
@@ -62,7 +60,6 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const pollMailbox = useCallback(async () => {
-    if (!userId || !accessToken) return;
     try {
       const items = await getMailboxPending(getOrCreateDeviceId(), afterIdRef.current);
       for (const item of items) {
@@ -74,7 +71,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
     } catch (e) {
       logger.warn(TAG, 'mailbox poll failed', e);
     }
-  }, [userId, accessToken, dispatch]);
+  }, [dispatch]);
 
   const lifecycle = useMemo<WukongimLifecycle>(
     () => ({
@@ -86,14 +83,13 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
   );
 
   const { connected } = useWukongim(
-    Boolean(userId && accessToken),
+    true,
     dispatch,
     lifecycle,
     { deviceId: getOrCreateDeviceId() },
   );
 
   useEffect(() => {
-    if (!userId || !accessToken) return;
     void pollMailbox();
     if (connected) return;
     pollTimerRef.current = setInterval(() => {
@@ -105,7 +101,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
         pollTimerRef.current = null;
       }
     };
-  }, [userId, accessToken, connected, pollMailbox]);
+  }, [connected, pollMailbox]);
 
   const value = useMemo<RealtimeContextValue>(
     () => ({ connected, subscribe, presenceSessionId }),

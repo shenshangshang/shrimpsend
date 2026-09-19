@@ -395,6 +395,7 @@
       "reasonHttpPullFail": "Reverse pull failed — peer cannot reach this device's HTTP",
       "reasonWebrtcOnline": "Same network — WebRTC can connect directly",
       "reasonWebrtcFail": "WebRTC signaling or ICE unreachable",
+      "reasonWebrtcSkippedLanOk": "WebRTC is not pre-probed; you can still try it when sending",
       "reasonHttpDirectNoUrl": "No LAN address found — cannot test HTTP direct",
       "reasonOfflineCloud": "Offline — cannot run cloud signaling probes",
       "reasonS3LoginRequired": "Sign in required to test S3",

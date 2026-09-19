@@ -5,7 +5,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { useAuth } from '@/contexts/AuthContext';
 import { useI18n } from '@/contexts/I18nContext';
 import { useRealtime } from '@/contexts/RealtimeContext';
-import { sendMessage, getMessageHistory, listDevices, hasS3Config, registerDevice, updateDevicePresence, deleteMessage, updateDevice } from '@/lib/api';
+import { sendMessage, pairDevice, getMessageHistory, listDevices, hasS3Config, registerDevice, updateDevicePresence, deleteMessage, updateDevice } from '@/lib/api';
 import { S3TransferService } from '@/lib/services/s3Transfer';
 import type { CloudTransferService } from '@/lib/services/cloudTransfer';
 import { transferStateManager } from '@/lib/services/transferStateManager';
@@ -203,7 +203,6 @@ export function Chat({
   const webrtcManagerRef = useRef<WebRTCManager | null>(null);
   const webrtcFileLocalIdMap = useRef<Map<string, string>>(new Map());
   const webrtcFileSizeMap = useRef<Map<string, number>>(new Map());
-  const pendingWebRTCProbesRef = useRef<Map<string, (success: boolean) => void>>(new Map());
   const pendingLanHttpProbesRef = useRef<Map<string, (result: { success: boolean; lanHttpUrl?: string; senderReachable?: boolean }) => void>>(new Map());
 
   type RetryInfo = { file: File; channel: 'lan' | 's3' | 'webrtc'; targetDevices: DeviceDto[]; webrtcTargetDeviceId?: string };
@@ -421,7 +420,7 @@ export function Chat({
     }
   }, [updateMessageByLocalId, t]);
 
-  const handlePullProbe = useCallback(async (probeUrl: string, probeId: string) => {
+  const handlePullProbe = useCallback(async (probeUrl: string, probeId: string, fromDeviceId: string) => {
     const success = await probeHttpWeb(probeUrl, 3000);
     logger.info(TAG, 'handlePullProbe probeId=', probeId, 'success=', success);
     try {
@@ -429,40 +428,12 @@ export function Chat({
         type: 'lan_pull_probe_result',
         payload: { probeId, success },
         fromDeviceId: getOrCreateDeviceId(),
+        toDeviceId: fromDeviceId,
         ts: Date.now(),
       });
     } catch (e) {
       logger.warn(TAG, 'handlePullProbe sendResult failed', e);
     }
-  }, []);
-
-  const sendWebRTCProbe = useCallback(async (targetDeviceId: string): Promise<boolean> => {
-    const probeId = generateUUID();
-    logger.info(TAG, 'sendWebRTCProbe probeId=', probeId, 'target=', targetDeviceId);
-    return new Promise<boolean>((resolve) => {
-      const timer = setTimeout(() => {
-        logger.warn(TAG, 'sendWebRTCProbe timeout probeId=', probeId);
-        pendingWebRTCProbesRef.current.delete(probeId);
-        resolve(false);
-      }, 8000);
-      pendingWebRTCProbesRef.current.set(probeId, (success) => {
-        logger.info(TAG, 'sendWebRTCProbe resolved probeId=', probeId, 'success=', success);
-        clearTimeout(timer);
-        pendingWebRTCProbesRef.current.delete(probeId);
-        resolve(success);
-      });
-      sendMessage({
-        type: 'webrtc_probe',
-        payload: { probeId, targetDeviceId },
-        fromDeviceId: getOrCreateDeviceId(),
-        ts: Date.now(),
-      }).catch((e) => {
-        logger.warn(TAG, 'sendWebRTCProbe sendMessage failed:', e);
-        clearTimeout(timer);
-        pendingWebRTCProbesRef.current.delete(probeId);
-        resolve(false);
-      });
-    });
   }, []);
 
   const sendLanHttpProbe = useCallback(async (targetDeviceId: string): Promise<{ success: boolean; lanHttpUrl?: string; senderReachable?: boolean }> => {
@@ -485,6 +456,7 @@ export function Chat({
         type: 'lan_http_probe',
         payload: { probeId, targetDeviceId, senderLanHttpUrl: selfLanUrl },
         fromDeviceId: myId,
+        toDeviceId: targetDeviceId,
         ts: Date.now(),
       }).catch((e) => {
         logger.warn(TAG, 'sendLanHttpProbe sendMessage failed:', e);
@@ -584,7 +556,7 @@ export function Chat({
         const payload = data.payload as { probeUrl?: string; probeId?: string; targetDeviceId?: string };
         const me = getOrCreateDeviceId();
         if (payload.targetDeviceId === me && payload.probeUrl && payload.probeId) {
-          handlePullProbe(payload.probeUrl, payload.probeId);
+          handlePullProbe(payload.probeUrl, payload.probeId, data.fromDeviceId);
         }
         return;
       }
@@ -602,6 +574,7 @@ export function Chat({
               type: 'lan_http_probe_result',
               payload: { probeId: payload.probeId, success: true, lanHttpUrl: null, senderReachable },
               fromDeviceId: me,
+              toDeviceId: data.fromDeviceId,
               ts: Date.now(),
             }).catch(e => logger.warn(TAG, 'lan_http_probe reply failed:', e));
           })();
@@ -629,22 +602,14 @@ export function Chat({
             type: 'webrtc_probe_result',
             payload: { probeId: payload.probeId, success: true, connectivity: 'online' },
             fromDeviceId: me,
+            toDeviceId: data.fromDeviceId,
             ts: Date.now(),
           }).then(() => logger.info(TAG, 'webrtc_probe reply sent probeId=', payload.probeId))
             .catch(e => logger.warn(TAG, 'webrtc_probe reply failed:', e));
         }
         return;
       }
-      if (data.type === 'webrtc_probe_result') {
-        const payload = data.payload as { probeId?: string; success?: boolean };
-        const hasPending = payload?.probeId ? pendingWebRTCProbesRef.current.has(payload.probeId) : false;
-        logger.info(TAG, 'webrtc_probe_result received probeId=', payload?.probeId, 'success=', payload?.success, 'hasPending=', hasPending);
-        if (payload?.probeId) {
-          const resolve = pendingWebRTCProbesRef.current.get(payload.probeId);
-          if (resolve) resolve(payload.success === true);
-        }
-        return;
-      }
+      if (data.type === 'webrtc_probe_result') return;
       const rawPayload = data.payload && typeof data.payload === 'object' ? (data.payload as { localId?: unknown }) : null;
       const incomingLocalId = rawPayload ? normalizeMessageLocalId(rawPayload.localId) : undefined;
       if (incomingLocalId) {
@@ -706,7 +671,6 @@ export function Chat({
     connected,
     targetProbeToken,
     probeForceAll,
-    sendWebRTCProbe,
     sendLanHttpProbe,
     async () => false,
   );
@@ -1346,6 +1310,7 @@ export function Chat({
             logger.warn(TAG, 'updateDevice lanHttpUrl failed:', d.deviceId, e);
           }
         }
+        void pairDevice(d.deviceId);
         return { ...d, lanHttpUrl: resolvedUrl } as DeviceDto;
       }),
     );

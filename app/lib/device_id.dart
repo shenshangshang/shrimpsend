@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -12,6 +13,7 @@ import 'utils/runtime_platform.dart';
 
 const _keyDeviceId = 'ultrasend_device_id';
 const _keyDeviceName = 'ultrasend_device_name';
+const _keyDeviceSecret = 'ultrasend_device_secret';
 
 String get _platformPrefix {
   if (kIsWeb) return 'web';
@@ -111,6 +113,17 @@ bool _isLegacyDeviceId(String id) {
 
 bool _isLegacyDeviceName(String name) {
   return name == 'Flutter';
+}
+
+Future<String> getOrCreateDeviceSecret() async {
+  final prefs = await SharedPreferences.getInstance();
+  var secret = prefs.getString(_keyDeviceSecret);
+  if (secret == null || secret.length < 16) {
+    final bytes = List<int>.generate(32, (_) => Random.secure().nextInt(256));
+    secret = base64UrlEncode(bytes);
+    await prefs.setString(_keyDeviceSecret, secret);
+  }
+  return secret;
 }
 
 Future<String> getOrCreateDeviceId() async {

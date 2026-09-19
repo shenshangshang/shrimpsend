@@ -1,10 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getAccessToken, getUserId, tryRefreshAndSave, maybeRefreshOnVisible } from '@/lib/api';
 import { getRealtimeToken } from '@/lib/api';
 import type { MessageEnvelope } from '@/lib/api';
-import { useAuth } from '@/contexts/AuthContext';
 import { logger } from '@/lib/logger';
 import { getApiUrl } from '@/lib/config';
 import { unwrapWukongimPayload, rewriteLoopbackRealtimeWs } from '@/lib/wukongim';
@@ -22,8 +20,8 @@ export function useWukongim(
   lifecycle?: WukongimLifecycle,
   connectMeta?: { deviceId: string },
 ) {
-  const { accessToken } = useAuth();
   const [connected, setConnected] = useState(false);
+  const [reconnectTick, setReconnectTick] = useState(0);
   const wsRef = useRef<WebSocket | null>(null);
   const onMessageRef = useRef(onMessage);
   const lifecycleRef = useRef(lifecycle);
@@ -55,13 +53,6 @@ export function useWukongim(
     mountedRef.current = true;
     if (!enabled) return () => {};
 
-    const appToken = accessToken ?? getAccessToken();
-    const userId = getUserId();
-    if (!appToken || !userId) {
-      logger.warn(TAG, 'connect skipped: no token or userId');
-      return () => {};
-    }
-
     let cancelled = false;
     const prev = wsRef.current;
     if (prev) {
@@ -76,6 +67,11 @@ export function useWukongim(
         tokens = await getRealtimeToken(connectMeta?.deviceId ?? 'web', 'web');
       } catch (e) {
         logger.warn(TAG, 'getRealtimeToken failed, cannot connect:', e);
+        if (!cancelled && mountedRef.current) {
+          reconnectTimerRef.current = setTimeout(() => {
+            if (mountedRef.current) setReconnectTick((n) => n + 1);
+          }, 3000);
+        }
         return;
       }
       if (cancelled || !mountedRef.current) return;
@@ -137,12 +133,12 @@ export function useWukongim(
       };
       ws.onclose = () => {
         logger.info(TAG, 'disconnected');
+        if (cancelled) return;
         if (mountedRef.current) setConnected(false);
         lifecycleRef.current?.onDisconnected?.();
         clearTimers();
         reconnectTimerRef.current = setTimeout(() => {
-          if (!mountedRef.current) return;
-          tryRefreshAndSave().catch(() => undefined);
+          if (mountedRef.current) setReconnectTick((n) => n + 1);
         }, 3000);
       };
       ws.onerror = () => logger.warn(TAG, 'ws error');
@@ -155,7 +151,7 @@ export function useWukongim(
       const ws = wsRef.current;
       if (ws && ws.readyState === WebSocket.OPEN) return;
       logger.info(TAG, 'tab visible, reconnecting');
-      void maybeRefreshOnVisible();
+      setReconnectTick((n) => n + 1);
     }
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
@@ -169,7 +165,7 @@ export function useWukongim(
       wsRef.current = null;
       setConnected(false);
     };
-  }, [enabled, accessToken, clearTimers, connectMeta?.deviceId]);
+  }, [enabled, clearTimers, connectMeta?.deviceId, reconnectTick]);
 
   return { connected };
 }

@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRealtime } from '@/contexts/RealtimeContext';
 import { useSendTargetProbes, isReachOnline, type ReachStatus, type DeviceReachEntry, type DeviceReachDetail } from '@/hooks/useSendTargetProbes';
-import { listDevices, registerDevice, updateDevicePresence, sendMessage, getMessageHistory, deleteMessage, deleteThreadMessages, hasS3Config, checkS3Online, updateDevice } from '@/lib/api';
+import { listDevices, registerDevice, updateDevicePresence, sendMessage, pairDevice, getMessageHistory, deleteMessage, deleteThreadMessages, hasS3Config, checkS3Online, updateDevice } from '@/lib/api';
 import type { DeviceDto, MessageEnvelope, ChatMessage } from '@/lib/api';
 import { getOrCreateDeviceId, getDeviceName, getOrCreatePresenceSessionId, generateUUID } from '@/lib/deviceId';
 import { logger } from '@/lib/logger';
@@ -210,7 +210,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const webrtcManagerRef = useRef<WebRTCManager | null>(null);
   const webrtcFileLocalIdMap = useRef<Map<string, string>>(new Map());
   const webrtcFileSizeMap = useRef<Map<string, number>>(new Map());
-  const pendingWebRTCProbesRef = useRef<Map<string, (success: boolean) => void>>(new Map());
   const pendingLanHttpProbesRef = useRef<Map<string, (result: { success: boolean; lanHttpUrl?: string; senderReachable?: boolean }) => void>>(new Map());
   const pendingPullProbesRef = useRef<Map<string, (success: boolean) => void>>(new Map());
   const diagnosticSessionRef = useRef(0);
@@ -515,34 +514,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }
   }, [updateMessageByLocalId, t]);
 
-  const handlePullProbe = useCallback(async (probeUrl: string, probeId: string) => {
+  const handlePullProbe = useCallback(async (probeUrl: string, probeId: string, fromDeviceId: string) => {
     const success = await probeHttpWeb(probeUrl, 3000);
     logger.info(TAG, 'handlePullProbe probeId=', probeId, 'success=', success);
     try {
-      await sendMessage({ type: 'lan_pull_probe_result', payload: { probeId, success }, fromDeviceId: getOrCreateDeviceId(), ts: Date.now() });
+      await sendMessage({ type: 'lan_pull_probe_result', payload: { probeId, success }, fromDeviceId: getOrCreateDeviceId(), toDeviceId: fromDeviceId, ts: Date.now() });
     } catch (e) {
       logger.warn(TAG, 'handlePullProbe sendResult failed', e);
     }
-  }, []);
-
-  const sendWebRTCProbe = useCallback(async (targetDeviceId: string): Promise<boolean> => {
-    const probeId = generateUUID();
-    return new Promise<boolean>((resolve) => {
-      const timer = setTimeout(() => {
-        pendingWebRTCProbesRef.current.delete(probeId);
-        resolve(false);
-      }, 8000);
-      pendingWebRTCProbesRef.current.set(probeId, (success) => {
-        clearTimeout(timer);
-        pendingWebRTCProbesRef.current.delete(probeId);
-        resolve(success);
-      });
-      sendMessage({ type: 'webrtc_probe', payload: { probeId, targetDeviceId }, fromDeviceId: getOrCreateDeviceId(), ts: Date.now() }).catch((e) => {
-        clearTimeout(timer);
-        pendingWebRTCProbesRef.current.delete(probeId);
-        resolve(false);
-      });
-    });
   }, []);
 
   const sendLanHttpProbe = useCallback(async (targetDeviceId: string): Promise<{ success: boolean; lanHttpUrl?: string; senderReachable?: boolean }> => {
@@ -559,7 +538,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         pendingLanHttpProbesRef.current.delete(probeId);
         resolve(result);
       });
-      sendMessage({ type: 'lan_http_probe', payload: { probeId, targetDeviceId, senderLanHttpUrl: selfLanUrl }, fromDeviceId: myId, ts: Date.now() }).catch((e) => {
+      sendMessage({ type: 'lan_http_probe', payload: { probeId, targetDeviceId, senderLanHttpUrl: selfLanUrl }, fromDeviceId: myId, toDeviceId: targetDeviceId, ts: Date.now() }).catch((e) => {
         clearTimeout(timer);
         pendingLanHttpProbesRef.current.delete(probeId);
         resolve({ success: false });
@@ -586,6 +565,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         type: 'lan_pull_probe',
         payload: { probeId, probeUrl: selfLanUrl, targetDeviceId },
         fromDeviceId: myId,
+        toDeviceId: targetDeviceId,
         ts: Date.now(),
       }).catch(() => {
         clearTimeout(timer);
@@ -682,7 +662,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         const payload = data.payload as { probeUrl?: string; probeId?: string; targetDeviceId?: string };
         const me = getOrCreateDeviceId();
         if (payload.targetDeviceId === me && payload.probeUrl && payload.probeId) {
-          handlePullProbe(payload.probeUrl, payload.probeId);
+          handlePullProbe(payload.probeUrl, payload.probeId, data.fromDeviceId);
         }
         return;
       }
@@ -703,7 +683,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             if (payload.senderLanHttpUrl) {
               senderReachable = await probeHttpWeb(payload.senderLanHttpUrl, 3000);
             }
-            sendMessage({ type: 'lan_http_probe_result', payload: { probeId: payload.probeId, success: true, lanHttpUrl: null, senderReachable }, fromDeviceId: me, ts: Date.now() }).catch(e => logger.warn(TAG, 'lan_http_probe reply failed:', e));
+            sendMessage({ type: 'lan_http_probe_result', payload: { probeId: payload.probeId, success: true, lanHttpUrl: null, senderReachable }, fromDeviceId: me, toDeviceId: data.fromDeviceId, ts: Date.now() }).catch(e => logger.warn(TAG, 'lan_http_probe reply failed:', e));
           })();
         }
         return;
@@ -720,16 +700,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         const payload = data.payload as { probeId?: string; targetDeviceId?: string };
         const me = getOrCreateDeviceId();
         if (payload.targetDeviceId === me && payload.probeId) {
-          sendMessage({ type: 'webrtc_probe_result', payload: { probeId: payload.probeId, success: true, connectivity: 'online' }, fromDeviceId: me, ts: Date.now() }).catch(e => logger.warn(TAG, 'webrtc_probe reply failed:', e));
+          sendMessage({ type: 'webrtc_probe_result', payload: { probeId: payload.probeId, success: true, connectivity: 'online' }, fromDeviceId: me, toDeviceId: data.fromDeviceId, ts: Date.now() }).catch(e => logger.warn(TAG, 'webrtc_probe reply failed:', e));
         }
         return;
       }
       if (data.type === 'webrtc_probe_result') {
-        const payload = data.payload as { probeId?: string; success?: boolean };
-        if (payload?.probeId) {
-          const resolve = pendingWebRTCProbesRef.current.get(payload.probeId);
-          if (resolve) resolve(payload.success === true);
-        }
         return;
       }
       if (data.type === 'text' && data.fromDeviceId !== getOrCreateDeviceId()) {
@@ -878,10 +853,25 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     connected,
     targetProbeToken,
     probeForceAll,
-    sendWebRTCProbe,
     sendLanHttpProbe,
     directHttpProbe,
   );
+
+  const pairedPeersRef = useRef(new Set<string>());
+  const rememberLanPeer = useCallback((deviceId: string) => {
+    if (!deviceId || pairedPeersRef.current.has(deviceId)) return;
+    pairedPeersRef.current.add(deviceId);
+    void pairDevice(deviceId);
+  }, []);
+
+  useEffect(() => {
+    for (const [id, entry] of Object.entries(deviceReach)) {
+      const methods = entry.methods;
+      if (methods.directHttp || methods.peerHttpHealthy || methods.pullReachable || methods.lanSignaling) {
+        rememberLanPeer(id);
+      }
+    }
+  }, [deviceReach, rememberLanPeer]);
 
   // ─── Hydrate from localStorage ────────────────────────────────────────
 
@@ -1185,7 +1175,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           onDirectHttpProbe: directHttpProbe,
           onLanHttpProbe: sendLanHttpProbe,
           onPullProbe: sendPullProbe,
-          onWebRTCProbe: sendWebRTCProbe,
           onCheckS3: async () => {
             const result = await checkS3ForDiagnostic();
             s3Available = result.configured && result.online;
@@ -1255,7 +1244,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     directHttpProbe,
     sendLanHttpProbe,
     sendPullProbe,
-    sendWebRTCProbe,
     checkS3ForDiagnostic,
     checkS3Config,
     applyDeviceReach,
@@ -1606,10 +1594,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       if (resolvedUrl !== d.lanHttpUrl) {
         try { await updateDevice(d.deviceId, { lanHttpUrl: resolvedUrl }); } catch (e) { logger.warn(TAG, 'updateDevice lanHttpUrl failed:', d.deviceId, e); }
       }
+      rememberLanPeer(d.deviceId);
       return { ...d, lanHttpUrl: resolvedUrl } as DeviceDto;
     }));
     return results.filter((d): d is DeviceDto => d !== null);
-  }, [tryResolveLanUrl]);
+  }, [tryResolveLanUrl, rememberLanPeer]);
 
   // ─── File send orchestration ──────────────────────────────────────────
 

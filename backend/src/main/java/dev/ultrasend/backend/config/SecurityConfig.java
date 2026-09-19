@@ -49,6 +49,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/centrifugo/proxy/refresh").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/centrifugo/proxy/disconnect").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/wukongim/webhook").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/wukongim/before-send").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/realtime/device-session").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/app/version", "/api/app/versions", "/api/app/desktop-update.json", "/api/app/public-download").permitAll()
                         .requestMatchers("/api/**").authenticated()
                         .anyRequest().authenticated())

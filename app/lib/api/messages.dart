@@ -101,16 +101,39 @@ Future<void> sendMessage(Map<String, dynamic> data) async {
   final type = data['type'];
   final fromDeviceId = data['fromDeviceId'];
   logApi.info('sendMessage type=$type fromDeviceId=$fromDeviceId');
-  return withAuthRetry(() async {
-    final r = await http.post(
-      Uri.parse('$apiBaseUrl/api/messages/send'),
-      headers: apiHeaders,
-      body: jsonEncode({'data': data}),
-    );
-    checkAuthResponse(r, fallback: '发送失败');
-    if (r.statusCode != 204) {
-      throw Exception(r.body.isNotEmpty ? r.body : '发送失败');
-    }
-    logApi.fine('sendMessage ok');
-  });
+  if (hasAccessToken) {
+    return withAuthRetry(() async {
+      final r = await http.post(
+        Uri.parse('$apiBaseUrl/api/messages/send'),
+        headers: apiHeaders,
+        body: jsonEncode({'data': data}),
+      );
+      checkAuthResponse(r, fallback: '发送失败');
+      if (r.statusCode != 204) {
+        throw Exception(r.body.isNotEmpty ? r.body : '发送失败');
+      }
+      logApi.fine('sendMessage ok');
+    });
+  }
+  final r = await http.post(
+    Uri.parse('$apiBaseUrl/api/messages/device-send'),
+    headers: deviceApiHeaders,
+    body: jsonEncode({'data': data}),
+  );
+  if (r.statusCode != 204) {
+    throw Exception(errorMessageFromResponse(r, '发送失败'));
+  }
+  logApi.fine('sendMessage device-send ok');
+}
+
+Future<void> pairDevice(String peerDeviceId) async {
+  if (peerDeviceId.isEmpty || !hasDeviceAccessToken) return;
+  final r = await http.post(
+    Uri.parse('$apiBaseUrl/api/devices/pair'),
+    headers: deviceApiHeaders,
+    body: jsonEncode({'peerDeviceId': peerDeviceId}),
+  );
+  if (r.statusCode != 204 && r.statusCode != 200) {
+    logApi.warning('pairDevice failed status=${r.statusCode}');
+  }
 }

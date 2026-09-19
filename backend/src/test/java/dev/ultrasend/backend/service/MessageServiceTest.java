@@ -6,6 +6,7 @@ import dev.ultrasend.backend.config.MessageEncryptionProperties;
 import dev.ultrasend.backend.config.UserDataEncryptionProperties;
 import dev.ultrasend.backend.entity.Message;
 import dev.ultrasend.backend.entity.User;
+import dev.ultrasend.backend.repository.DeviceRepository;
 import dev.ultrasend.backend.repository.MessageRepository;
 import dev.ultrasend.backend.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -44,6 +45,10 @@ class MessageServiceTest {
     private MessageCryptoService cryptoService;
     private UserDataEncryptionService userDataEncryption;
     private MessageService messageService;
+    @Mock
+    private DevicePairingService devicePairingService;
+    @Mock
+    private DeviceRepository deviceRepository;
     private ObjectMapper objectMapper;
 
     private static final byte[] USER_KEK = "01234567890123456789012345678901".getBytes(StandardCharsets.UTF_8);
@@ -72,7 +77,9 @@ class MessageServiceTest {
                 mailboxService,
                 objectMapper,
                 cryptoService,
-                userDataEncryption);
+                userDataEncryption,
+                devicePairingService,
+                deviceRepository);
     }
 
     @Test
@@ -230,5 +237,33 @@ class MessageServiceTest {
     @Test
     void deleteMessagesByThreadKeyRequiresNonBlankThreadKey() {
         assertThrows(IllegalArgumentException.class, () -> messageService.deleteMessagesByThreadKey(1L, "  "));
+    }
+
+    @Test
+    void sendFromDeviceRejectsWhenUnpaired() {
+        Map<String, Object> envelope = new java.util.HashMap<>();
+        envelope.put("type", "lan_http_probe");
+        envelope.put("toDeviceId", "peer");
+        envelope.put("payload", Map.of("probeId", "p1"));
+        when(devicePairingService.canSignal("dev-a", "peer")).thenReturn(false);
+        assertThrows(org.springframework.web.server.ResponseStatusException.class,
+                () -> messageService.sendFromDevice("dev-a", envelope));
+        verify(realtimePublisher, never()).publishToDeviceBestEffort(any(), any());
+    }
+
+    @Test
+    void sendFromDevicePublishesToPairedPeer() {
+        Map<String, Object> envelope = new java.util.HashMap<>();
+        envelope.put("type", "lan_http_probe");
+        envelope.put("toDeviceId", "peer");
+        envelope.put("payload", Map.of("probeId", "p1"));
+        when(devicePairingService.canSignal("dev-a", "peer")).thenReturn(true);
+        when(deviceRepository.findByDeviceId("peer")).thenReturn(Optional.empty());
+
+        messageService.sendFromDevice("dev-a", envelope);
+
+        verify(mailboxService).storeIfEphemeral(isNull(), any());
+        verify(realtimePublisher).publishToDeviceBestEffort(eq("peer"), any());
+        verify(messageRepository, never()).save(any());
     }
 }

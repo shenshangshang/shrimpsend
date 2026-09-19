@@ -50,10 +50,10 @@ CREATE TABLE IF NOT EXISTS messages (
     CONSTRAINT fk_messages_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 短 TTL 信令 mailbox：对端当时未连上 Centrifugo 时仍可补拉 LAN/WebRTC 信令
+-- 短 TTL 信令 mailbox：对端当时未连上实时通道时仍可补拉 LAN/WebRTC 信令
 CREATE TABLE IF NOT EXISTS signaling_mailbox (
     id             BIGINT       NOT NULL AUTO_INCREMENT,
-    user_id        BIGINT       NOT NULL,
+    user_id        BIGINT       DEFAULT NULL COMMENT '登录用户；guest 信令可为空',
     from_device_id VARCHAR(255) DEFAULT NULL,
     to_device_id   VARCHAR(255) DEFAULT NULL,
     type           VARCHAR(64)  NOT NULL,
@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS signaling_mailbox (
     PRIMARY KEY (id),
     KEY idx_mailbox_user_expires (user_id, expires_at),
     KEY idx_mailbox_user_id (user_id, id),
+    KEY idx_mailbox_to_device (to_device_id),
     CONSTRAINT fk_mailbox_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -225,4 +226,25 @@ CREATE TABLE IF NOT EXISTS hosted_upload_usage (
     UNIQUE KEY uk_hosted_upload_user_month (user_id, usage_month),
     KEY idx_hosted_upload_user (user_id),
     CONSTRAINT fk_hosted_upload_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Guest IM：设备密钥（hashed secret）换 CONNECT token
+CREATE TABLE IF NOT EXISTS device_credentials (
+    id             BIGINT       NOT NULL AUTO_INCREMENT,
+    device_id      VARCHAR(255) NOT NULL,
+    secret_hash    VARCHAR(128) NOT NULL,
+    created_at     DATETIME(3)  NOT NULL,
+    last_issued_at DATETIME(3)  DEFAULT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_device_credentials_device_id (device_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- LAN 握手后的设备配对 allowlist
+CREATE TABLE IF NOT EXISTS device_pairings (
+    id         BIGINT       NOT NULL AUTO_INCREMENT,
+    device_a   VARCHAR(255) NOT NULL,
+    device_b   VARCHAR(255) NOT NULL,
+    created_at DATETIME(3)  NOT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_device_pairings_ab (device_a, device_b)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

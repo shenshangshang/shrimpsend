@@ -395,6 +395,7 @@
       "reasonHttpPullFail": "反向拉取失败，对端无法访问本机 HTTP",
       "reasonWebrtcOnline": "同网段，WebRTC 可直接连通",
       "reasonWebrtcFail": "WebRTC 信令或 ICE 不可达",
+      "reasonWebrtcSkippedLanOk": "WebRTC 不再预检，发送时仍可手动尝试",
       "reasonHttpDirectNoUrl": "未发现局域网地址，无法测试 HTTP 直连",
       "reasonOfflineCloud": "当前离线，无法通过云端信令检测",
       "reasonS3LoginRequired": "需要登录后才可检测 S3",

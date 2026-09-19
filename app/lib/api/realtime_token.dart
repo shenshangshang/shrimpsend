@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import '../device_id.dart';
 import '../logger.dart';
 import '../utils/runtime_platform.dart';
 import 'client.dart';
@@ -15,6 +16,7 @@ class RealtimeTokenResponse {
   final int deviceLevel;
   final String channelId;
   final int channelType;
+  final String? deviceAccessToken;
 
   RealtimeTokenResponse({
     required this.uid,
@@ -24,6 +26,7 @@ class RealtimeTokenResponse {
     required this.deviceLevel,
     required this.channelId,
     required this.channelType,
+    this.deviceAccessToken,
   });
 
   factory RealtimeTokenResponse.fromJson(Map<String, dynamic> j) =>
@@ -35,6 +38,7 @@ class RealtimeTokenResponse {
         deviceLevel: (j['deviceLevel'] as num?)?.toInt() ?? 0,
         channelId: j['channelId'] as String? ?? j['uid'] as String,
         channelType: (j['channelType'] as num?)?.toInt() ?? 1,
+        deviceAccessToken: j['deviceAccessToken'] as String?,
       );
 }
 
@@ -42,24 +46,37 @@ Future<RealtimeTokenResponse> getRealtimeToken({
   required String deviceId,
   required String platform,
 }) async {
-  logApi.info('getRealtimeToken deviceId=$deviceId platform=$platform');
-  return withAuthRetry(() async {
-    final uri = Uri.parse('$apiBaseUrl/api/realtime/token').replace(
-      queryParameters: {
-        'deviceId': deviceId,
-        'platform': platform,
-      },
-    );
-    final r = await http.get(uri, headers: apiHeaders);
-    checkAuthResponse(r, fallback: '获取连接凭证失败');
-    final res = RealtimeTokenResponse.fromJson(
-      jsonDecode(r.body) as Map<String, dynamic>,
-    );
-    logApi.info(
-      'getRealtimeToken success uid=${res.uid} flag=${res.deviceFlag} ws=${res.websocketUrl}',
-    );
-    return res;
-  });
+  return createDeviceSession(deviceId: deviceId, platform: platform);
+}
+
+Future<RealtimeTokenResponse> createDeviceSession({
+  required String deviceId,
+  required String platform,
+}) async {
+  logApi.info('createDeviceSession deviceId=$deviceId platform=$platform');
+  final secret = await getOrCreateDeviceSecret();
+  final r = await http.post(
+    Uri.parse('$apiBaseUrl/api/realtime/device-session'),
+    headers: jsonHeadersOnly,
+    body: jsonEncode({
+      'deviceId': deviceId,
+      'deviceSecret': secret,
+      'platform': platform,
+    }),
+  );
+  if (r.statusCode < 200 || r.statusCode >= 300) {
+    throw Exception(errorMessageFromResponse(r, '获取连接凭证失败'));
+  }
+  final res = RealtimeTokenResponse.fromJson(
+    jsonDecode(r.body) as Map<String, dynamic>,
+  );
+  if (res.deviceAccessToken != null && res.deviceAccessToken!.isNotEmpty) {
+    setDeviceAccessToken(res.deviceAccessToken);
+  }
+  logApi.info(
+    'createDeviceSession success uid=${res.uid} flag=${res.deviceFlag} ws=${res.websocketUrl}',
+  );
+  return res;
 }
 
 String realtimePlatformName() {

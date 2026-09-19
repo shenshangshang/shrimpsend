@@ -75,6 +75,8 @@ class MailboxServiceTest {
                 .build();
         when(mailboxItemRepository.findPending(eq(1L), eq("desktop"), eq(2L), any(Instant.class), any(Pageable.class)))
                 .thenReturn(List.of(ok, bad));
+        when(mailboxItemRepository.findPendingForDevice(eq("desktop"), eq(2L), any(Instant.class), any(Pageable.class)))
+                .thenReturn(List.of());
 
         var items = mailboxService.pending(1L, "desktop", 2L);
 

@@ -63,10 +63,12 @@ class WebRTCFileMeta {
 
 Future<void> sendWebRTCSignal(Map<String, dynamic> signal) async {
   final deviceId = await getOrCreateDeviceId();
+  final target = signal['targetDeviceId']?.toString();
   await sendMessage({
     'type': signal['type'],
     'payload': signal,
     'fromDeviceId': deviceId,
+    if (target != null && target.isNotEmpty) 'toDeviceId': target,
     'ts': DateTime.now().millisecondsSinceEpoch,
   });
   logChat.fine('sendWebRTCSignal type=${signal['type']}');

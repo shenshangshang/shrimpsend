@@ -67,6 +67,7 @@ export async function sendSignal(signal: WebRTCSignal): Promise<void> {
     type: signal.type as MessageEnvelope['type'],
     payload: signal,
     fromDeviceId: getOrCreateDeviceId(),
+    toDeviceId: signal.targetDeviceId,
     ts: Date.now(),
   };
   await sendMessage(envelope);

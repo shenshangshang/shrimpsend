@@ -1,6 +1,7 @@
 const KEY_ID = 'ultrasend_device_id';
 const KEY_NAME = 'ultrasend_device_name';
 const KEY_PRESENCE_SESSION_ID = 'ultrasend_presence_session_id';
+const KEY_SECRET = 'ultrasend_device_secret';
 
 function detectBrowser(): string {
   const ua = navigator.userAgent;
@@ -62,6 +63,22 @@ export function generateUUID(): string {
   bytes[8] = (bytes[8]! & 0x3f) | 0x80;
   const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+export function getOrCreateDeviceSecret(): string {
+  if (typeof window === 'undefined') return '';
+  let secret = localStorage.getItem(KEY_SECRET);
+  if (!secret || secret.length < 16) {
+    const bytes = new Uint8Array(32);
+    if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+      crypto.getRandomValues(bytes);
+    } else {
+      for (let i = 0; i < 32; i++) bytes[i] = Math.floor(Math.random() * 256);
+    }
+    secret = btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+    localStorage.setItem(KEY_SECRET, secret);
+  }
+  return secret;
 }
 
 export function getOrCreateDeviceId(): string {

@@ -149,6 +149,7 @@ wukongim:
   signaling-expire-sec: 120
   roster-expire-sec: 30
   webhook-secret: "${WUKONGIM_WEBHOOK_SECRET:}"
+  dual-write-user-channel: true
 
 centrifugo:
   url: http://localhost:8000

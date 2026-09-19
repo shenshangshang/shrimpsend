@@ -33,7 +33,7 @@ export type ConnectionDiagnosticState = {
 
 export function diagnosticStepOrder(devicePriority: ProbePriority): DiagnosticStepId[] {
   const lan: DiagnosticStepId[] = ['httpDirect'];
-  const cloud: DiagnosticStepId[] = ['httpSignaling', 'httpPull', 'webrtc'];
+  const cloud: DiagnosticStepId[] = ['httpSignaling', 'httpPull'];
   const fallback: DiagnosticStepId[] = ['s3'];
 
   const core =
@@ -168,7 +168,6 @@ export type ConnectionDiagnosticProbeDeps = {
     deviceId: string,
   ) => Promise<{ success: boolean; lanHttpUrl?: string; senderReachable?: boolean }>;
   onPullProbe: (deviceId: string) => Promise<boolean>;
-  onWebRTCProbe: (deviceId: string) => Promise<boolean>;
   onCheckS3: () => Promise<{ configured: boolean; online: boolean }>;
   t: TranslateFn;
   onStepUpdate: (steps: DiagnosticStep[]) => void;
@@ -217,7 +216,7 @@ export async function runConnectionDiagnostic(
   let directHttp = false;
   let peerHttpHealthy = false;
   let pullReachable = false;
-  let webrtcResult = false;
+  let webrtcResult: boolean | null = null;
   let freshLanUrl: string | undefined;
   let discoveredLanUrl: string | undefined;
   let httpDirectFailedNoUrl = false;
@@ -329,26 +328,7 @@ export async function runConnectionDiagnostic(
         break;
       }
       case 'webrtc': {
-        if (!deps.connected) {
-          finishStep(stepId, 'failure', t('chat.connectionDiag.reasonOfflineCloud'), startedAt);
-        } else if (!deps.webrtcAvailable) {
-          finishStep(stepId, 'failure', t('chat.connectionDiag.reasonWebrtcFail'), startedAt);
-        } else {
-          try {
-            webrtcResult = await deps.onWebRTCProbe(device.deviceId);
-            finishStep(
-              stepId,
-              webrtcResult ? 'success' : 'failure',
-              webrtcResult
-                ? t('chat.connectionDiag.reasonWebrtcOnline')
-                : t('chat.connectionDiag.reasonWebrtcFail'),
-              startedAt,
-            );
-          } catch {
-            webrtcResult = false;
-            finishStep(stepId, 'failure', t('chat.connectionDiag.reasonWebrtcFail'), startedAt);
-          }
-        }
+        finishStep(stepId, 'failure', t('chat.connectionDiag.reasonWebrtcSkippedLanOk'), startedAt);
         break;
       }
       case 's3': {
