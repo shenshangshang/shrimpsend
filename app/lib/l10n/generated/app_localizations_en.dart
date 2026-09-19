@@ -2273,7 +2273,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get devicePanelEmptyHintOfflineLan =>
-      'Make sure other devices are on the same LAN to transfer.';
+      'Scan or show a pair code to connect unsigned-in phones or the web. Same-LAN devices can also transfer directly.';
 
   @override
   String get devicePanelEmptyHintOnlineAccount =>
@@ -3137,6 +3137,45 @@ class AppLocalizationsEn extends AppLocalizations {
   String qrScannerPairFailed(String error) {
     return 'Could not pair this device: $error';
   }
+
+  @override
+  String get qrScannerLoginRequiresAccount =>
+      'Sign in on this device before scanning a login QR code';
+
+  @override
+  String get scanToPair => 'Scan to pair';
+
+  @override
+  String get showPairQr => 'Show pair code';
+
+  @override
+  String get pairQrHint =>
+      'Have the other device scan this QR with ShrimpSend app or web, or paste a device ID.';
+
+  @override
+  String get copyDeviceId => 'Copy device ID';
+
+  @override
+  String get copiedDeviceId => 'Device ID copied';
+
+  @override
+  String get pasteDeviceIdHint => 'Paste device ID or pair link';
+
+  @override
+  String get pasteDeviceIdAction => 'Add';
+
+  @override
+  String get peerAdded => 'Device added';
+
+  @override
+  String get pairSelf => 'You cannot add this device';
+
+  @override
+  String get pairInvalid => 'Invalid device ID';
+
+  @override
+  String get pairSessionUnavailable =>
+      'Cannot reach the server. Try again shortly.';
 
   @override
   String get qrScannerTorchOn => 'Turn on flashlight';

@@ -15,6 +15,7 @@ import '../../utils/runtime_platform.dart';
 import '../busy_status_indicator.dart';
 import '../devices/device_conversation_item.dart';
 import '../devices/device_id_chip.dart';
+import '../devices/device_pair_panel.dart';
 import '../home/home_list_section.dart';
 import '../webdav/webdav_connection_actions.dart';
 import '../webdav/webdav_connection_item.dart';
@@ -149,8 +150,7 @@ class DeviceListPanel extends ConsumerWidget {
             reachability[a.deviceId] ?? DeviceReachDetail.offlineDetail;
         final bReach =
             reachability[b.deviceId] ?? DeviceReachDetail.offlineDetail;
-        final byReach =
-            _reachSortPriority(aReach) - _reachSortPriority(bReach);
+        final byReach = _reachSortPriority(aReach) - _reachSortPriority(bReach);
         if (byReach != 0) return byReach;
         return a.name.toLowerCase().compareTo(b.name.toLowerCase());
       });
@@ -199,7 +199,8 @@ class DeviceListPanel extends ConsumerWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         GestureDetector(
-                          onTap: (authSessionPhase ==
+                          onTap:
+                              (authSessionPhase ==
                                       AuthSessionPhase.sessionExpired ||
                                   (!isLoggedIn && statusCheckDone))
                               ? onLoginTap
@@ -315,16 +316,28 @@ class DeviceListPanel extends ConsumerWidget {
                       tooltip: l10n.fmSearchTooltip,
                       visualDensity: VisualDensity.compact,
                     ),
-                  if (onScanTap != null && !isOffline)
+                  if (onScanTap != null)
                     IconButton(
                       icon: const Icon(
                         LucideIcons.scanLine,
                         size: AppSize.appBarActionIcon,
                       ),
                       onPressed: onScanTap,
-                      tooltip: l10n.webdavScanLogin,
+                      tooltip: l10n.scanToPair,
                       visualDensity: VisualDensity.compact,
                     ),
+                  IconButton(
+                    icon: const Icon(
+                      LucideIcons.qrCode,
+                      size: AppSize.appBarActionIcon,
+                    ),
+                    onPressed: () => showDevicePairSheet(
+                      context: context,
+                      deviceId: currentDeviceId,
+                    ),
+                    tooltip: l10n.showPairQr,
+                    visualDensity: VisualDensity.compact,
+                  ),
                   if (showHeaderRefresh && onRefresh != null)
                     _DevicePanelRefreshButton(
                       probing: probing,
@@ -385,10 +398,7 @@ class DeviceListPanel extends ConsumerWidget {
                       count: webDavCount > 0 ? webDavCount : null,
                       trailing: onAddWebDavTap != null && !isOffline
                           ? IconButton(
-                              icon: const Icon(
-                                LucideIcons.plus,
-                                size: 18,
-                              ),
+                              icon: const Icon(LucideIcons.plus, size: 18),
                               onPressed: onAddWebDavTap,
                               tooltip: l10n.webdavAddMenuTooltip,
                               visualDensity: VisualDensity.compact,
@@ -416,13 +426,22 @@ class DeviceListPanel extends ConsumerWidget {
                       title: l10n.homeSectionDevices,
                       count: sorted.isEmpty ? null : sorted.length,
                     ),
-                    if (sorted.isEmpty)
+                    if (sorted.isEmpty) ...[
                       _HomeListSectionEmptyHint(
                         text: isOffline
                             ? l10n.devicePanelEmptyHintOfflineLan
                             : l10n.devicePanelEmptyNoOtherDevices,
-                      )
-                    else
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                          AppSpacing.md,
+                          AppSpacing.xs,
+                          AppSpacing.md,
+                          AppSpacing.sm,
+                        ),
+                        child: DevicePairPanel(deviceId: currentDeviceId),
+                      ),
+                    ] else
                       ...sorted.map(
                         (device) => _DeviceListReachRow(
                           key: ValueKey(device.deviceId),
@@ -447,12 +466,7 @@ class DeviceListPanel extends ConsumerWidget {
                     color: theme.colorScheme.primary,
                     child: ListView(
                       physics: const AlwaysScrollableScrollPhysics(),
-                      padding: EdgeInsets.fromLTRB(
-                        0,
-                        2,
-                        0,
-                        2 + scrollBottom,
-                      ),
+                      padding: EdgeInsets.fromLTRB(0, 2, 0, 2 + scrollBottom),
                       children: listChildren,
                     ),
                   );
@@ -517,10 +531,7 @@ List<Widget> _buildWebDavSectionBody({
   required String? selectedDeviceId,
 }) {
   if (webDavAsync.isLoading && webDavConnections.isEmpty) {
-    return const [
-      HomeListSkeletonRow(),
-      HomeListSkeletonRow(),
-    ];
+    return const [HomeListSkeletonRow(), HomeListSkeletonRow()];
   }
 
   if (webDavAsync.hasError && webDavConnections.isEmpty) {
@@ -537,9 +548,7 @@ List<Widget> _buildWebDavSectionBody({
           children: [
             Text(
               l10n.homeWebDavLoadFailed,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: colors.danger,
-              ),
+              style: theme.textTheme.bodySmall?.copyWith(color: colors.danger),
             ),
             const SizedBox(height: AppSpacing.xs),
             TextButton(
@@ -587,9 +596,7 @@ class _HomeListSectionEmptyHint extends StatelessWidget {
       ),
       child: Text(
         text,
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: colors.textTertiary,
-        ),
+        style: theme.textTheme.bodySmall?.copyWith(color: colors.textTertiary),
       ),
     );
   }
@@ -819,11 +826,7 @@ class _DevicePanelRefreshButton extends StatelessWidget {
               strokeWidth: 1.5,
               color: resolvedColor,
             )
-          : Icon(
-              LucideIcons.refreshCw,
-              size: iconSize,
-              color: iconColor,
-            ),
+          : Icon(LucideIcons.refreshCw, size: iconSize, color: iconColor),
       onPressed: probing || onRefresh == null ? null : onRefresh,
       tooltip: tooltip,
       visualDensity: VisualDensity.compact,

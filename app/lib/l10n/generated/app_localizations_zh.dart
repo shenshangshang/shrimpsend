@@ -2180,7 +2180,8 @@ class AppLocalizationsZh extends AppLocalizations {
   String get devicePanelEmptyNoOtherDevices => '暂无其他设备';
 
   @override
-  String get devicePanelEmptyHintOfflineLan => '确保其他设备在同一局域网内即可开始传输';
+  String get devicePanelEmptyHintOfflineLan =>
+      '扫码或展示配对码即可连接未登录的手机或网页；同一局域网内也可直接互传';
 
   @override
   String get devicePanelEmptyHintOnlineAccount => '在其他设备上登录同一账号即可开始传输';
@@ -2990,6 +2991,42 @@ class AppLocalizationsZh extends AppLocalizations {
   String qrScannerPairFailed(String error) {
     return '无法配对该设备: $error';
   }
+
+  @override
+  String get qrScannerLoginRequiresAccount => '扫码登录需要先在本机登录账号';
+
+  @override
+  String get scanToPair => '扫码配对';
+
+  @override
+  String get showPairQr => '显示配对码';
+
+  @override
+  String get pairQrHint => '让对方用虾传 App 或网页扫描此二维码，也可粘贴设备 ID。';
+
+  @override
+  String get copyDeviceId => '复制设备 ID';
+
+  @override
+  String get copiedDeviceId => '已复制设备 ID';
+
+  @override
+  String get pasteDeviceIdHint => '粘贴设备 ID 或配对链接';
+
+  @override
+  String get pasteDeviceIdAction => '添加';
+
+  @override
+  String get peerAdded => '已添加设备';
+
+  @override
+  String get pairSelf => '不能添加本机';
+
+  @override
+  String get pairInvalid => '设备 ID 无效';
+
+  @override
+  String get pairSessionUnavailable => '暂时无法连接服务器，请稍后重试';
 
   @override
   String get qrScannerTorchOn => '打开闪光灯';

@@ -4071,7 +4071,7 @@ abstract class AppLocalizations {
   /// No description provided for @devicePanelEmptyHintOfflineLan.
   ///
   /// In en, this message translates to:
-  /// **'Make sure other devices are on the same LAN to transfer.'**
+  /// **'Scan or show a pair code to connect unsigned-in phones or the web. Same-LAN devices can also transfer directly.'**
   String get devicePanelEmptyHintOfflineLan;
 
   /// No description provided for @devicePanelEmptyHintOnlineAccount.
@@ -5531,6 +5531,78 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Could not pair this device: {error}'**
   String qrScannerPairFailed(String error);
+
+  /// No description provided for @qrScannerLoginRequiresAccount.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in on this device before scanning a login QR code'**
+  String get qrScannerLoginRequiresAccount;
+
+  /// No description provided for @scanToPair.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan to pair'**
+  String get scanToPair;
+
+  /// No description provided for @showPairQr.
+  ///
+  /// In en, this message translates to:
+  /// **'Show pair code'**
+  String get showPairQr;
+
+  /// No description provided for @pairQrHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Have the other device scan this QR with ShrimpSend app or web, or paste a device ID.'**
+  String get pairQrHint;
+
+  /// No description provided for @copyDeviceId.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy device ID'**
+  String get copyDeviceId;
+
+  /// No description provided for @copiedDeviceId.
+  ///
+  /// In en, this message translates to:
+  /// **'Device ID copied'**
+  String get copiedDeviceId;
+
+  /// No description provided for @pasteDeviceIdHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Paste device ID or pair link'**
+  String get pasteDeviceIdHint;
+
+  /// No description provided for @pasteDeviceIdAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Add'**
+  String get pasteDeviceIdAction;
+
+  /// No description provided for @peerAdded.
+  ///
+  /// In en, this message translates to:
+  /// **'Device added'**
+  String get peerAdded;
+
+  /// No description provided for @pairSelf.
+  ///
+  /// In en, this message translates to:
+  /// **'You cannot add this device'**
+  String get pairSelf;
+
+  /// No description provided for @pairInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'Invalid device ID'**
+  String get pairInvalid;
+
+  /// No description provided for @pairSessionUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Cannot reach the server. Try again shortly.'**
+  String get pairSessionUnavailable;
 
   /// No description provided for @qrScannerTorchOn.
   ///

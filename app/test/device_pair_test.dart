@@ -3,10 +3,7 @@ import 'package:app/device_pair.dart';
 
 void main() {
   test('parseDevicePairUri reads ultrasend://pair/<id>', () {
-    expect(
-      parseDevicePairUri('ultrasend://pair/abc-123'),
-      'abc-123',
-    );
+    expect(parseDevicePairUri('ultrasend://pair/abc-123'), 'abc-123');
     expect(
       parseDevicePairUri('  ultrasend://pair/web_device?x=1  '),
       'web_device',
@@ -17,5 +14,11 @@ void main() {
 
   test('devicePairUri builds the pair token', () {
     expect(devicePairUri('dev-1'), 'ultrasend://pair/dev-1');
+  });
+
+  test('normalizePeerDeviceId accepts URI or raw id', () {
+    expect(normalizePeerDeviceId('ultrasend://pair/abc-123'), 'abc-123');
+    expect(normalizePeerDeviceId('  abc-123  '), 'abc-123');
+    expect(normalizePeerDeviceId('   '), isNull);
   });
 }

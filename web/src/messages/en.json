@@ -893,7 +893,7 @@
     "guestLoginHint": "Cloud transfer, history, and your other signed-in devices unlock after sign-in.",
     "guestLoginCta": "Sign in",
     "addDeviceTitle": "Add a device",
-    "pairQrHint": "Scan this QR with the ShrimpSend app, or paste a device ID.",
+    "pairQrHint": "Scan this QR with the ShrimpSend app or another unsigned-in device, or paste a device ID.",
     "copyDeviceId": "Copy device ID",
     "copiedDeviceId": "Device ID copied",
     "copyFailed": "Could not copy",

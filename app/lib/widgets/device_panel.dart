@@ -17,6 +17,7 @@ import '../services/analytics/analytics.dart';
 import '../services/analytics/analytics_events.dart';
 import '../ui/app_ui.dart';
 import '../ui/platform_icon.dart';
+import '../utils/runtime_platform.dart';
 
 const _lanProbeTimeout = Duration(seconds: 3);
 const _panelLanProbeConcurrency = 6;
@@ -41,7 +42,12 @@ String _resolvedSortStatus(String? current, String? stable) {
 }
 
 List<SendMode> _panelModes(bool isOffline) {
-  if (isOffline) return [SendMode.nearby];
+  if (isOffline) {
+    if (OhosCapabilities.webrtc) {
+      return [SendMode.nearby, SendMode.webrtc];
+    }
+    return [SendMode.nearby];
+  }
   if (kIsWeb) return [SendMode.nearby, SendMode.lan, SendMode.s3];
   return [SendMode.nearby, SendMode.lan, SendMode.webrtc, SendMode.s3];
 }
@@ -170,6 +176,7 @@ class _DevicePanelState extends ConsumerState<DevicePanel>
         await probe(devices[index]);
       }
     }
+
     final workers = concurrency < devices.length ? concurrency : devices.length;
     await Future.wait(List.generate(workers, (_) => worker()));
   }
@@ -387,13 +394,12 @@ class _DevicePanelState extends ConsumerState<DevicePanel>
     final current = isLan
         ? _lanReachability[deviceId]
         : _webrtcReachability[deviceId];
-    final stable = isLan
-        ? _lanSortReach[deviceId]
-        : _webrtcSortReach[deviceId];
+    final stable = isLan ? _lanSortReach[deviceId] : _webrtcSortReach[deviceId];
     return _reachSortRank(_resolvedSortStatus(current, stable));
   }
 
   bool _isDeviceReachable(String deviceId, SendMode mode) {
+    if (mode == SendMode.webrtc) return true;
     final status = (mode == SendMode.nearby || mode == SendMode.lan)
         ? (_lanReachability[deviceId] ?? 'checking')
         : (_webrtcReachability[deviceId] ?? 'checking');
@@ -424,7 +430,7 @@ class _DevicePanelState extends ConsumerState<DevicePanel>
     final tabController = _ensureTabController(isOffline, sendMode);
 
     final allDevices = isOffline
-        ? lanDevices.where((d) => d.deviceId != currentDeviceId).toList()
+        ? nearby.where((d) => d.deviceId != currentDeviceId).toList()
         : <DeviceDto>[
             ...myDevices.where((d) => d.deviceId != currentDeviceId),
             ...nearby,
@@ -472,7 +478,10 @@ class _DevicePanelState extends ConsumerState<DevicePanel>
     }
 
     // Auto-deselect devices confirmed offline by probes (schedule at most once).
-    if (!_offlineCleanupScheduled && !manualHttpLocked) {
+    // WebRTC is attempt-based and not pre-probed, so keep the selection.
+    if (!_offlineCleanupScheduled &&
+        !manualHttpLocked &&
+        sendMode != SendMode.webrtc) {
       final offlineSelected = <String>{};
       for (final d in sortedDevices) {
         if (!selectedTargets.contains(d.deviceId)) continue;
@@ -537,6 +546,7 @@ class _DevicePanelState extends ConsumerState<DevicePanel>
       case SendMode.lan:
         return all.where((d) => cloudDeviceIds.contains(d.deviceId)).toList();
       case SendMode.webrtc:
+        if (cloudDeviceIds.isEmpty) return all;
         return all.where((d) => cloudDeviceIds.contains(d.deviceId)).toList();
       case SendMode.s3:
         return [];

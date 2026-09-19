@@ -11,6 +11,7 @@ import '../device_pair.dart';
 import '../device_pair_hello.dart';
 import '../logger.dart';
 import '../l10n/generated/app_localizations.dart';
+import '../providers/auth_provider.dart';
 import '../providers/device_provider.dart';
 import '../services/analytics/analytics.dart';
 import '../services/analytics/analytics_events.dart';
@@ -167,6 +168,13 @@ class _QrScannerScreenState extends ConsumerState<QrScannerScreen> {
     }
 
     if (sessionId != null) {
+      if (!ref.read(authProvider).isLoggedIn) {
+        AppToast.show(
+          context,
+          message: AppLocalizations.of(context).qrScannerLoginRequiresAccount,
+        );
+        return;
+      }
       if (_lastHandledPayload == sessionId) return;
       _lastHandledPayload = sessionId;
       HapticFeedback.mediumImpact();
@@ -184,8 +192,7 @@ class _QrScannerScreenState extends ConsumerState<QrScannerScreen> {
     if (!mounted || _processing) return;
     final now = DateTime.now();
     if (_lastUnrecognizedHintAt != null &&
-        now.difference(_lastUnrecognizedHintAt!) <
-            const Duration(seconds: 2)) {
+        now.difference(_lastUnrecognizedHintAt!) < const Duration(seconds: 2)) {
       return;
     }
     _lastUnrecognizedHintAt = now;
@@ -201,21 +208,23 @@ class _QrScannerScreenState extends ConsumerState<QrScannerScreen> {
     try {
       await sendDevicePairHello(peerId);
       if (!mounted) return;
-      ref.read(pairedPeersProvider.notifier).upsert(
-        deviceDtoFromPairHello(deviceId: peerId),
-      );
+      ref
+          .read(pairedPeersProvider.notifier)
+          .upsert(deviceDtoFromPairHello(deviceId: peerId));
       ref.read(selectedDeviceIdProvider.notifier).select(peerId);
       AppToast.show(context, message: l10n.qrScannerPairSuccess);
       Navigator.of(context).pop();
     } catch (e) {
       logAuth.warning('qr_scanner pair failed: $e');
       if (!mounted) return;
-      AppToast.show(
-        context,
-        message: l10n.qrScannerPairFailed(
-          e.toString().replaceFirst('Exception: ', ''),
-        ),
-      );
+      final raw = e.toString().replaceFirst('Exception: ', '');
+      final message = switch (raw) {
+        'cannot_pair_self' => l10n.pairSelf,
+        'pair_invalid' => l10n.pairInvalid,
+        'device_session_unavailable' => l10n.pairSessionUnavailable,
+        _ => l10n.qrScannerPairFailed(raw),
+      };
+      AppToast.show(context, message: message);
       setState(() {
         _processing = false;
         _lastHandledPayload = null;
@@ -239,9 +248,9 @@ class _QrScannerScreenState extends ConsumerState<QrScannerScreen> {
       });
       AppToast.show(
         context,
-        message: AppLocalizations.of(context).qrScannerFailed(
-          e.toString().replaceFirst('Exception: ', ''),
-        ),
+        message: AppLocalizations.of(
+          context,
+        ).qrScannerFailed(e.toString().replaceFirst('Exception: ', '')),
       );
       if (mounted) {
         setState(() {

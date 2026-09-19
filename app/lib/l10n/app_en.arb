@@ -1266,7 +1266,7 @@
   "devicePanelStatusConnected": "Connected",
   "devicePanelStatusConnecting": "Connecting…",
   "devicePanelEmptyNoOtherDevices": "No other devices yet",
-  "devicePanelEmptyHintOfflineLan": "Make sure other devices are on the same LAN to transfer.",
+  "devicePanelEmptyHintOfflineLan": "Scan or show a pair code to connect unsigned-in phones or the web. Same-LAN devices can also transfer directly.",
   "devicePanelEmptyHintOnlineAccount": "Sign in on your other devices with the same account to start transferring.",
   "devicePanelDevicesOnlineCount": "{count} online",
   "@devicePanelDevicesOnlineCount": {
@@ -1776,6 +1776,18 @@
       "error": { "type": "String" }
     }
   },
+  "qrScannerLoginRequiresAccount": "Sign in on this device before scanning a login QR code",
+  "scanToPair": "Scan to pair",
+  "showPairQr": "Show pair code",
+  "pairQrHint": "Have the other device scan this QR with ShrimpSend app or web, or paste a device ID.",
+  "copyDeviceId": "Copy device ID",
+  "copiedDeviceId": "Device ID copied",
+  "pasteDeviceIdHint": "Paste device ID or pair link",
+  "pasteDeviceIdAction": "Add",
+  "peerAdded": "Device added",
+  "pairSelf": "You cannot add this device",
+  "pairInvalid": "Invalid device ID",
+  "pairSessionUnavailable": "Cannot reach the server. Try again shortly.",
   "qrScannerTorchOn": "Turn on flashlight",
   "qrScannerTorchOff": "Turn off flashlight",
   "filePreviewTooltipShare": "Share",

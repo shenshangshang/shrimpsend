@@ -893,7 +893,7 @@
     "guestLoginHint": "云传输、消息历史以及同一账号下的其他设备需登录后使用。",
     "guestLoginCta": "登录",
     "addDeviceTitle": "添加设备",
-    "pairQrHint": "用虾传 App 扫描此二维码，或粘贴对方设备 ID。",
+    "pairQrHint": "用虾传 App 或其他未登录设备扫描此二维码，或粘贴对方设备 ID。",
     "copyDeviceId": "复制设备 ID",
     "copiedDeviceId": "已复制设备 ID",
     "copyFailed": "复制失败",
