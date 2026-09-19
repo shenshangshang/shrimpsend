@@ -25,6 +25,7 @@ import '../providers/auth_session_provider.dart';
 import '../providers/realtime_hub_provider.dart';
 import '../services/auth_session_controller.dart';
 import '../providers/device_provider.dart';
+import '../device_pair_hello.dart';
 import '../providers/webdav_provider.dart';
 import 'package:uuid/uuid.dart';
 import 'package:saver_gallery/saver_gallery.dart';
@@ -3985,6 +3986,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     }
   }
 
+  void _handleDevicePairHello(MessageEnvelope msg) {
+    final payload = msg.payload is Map
+        ? Map<String, dynamic>.from(msg.payload as Map)
+        : <String, dynamic>{};
+    final peerId = (payload['deviceId']?.toString() ?? msg.fromDeviceId).trim();
+    if (peerId.isEmpty || peerId == _deviceId) return;
+    unawaited(pairDevice(peerId));
+    ref.read(pairedPeersProvider.notifier).upsert(
+      deviceDtoFromPairHello(
+        deviceId: peerId,
+        name: payload['name']?.toString(),
+        platform: payload['platform']?.toString(),
+      ),
+    );
+  }
+
   void _bindRealtimeHub() {
     _realtimePublicationSub?.cancel();
     _realtimeConnectedSub?.cancel();
@@ -4021,6 +4038,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
           final msg = MessageEnvelope.fromJson(map);
           if (msg.type == 'device_roster_patch') {
             _handleDeviceRosterPatch(map);
+            return;
+          }
+          if (msg.type == 'device_pair_hello') {
+            _handleDevicePairHello(msg);
             return;
           }
           // toDeviceId filtering: skip messages targeted at a different device.

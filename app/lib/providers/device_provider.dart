@@ -192,12 +192,118 @@ final myDevicesProvider = Provider<List<DeviceDto>>((ref) {
   return ref.watch(myDevicesAsyncProvider).valueOrNull ?? [];
 });
 
+/// Devices paired via QR / `device_pair_hello` (persisted for guest web peers).
+class PairedPeersNotifier extends StateNotifier<List<DeviceDto>> {
+  static const _key = 'ultrasend_paired_peers';
+
+  PairedPeersNotifier() : super(const []) {
+    _load();
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_key);
+    if (raw == null || raw.isEmpty) return;
+    try {
+      final list = jsonDecode(raw);
+      if (list is! List) return;
+      final devices = <DeviceDto>[];
+      final seen = <String>{};
+      for (final item in list) {
+        if (item is! Map) continue;
+        final map = Map<String, dynamic>.from(item);
+        final id = map['deviceId']?.toString().trim() ?? '';
+        if (id.isEmpty || seen.contains(id)) continue;
+        seen.add(id);
+        devices.add(
+          DeviceDto(
+            deviceId: id,
+            name: map['name']?.toString() ?? id,
+            platform: map['platform']?.toString(),
+            presenceStatus: 'online',
+          ),
+        );
+      }
+      state = devices;
+    } catch (e) {
+      logChat.warning('pairedPeers load failed: $e');
+    }
+  }
+
+  Future<void> _persist() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _key,
+      jsonEncode(
+        state
+            .map(
+              (d) => {
+                'deviceId': d.deviceId,
+                'name': d.name,
+                'platform': d.platform,
+              },
+            )
+            .toList(),
+      ),
+    );
+  }
+
+  void upsert(DeviceDto device) {
+    if (device.deviceId.isEmpty) return;
+    final next = [...state];
+    final index = next.indexWhere((d) => d.deviceId == device.deviceId);
+    if (index < 0) {
+      next.add(device);
+    } else {
+      final existing = next[index];
+      next[index] = DeviceDto(
+        deviceId: device.deviceId,
+        name: device.name.isNotEmpty ? device.name : existing.name,
+        platform: device.platform ?? existing.platform,
+        lanHttpUrl: device.lanHttpUrl ?? existing.lanHttpUrl,
+        lastSeen: device.lastSeen ?? existing.lastSeen,
+        presenceStatus: device.presenceStatus ?? existing.presenceStatus,
+        presenceUpdatedAt:
+            device.presenceUpdatedAt ?? existing.presenceUpdatedAt,
+        displayCode: device.displayCode ?? existing.displayCode,
+      );
+    }
+    state = next;
+    _persist();
+  }
+}
+
+final pairedPeersProvider =
+    StateNotifierProvider<PairedPeersNotifier, List<DeviceDto>>(
+      (_) => PairedPeersNotifier(),
+    );
+
 /// LAN-discovered devices that are not in the current user's cloud device list (nearby devices).
 final nearbyDevicesProvider = Provider<List<DeviceDto>>((ref) {
   final lan = ref.watch(lanDevicesProvider).valueOrNull ?? [];
+  final paired = ref.watch(pairedPeersProvider);
   final cloud = ref.watch(cloudDevicesProvider).valueOrNull ?? [];
   final cloudIds = cloud.map((d) => d.deviceId).toSet();
-  return lan.where((d) => !cloudIds.contains(d.deviceId)).toList();
+  final byId = <String, DeviceDto>{};
+  for (final d in [...lan, ...paired]) {
+    if (cloudIds.contains(d.deviceId)) continue;
+    final existing = byId[d.deviceId];
+    if (existing == null) {
+      byId[d.deviceId] = d;
+      continue;
+    }
+    byId[d.deviceId] = DeviceDto(
+      deviceId: d.deviceId,
+      name: d.name.isNotEmpty ? d.name : existing.name,
+      platform: d.platform ?? existing.platform,
+      lanHttpUrl: d.lanHttpUrl ?? existing.lanHttpUrl,
+      lastSeen: d.lastSeen ?? existing.lastSeen,
+      presenceStatus: d.presenceStatus ?? existing.presenceStatus,
+      presenceUpdatedAt: d.presenceUpdatedAt ?? existing.presenceUpdatedAt,
+      displayCode: d.displayCode ?? existing.displayCode,
+    );
+  }
+  return byId.values.toList();
 });
 
 final deviceCountProvider = Provider<int>((ref) {

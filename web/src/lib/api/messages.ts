@@ -6,6 +6,7 @@ export type MessageEnvelope = {
     | 'lan_http_probe' | 'lan_http_probe_result' | 'lan_pull_cancelled'
     | 'webrtc_probe' | 'webrtc_probe_result'
     | 'webrtc_offer' | 'webrtc_answer' | 'webrtc_ice_candidate' | 'webrtc_transfer_cancel'
+    | 'device_pair_hello'
     | 'device_roster_patch';
   payload: unknown;
   fromDeviceId: string;

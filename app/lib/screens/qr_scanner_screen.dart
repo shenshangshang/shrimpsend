@@ -7,6 +7,8 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../api/api.dart';
+import '../device_pair.dart';
+import '../device_pair_hello.dart';
 import '../logger.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../providers/device_provider.dart';
@@ -36,7 +38,7 @@ class _QrScannerScreenState extends ConsumerState<QrScannerScreen> {
   bool _permissionChecked = false;
   bool _permissionNeedsSettings = false;
   DateTime? _lastUnrecognizedHintAt;
-  String? _lastHandledSessionId;
+  String? _lastHandledPayload;
 
   @override
   void initState() {
@@ -125,12 +127,26 @@ class _QrScannerScreenState extends ConsumerState<QrScannerScreen> {
     return null;
   }
 
+  String? _readPairDeviceId(Barcode barcode) {
+    for (final text in _barcodeTextCandidates(barcode)) {
+      final peerId = parseDevicePairUri(text);
+      if (peerId != null) return peerId;
+    }
+    return null;
+  }
+
   void _onBarcodeCapture(BarcodeCapture capture) {
     if (_processing || capture.barcodes.isEmpty) return;
 
     String? sessionId;
+    String? pairDeviceId;
     var sawOtherQr = false;
     for (final barcode in capture.barcodes) {
+      final pairId = _readPairDeviceId(barcode);
+      if (pairId != null) {
+        pairDeviceId = pairId;
+        break;
+      }
       final parsed = _readQrLoginPayload(barcode);
       if (parsed != null) {
         sessionId = parsed;
@@ -141,9 +157,18 @@ class _QrScannerScreenState extends ConsumerState<QrScannerScreen> {
       }
     }
 
+    if (pairDeviceId != null) {
+      if (_lastHandledPayload == 'pair:$pairDeviceId') return;
+      _lastHandledPayload = 'pair:$pairDeviceId';
+      HapticFeedback.mediumImpact();
+      setState(() => _processing = true);
+      unawaited(_handlePairScan(pairDeviceId));
+      return;
+    }
+
     if (sessionId != null) {
-      if (_lastHandledSessionId == sessionId) return;
-      _lastHandledSessionId = sessionId;
+      if (_lastHandledPayload == sessionId) return;
+      _lastHandledPayload = sessionId;
       HapticFeedback.mediumImpact();
       setState(() => _processing = true);
       unawaited(_handleScan(sessionId));
@@ -170,6 +195,34 @@ class _QrScannerScreenState extends ConsumerState<QrScannerScreen> {
     );
   }
 
+  Future<void> _handlePairScan(String peerId) async {
+    logAuth.info('qr_scanner scanned pair deviceId=$peerId');
+    final l10n = AppLocalizations.of(context);
+    try {
+      await sendDevicePairHello(peerId);
+      if (!mounted) return;
+      ref.read(pairedPeersProvider.notifier).upsert(
+        deviceDtoFromPairHello(deviceId: peerId),
+      );
+      ref.read(selectedDeviceIdProvider.notifier).select(peerId);
+      AppToast.show(context, message: l10n.qrScannerPairSuccess);
+      Navigator.of(context).pop();
+    } catch (e) {
+      logAuth.warning('qr_scanner pair failed: $e');
+      if (!mounted) return;
+      AppToast.show(
+        context,
+        message: l10n.qrScannerPairFailed(
+          e.toString().replaceFirst('Exception: ', ''),
+        ),
+      );
+      setState(() {
+        _processing = false;
+        _lastHandledPayload = null;
+      });
+    }
+  }
+
   Future<void> _handleScan(String sessionId) async {
     logAuth.info('qr_scanner scanned sessionId=$sessionId');
     try {
@@ -193,7 +246,7 @@ class _QrScannerScreenState extends ConsumerState<QrScannerScreen> {
       if (mounted) {
         setState(() {
           _processing = false;
-          _lastHandledSessionId = null;
+          _lastHandledPayload = null;
         });
       }
     }
@@ -238,7 +291,7 @@ class _QrScannerScreenState extends ConsumerState<QrScannerScreen> {
           );
           setState(() {
             _processing = false;
-            _lastHandledSessionId = null;
+            _lastHandledPayload = null;
           });
         }
       }

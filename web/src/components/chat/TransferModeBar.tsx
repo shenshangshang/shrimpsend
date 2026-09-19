@@ -51,6 +51,7 @@ export function TransferModeBar() {
     checkS3Config,
     s3Configured,
     s3Online,
+    isGuest,
   } = useChatContext();
 
   const hidden =
@@ -77,6 +78,7 @@ export function TransferModeBar() {
       httpAvailable,
       webrtcReachable,
       s3Available,
+      guest: isGuest,
     });
     const labelFor = (value: WebSendMode): string => {
       switch (value) {
@@ -123,6 +125,7 @@ export function TransferModeBar() {
     httpPullOnly,
     s3Available,
     t,
+    isGuest,
   ]);
 
   if (hidden || allModes.length === 0) return null;

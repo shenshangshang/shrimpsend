@@ -1,19 +1,28 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
+import Link from 'next/link';
 import { BrandLogo } from '@/components/brand/BrandLogo';
 import { useI18n } from '@/contexts/I18nContext';
 import { collatorForLocaleTag } from '@/lib/i18nCollator';
 import { useChatContext, S3_VIRTUAL_DEVICE_ID } from '@/contexts/ChatContext';
 import { DeviceConversationItem } from '@/components/devices/DeviceConversationItem';
+import { AddPeerPanel } from '@/components/devices/AddPeerPanel';
 import { getReachDisplayStatus, isReachOnline, reachSortPriority } from '@/hooks/useSendTargetProbes';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { formatDisplayCodeChipLabel } from '@/lib/displayCode';
 import { localizedDocsHref, localeTagToPath } from '@/lib/i18nRouting';
 import { openInNewTab } from '@/lib/openInNewTab';
 import { cn } from '@/lib/utils';
 import { getDeviceName } from '@/lib/deviceId';
-import { BookOpen, Cloud, Download, RefreshCw, Settings } from 'lucide-react';
+import { loadGuestPeers } from '@/lib/guestPeers';
+import { BookOpen, Cloud, Download, Plus, RefreshCw, Settings } from 'lucide-react';
 
 export function DeviceListPanel({
   onShowSettings,
@@ -27,6 +36,7 @@ export function DeviceListPanel({
   const { t, localeTag } = useI18n();
   const docsHref = localizedDocsHref(localeTagToPath(localeTag), 'intro');
   const nameCollator = useMemo(() => collatorForLocaleTag(localeTag), [localeTag]);
+  const [addOpen, setAddOpen] = useState(false);
   const {
     connected,
     devices,
@@ -41,10 +51,16 @@ export function DeviceListPanel({
     s3Configured,
     s3Online,
     s3Checking,
+    isGuest,
   } = useChatContext();
+  const showS3 = s3Configured && !isGuest;
 
   const registeredIds = useMemo(
     () => new Set(devices.map((d) => d.deviceId)),
+    [devices],
+  );
+  const guestPeerIds = useMemo(
+    () => new Set(loadGuestPeers().map((p) => p.deviceId)),
     [devices],
   );
 
@@ -119,6 +135,9 @@ export function DeviceListPanel({
           </div>
         </div>
         <div className="flex items-center gap-0.5 shrink-0">
+          <Button variant="ghost" size="icon-sm" onClick={() => setAddOpen(true)} title={t('deviceList.addDeviceTitle')}>
+            <Plus className="size-4" />
+          </Button>
           <Button variant="ghost" size="icon-sm" onClick={onShowDownload} title={t('deviceList.downloadTitle')}>
             <Download className="size-4" />
           </Button>
@@ -138,17 +157,34 @@ export function DeviceListPanel({
 
       {/* Device list */}
       <div className="flex-1 min-h-0 overflow-y-auto">
-        {sortedDevices.length === 0 && !s3Configured ? (
-          <div className="flex flex-col items-center justify-center gap-3 px-6 py-12 text-center text-muted-foreground">
-            <p className="text-sm">{t('deviceList.emptyTitle')}</p>
-            <p className="text-xs text-muted-foreground/70">
-              {t('deviceList.emptyHint')}
+        {isGuest && (
+          <div className="mx-2 mt-2 rounded-xl border border-border/70 bg-muted/40 px-3 py-2.5">
+            <p className="text-xs font-medium text-foreground">{t('deviceList.guestLoginTitle')}</p>
+            <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+              {t('deviceList.guestLoginHint')}
             </p>
+            <Link
+              href="/login"
+              className={cn(buttonVariants({ size: 'sm' }), 'mt-2 h-7')}
+            >
+              {t('deviceList.guestLoginCta')}
+            </Link>
+          </div>
+        )}
+        {sortedDevices.length === 0 && !showS3 ? (
+          <div className="flex flex-col items-center justify-center gap-3 px-5 py-8 text-center text-muted-foreground">
+            <p className="text-sm text-foreground">{t('deviceList.emptyTitle')}</p>
+            {!isGuest && (
+              <p className="text-xs text-muted-foreground/70">
+                {t('deviceList.emptyHint')}
+              </p>
+            )}
+            <AddPeerPanel className="mt-1 w-full max-w-[240px]" />
           </div>
         ) : (
           <div className="space-y-1 px-1 py-1">
             {/* S3 virtual device — pinned to top */}
-            {s3Configured && (
+            {showS3 && (
               <button
                 type="button"
                 onClick={() => setSelectedDeviceId(S3_VIRTUAL_DEVICE_ID)}
@@ -224,7 +260,7 @@ export function DeviceListPanel({
               <DeviceConversationItem
                 key={device.deviceId}
                 device={device}
-                isMyDevice={registeredIds.has(device.deviceId)}
+                isMyDevice={!isGuest && registeredIds.has(device.deviceId) && !guestPeerIds.has(device.deviceId)}
                 selected={selectedDeviceId === device.deviceId}
                 reachStatus={getReachDisplayStatus(deviceReach[device.deviceId])}
                 lastMessage={deviceLastMessages[device.deviceId]}
@@ -254,6 +290,15 @@ export function DeviceListPanel({
           <RefreshCw className={cn('size-3.5', targetsProbing && 'motion-safe:animate-spin')} />
         </Button>
       </div>
+
+      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+        <DialogContent className="sm:max-w-xs">
+          <DialogHeader>
+            <DialogTitle>{t('deviceList.addDeviceTitle')}</DialogTitle>
+          </DialogHeader>
+          <AddPeerPanel onAdded={() => setAddOpen(false)} />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

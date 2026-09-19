@@ -1315,7 +1315,14 @@
   "qrScannerPermissionAgain": "重新请求权限",
   "qrScannerProcessing": "处理中...",
   "qrScannerAlignQr": "将二维码对准框内扫描",
-  "qrScannerUnrecognized": "请扫描虾传登录二维码",
+  "qrScannerUnrecognized": "请扫描虾传登录或配对二维码",
+  "qrScannerPairSuccess": "设备已配对，可以发送文件",
+  "qrScannerPairFailed": "无法配对该设备: {error}",
+  "@qrScannerPairFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
   "qrScannerTorchOn": "打开闪光灯",
   "qrScannerTorchOff": "关闭闪光灯",
   "filePreviewTooltipShare": "分享",

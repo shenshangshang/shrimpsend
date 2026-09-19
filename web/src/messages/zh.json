@@ -343,7 +343,13 @@
       "webrtcRetryHttp": "WebRTC 重试失败，请切换到 HTTP 模式发送",
       "httpNotSupportedWebPeer": "网页对网页不支持 HTTP 传输，请使用 WebRTC 或 S3",
       "webrtcTryS3": "WebRTC 发送失败，请切换到 S3 模式重试",
-      "webrtcRetryS3": "WebRTC 重试失败，请切换到 S3 模式发送"
+      "webrtcRetryS3": "WebRTC 重试失败，请切换到 S3 模式发送",
+      "guestTextNeedsLogin": "登录后即可发送文字消息并使用云传输",
+      "webrtcTryLogin": "WebRTC 发送失败。登录后可改用云传输。",
+      "webrtcRetryLogin": "WebRTC 重试失败。登录后可改用云传输。",
+      "pairSelf": "这是当前浏览器的设备 ID",
+      "pairInvalid": "请输入有效的设备 ID",
+      "pairFailed": "无法配对该设备"
     },
     "transferBar": {
       "webrtc": "WebRTC",
@@ -431,10 +437,12 @@
       "sendModifierEnter": "发送 (Ctrl+Enter)",
       "sendModifierEnterMac": "发送 (⌘+Enter)",
       "pickFile": "选择文件",
-      "devicePanel": "设备面板"
+      "devicePanel": "设备面板",
+      "guestPlaceholder": "登录后可发文字，文件仍可直接传输"
     },
     "empty": {
       "hint": "发送一条消息或文件，所有设备实时同步",
+      "guestHint": "用 WebRTC 发送文件。登录后可同步文字与云传输。",
       "loadMore": "加载更多…",
       "dropHint": "松开以添加文件"
     },
@@ -881,6 +889,18 @@
     "settingsTitle": "设置",
     "emptyTitle": "暂无其他设备",
     "emptyHint": "在其他设备上登录同一账号即可开始传输",
+    "guestLoginTitle": "登录后可看账号设备",
+    "guestLoginHint": "云传输、消息历史以及同一账号下的其他设备需登录后使用。",
+    "guestLoginCta": "登录",
+    "addDeviceTitle": "添加设备",
+    "pairQrHint": "用虾传 App 扫描此二维码，或粘贴对方设备 ID。",
+    "copyDeviceId": "复制设备 ID",
+    "copiedDeviceId": "已复制设备 ID",
+    "copyFailed": "复制失败",
+    "pasteDeviceIdPlaceholder": "粘贴设备 ID 或配对链接",
+    "pasteDeviceIdAction": "添加",
+    "peerAdded": "已添加设备",
+    "pairFailed": "无法配对该设备",
     "s3RelayTitle": "S3 云端中转",
     "s3Checking": "检测中…",
     "s3NotConfigured": "未配置",

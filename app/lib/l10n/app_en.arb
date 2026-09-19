@@ -1768,7 +1768,14 @@
   "qrScannerPermissionAgain": "Request permission again",
   "qrScannerProcessing": "Processing…",
   "qrScannerAlignQr": "Align the QR code inside the frame",
-  "qrScannerUnrecognized": "Scan a ShrimpSend login QR code",
+  "qrScannerUnrecognized": "Scan a ShrimpSend login or pair QR code",
+  "qrScannerPairSuccess": "Device paired. You can send files now.",
+  "qrScannerPairFailed": "Could not pair this device: {error}",
+  "@qrScannerPairFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
   "qrScannerTorchOn": "Turn on flashlight",
   "qrScannerTorchOff": "Turn off flashlight",
   "filePreviewTooltipShare": "Share",

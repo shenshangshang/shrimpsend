@@ -2981,7 +2981,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get qrScannerAlignQr => '将二维码对准框内扫描';
 
   @override
-  String get qrScannerUnrecognized => '请扫描虾传登录二维码';
+  String get qrScannerUnrecognized => '请扫描虾传登录或配对二维码';
+
+  @override
+  String get qrScannerPairSuccess => '设备已配对，可以发送文件';
+
+  @override
+  String qrScannerPairFailed(String error) {
+    return '无法配对该设备: $error';
+  }
 
   @override
   String get qrScannerTorchOn => '打开闪光灯';

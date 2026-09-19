@@ -40,6 +40,7 @@ export function MessageList() {
     cancelTransfer,
     handleRetryText,
     handleRetryFile,
+    isGuest,
   } = useChatContext();
 
   const listRef = useRef<HTMLDivElement>(null);
@@ -119,7 +120,7 @@ export function MessageList() {
             <MessageCircle className="size-8 text-muted-foreground/40" strokeWidth={1.15} />
           </div>
           <p className="max-w-xs text-sm leading-relaxed text-muted-foreground motion-safe:animate-app-fade-up app-stagger-1">
-            {t('chat.empty.hint')}
+            {isGuest ? t('chat.empty.guestHint') : t('chat.empty.hint')}
           </p>
         </div>
       )}

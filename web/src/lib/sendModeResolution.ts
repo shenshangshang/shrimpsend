@@ -13,7 +13,12 @@ export function buildTransferModeOptions(input: {
   httpAvailable: boolean;
   webrtcReachable: boolean | null;
   s3Available: boolean;
+  guest?: boolean;
 }): TransferModeOption[] {
+  if (input.guest) {
+    if (!input.webrtcAvailable) return [];
+    return [{ value: 'webrtc', available: false, attemptable: true }];
+  }
   const modes: TransferModeOption[] = [];
   if (input.peerIsWeb) {
     if (input.webrtcAvailable) {

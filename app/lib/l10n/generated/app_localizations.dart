@@ -5517,8 +5517,20 @@ abstract class AppLocalizations {
   /// No description provided for @qrScannerUnrecognized.
   ///
   /// In en, this message translates to:
-  /// **'Scan a ShrimpSend login QR code'**
+  /// **'Scan a ShrimpSend login or pair QR code'**
   String get qrScannerUnrecognized;
+
+  /// No description provided for @qrScannerPairSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Device paired. You can send files now.'**
+  String get qrScannerPairSuccess;
+
+  /// No description provided for @qrScannerPairFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not pair this device: {error}'**
+  String qrScannerPairFailed(String error);
 
   /// No description provided for @qrScannerTorchOn.
   ///

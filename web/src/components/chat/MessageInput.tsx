@@ -18,6 +18,7 @@ export function MessageInput() {
     handleFileSelect,
     addPendingFiles,
     selectedDeviceId,
+    isGuest,
   } = useChatContext();
 
   const [input, setInput] = useState('');
@@ -40,6 +41,12 @@ export function MessageInput() {
   };
 
   const disabled = !selectedDeviceId;
+  const textDisabled = disabled || isGuest;
+  const placeholder = disabled
+    ? t('chat.header.pickDeviceHint')
+    : isGuest
+      ? t('chat.input.guestPlaceholder')
+      : t('chat.input.placeholder');
 
   return (
     <form
@@ -82,8 +89,8 @@ export function MessageInput() {
                 handleSend(e);
               }
             }}
-            placeholder={disabled ? t('chat.header.pickDeviceHint') : t('chat.input.placeholder')}
-            disabled={sending || disabled}
+            placeholder={placeholder}
+            disabled={sending || textDisabled}
             rows={1}
             className={cn(
               'w-full border-0 bg-transparent py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-0 disabled:opacity-50 resize-none overflow-y-auto max-h-24 field-sizing-content',

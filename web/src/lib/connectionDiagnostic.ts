@@ -103,6 +103,7 @@ export function buildDiagnosticSummary(
     peerIsWeb: boolean;
     webrtcAvailable: boolean;
     s3Available: boolean;
+    guest?: boolean;
   },
 ): string {
   const httpAvailable = !!(
@@ -116,6 +117,7 @@ export function buildDiagnosticSummary(
     httpAvailable,
     webrtcReachable: methods.webrtc,
     s3Available: input.s3Available,
+    guest: input.guest,
   });
   const best = options.find((o) => o.available);
   if (!best) return t('chat.connectionDiag.summaryNoRoute');

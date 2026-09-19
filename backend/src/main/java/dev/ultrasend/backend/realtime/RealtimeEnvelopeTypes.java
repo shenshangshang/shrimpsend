@@ -19,7 +19,8 @@ public final class RealtimeEnvelopeTypes {
             "webrtc_offer",
             "webrtc_answer",
             "webrtc_ice_candidate",
-            "webrtc_transfer_cancel");
+            "webrtc_transfer_cancel",
+            "device_pair_hello");
 
     private RealtimeEnvelopeTypes() {}
 

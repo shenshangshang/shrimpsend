@@ -343,7 +343,13 @@
       "webrtcRetryHttp": "WebRTC retry failed — send via HTTP",
       "httpNotSupportedWebPeer": "HTTP is not supported between web clients — use WebRTC or S3",
       "webrtcTryS3": "WebRTC send failed — try S3 mode",
-      "webrtcRetryS3": "WebRTC retry failed — send via S3"
+      "webrtcRetryS3": "WebRTC retry failed — send via S3",
+      "guestTextNeedsLogin": "Sign in to send messages and use cloud transfer",
+      "webrtcTryLogin": "WebRTC send failed. Sign in to use cloud transfer.",
+      "webrtcRetryLogin": "WebRTC retry failed. Sign in to use cloud transfer.",
+      "pairSelf": "That is this browser’s device ID",
+      "pairInvalid": "Enter a valid device ID",
+      "pairFailed": "Could not pair that device"
     },
     "transferBar": {
       "webrtc": "WebRTC",
@@ -431,10 +437,12 @@
       "sendModifierEnter": "Send (Ctrl+Enter)",
       "sendModifierEnterMac": "Send (⌘+Enter)",
       "pickFile": "Attach file",
-      "devicePanel": "Devices"
+      "devicePanel": "Devices",
+      "guestPlaceholder": "Sign in to send messages — you can still send files"
     },
     "empty": {
       "hint": "Send a message or file — synced to all devices",
+      "guestHint": "Send files over WebRTC. Sign in for messages and cloud transfer.",
       "loadMore": "Load more…",
       "dropHint": "Release to add files"
     },
@@ -881,6 +889,18 @@
     "settingsTitle": "Settings",
     "emptyTitle": "No other devices",
     "emptyHint": "Sign in on another device with the same account to start transferring",
+    "guestLoginTitle": "Sign in for account devices",
+    "guestLoginHint": "Cloud transfer, history, and your other signed-in devices unlock after sign-in.",
+    "guestLoginCta": "Sign in",
+    "addDeviceTitle": "Add a device",
+    "pairQrHint": "Scan this QR with the ShrimpSend app, or paste a device ID.",
+    "copyDeviceId": "Copy device ID",
+    "copiedDeviceId": "Device ID copied",
+    "copyFailed": "Could not copy",
+    "pasteDeviceIdPlaceholder": "Paste device ID or pair link",
+    "pasteDeviceIdAction": "Add",
+    "peerAdded": "Device added",
+    "pairFailed": "Could not pair that device",
     "s3RelayTitle": "S3 relay",
     "s3Checking": "Checking…",
     "s3NotConfigured": "Not configured",

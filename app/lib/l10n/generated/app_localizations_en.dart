@@ -3128,7 +3128,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get qrScannerAlignQr => 'Align the QR code inside the frame';
 
   @override
-  String get qrScannerUnrecognized => 'Scan a ShrimpSend login QR code';
+  String get qrScannerUnrecognized => 'Scan a ShrimpSend login or pair QR code';
+
+  @override
+  String get qrScannerPairSuccess => 'Device paired. You can send files now.';
+
+  @override
+  String qrScannerPairFailed(String error) {
+    return 'Could not pair this device: $error';
+  }
 
   @override
   String get qrScannerTorchOn => 'Turn on flashlight';
