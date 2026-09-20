@@ -16,6 +16,8 @@
 - `GET /download?offerId=xxx`
   - 支持 `Range: bytes=start-` 请求头进行续传
   - 返回 `206 Partial Content` + `Content-Range` 头
+  - 发送端通过云信令 `lan_file_offer` 通知接收端拉取 URL；信封必须带 `toDeviceId`（未登录走 `device-send`，登录账号对网页/访客还要定向发到对端 device channel）
+  - LAN HTTP CORS 含 `Access-Control-Allow-Private-Network: true`，否则浏览器从 HTTPS/localhost 拉局域网地址会被预检拦下
 
 ### 探测
 

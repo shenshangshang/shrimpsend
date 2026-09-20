@@ -2669,6 +2669,37 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chatTransferWaitingPeerShort => 'Waiting for peer…';
 
   @override
+  String get chatTransferPhaseTryingHttp => 'Trying LAN HTTP…';
+
+  @override
+  String get chatTransferPhaseWaitingPull =>
+      'Waiting for the other device to pull…';
+
+  @override
+  String get chatTransferPhaseConnectingWebrtc => 'Connecting WebRTC…';
+
+  @override
+  String get chatTransferPhaseConnectingWebrtcFallback =>
+      'LAN unavailable, connecting WebRTC…';
+
+  @override
+  String get chatTransferPhaseTryingS3 => 'Uploading to cloud storage…';
+
+  @override
+  String get chatTransferPhaseTryingS3Fallback =>
+      'Direct path failed, switching to cloud storage…';
+
+  @override
+  String chatTransferSendingVia(String channel) {
+    return 'Sending via $channel';
+  }
+
+  @override
+  String chatTransferReceivingVia(String channel) {
+    return 'Receiving via $channel';
+  }
+
+  @override
   String get chatTransferCancelledBare => 'Cancelled';
 
   @override

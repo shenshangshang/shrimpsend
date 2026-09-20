@@ -118,11 +118,15 @@ class LanDiscoveryService {
         },
       );
       _broadcast = BonsoirBroadcast(service: service);
-      await _broadcast!.initialize();
-      await _broadcast!.start();
+      await _broadcast!.initialize().timeout(const Duration(seconds: 4));
+      await _broadcast!.start().timeout(const Duration(seconds: 4));
       _log.info('LanDiscovery broadcast started at $lanHttpUrl');
     } catch (e) {
       _log.warning('LanDiscovery startBroadcast failed: $e');
+      try {
+        await _broadcast?.stop();
+      } catch (_) {}
+      _broadcast = null;
     }
   }
 

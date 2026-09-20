@@ -35,6 +35,8 @@ The sender posts the file body directly to the receiver:
 When direct push fails because the receiver cannot accept inbound connections, the protocol flips direction: the reachable side exposes the file and the other side pulls it.
 
 - `GET /download?offerId=...` serves the file.
+- The sender publishes a directed `lan_file_offer` (envelope `toDeviceId` required) so the browser can learn the pull URL. Guest `device-send` rejects offers without it; logged-in fan-out does not reach guest Web.
+- LAN HTTP CORS includes `Access-Control-Allow-Private-Network: true` so Chrome Private / Local Network Access preflights succeed.
 - `Range: bytes=start-` requests are honored and answered with `206 Partial Content` and a `Content-Range` header, so an interrupted pull resumes instead of restarting.
 
 After sign-in, the server coordinates reachability probes between the two devices and decides whether to push or pull, so this is automatic rather than a manual user choice.

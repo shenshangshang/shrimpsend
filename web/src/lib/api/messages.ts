@@ -24,6 +24,8 @@ export type ChatMessage = MessageEnvelope & {
   _status?: LocalStatus;
   _progress?: number;
   _speed?: string;
+  _phase?: string;
+  _transferType?: 'lan' | 'webrtc' | 's3';
 };
 
 export type MessageHistoryItem = MessageEnvelope & { id: number };

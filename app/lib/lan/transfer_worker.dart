@@ -95,6 +95,11 @@ class _WorkerReady extends _ToMain {
   final SendPort commandPort;
 }
 
+class _WorkerFailed extends _ToMain {
+  _WorkerFailed(this.error);
+  final String error;
+}
+
 sealed class _ToWorker {}
 
 class _RegisterPull extends _ToWorker {
@@ -246,6 +251,8 @@ class HttpTransferServer {
 
   final Map<String, _PullCallbacks> _pullCallbacks = {};
 
+  static const Duration _workerReadyTimeout = Duration(seconds: 5);
+
   Future<String?> start(
     String bindAddress,
     int port,
@@ -255,32 +262,53 @@ class HttpTransferServer {
     String? deviceName,
     String? platform,
   }) async {
-    for (int i = 0; i < workerCount; i++) {
-      final mainPort = ReceivePort();
-      _mainPorts.add(mainPort);
+    try {
+      for (int i = 0; i < workerCount; i++) {
+        final mainPort = ReceivePort();
+        _mainPorts.add(mainPort);
 
-      final isolate = await Isolate.spawn(_workerEntry, [
-        mainPort.sendPort,
-        bindAddress,
-        port,
-        saveDir,
-        deviceId ?? '',
-        deviceName ?? '',
-        platform ?? '',
-      ], debugName: 'http-worker-$i');
-      _workers.add(isolate);
+        final isolate = await Isolate.spawn(_workerEntry, [
+          mainPort.sendPort,
+          bindAddress,
+          port,
+          saveDir,
+          deviceId ?? '',
+          deviceName ?? '',
+          platform ?? '',
+        ], debugName: 'http-worker-$i');
+        _workers.add(isolate);
 
-      final readyCompleter = Completer<SendPort>();
-      mainPort.listen((msg) {
-        if (msg is _WorkerReady) {
-          readyCompleter.complete(msg.commandPort);
-        } else if (msg is _ToMain) {
-          _handleWorkerMessage(msg);
-        }
-      });
+        final readyCompleter = Completer<SendPort>();
+        mainPort.listen((msg) {
+          if (msg is _WorkerReady) {
+            if (!readyCompleter.isCompleted) {
+              readyCompleter.complete(msg.commandPort);
+            }
+          } else if (msg is _WorkerFailed) {
+            if (!readyCompleter.isCompleted) {
+              readyCompleter.completeError(
+                StateError('worker bind failed: ${msg.error}'),
+              );
+            }
+          } else if (msg is _ToMain) {
+            _handleWorkerMessage(msg);
+          }
+        });
 
-      final cmdPort = await readyCompleter.future;
-      _workerPorts.add(cmdPort);
+        final cmdPort = await readyCompleter.future.timeout(
+          _workerReadyTimeout,
+          onTimeout: () {
+            throw TimeoutException(
+              'http-worker-$i ready timeout after ${_workerReadyTimeout.inSeconds}s '
+              '($bindAddress:$port)',
+            );
+          },
+        );
+        _workerPorts.add(cmdPort);
+      }
+    } catch (e) {
+      await stop();
+      rethrow;
     }
 
     _lanHttpUrl = buildLanHttpBaseUrl(bindAddress, port);
@@ -432,6 +460,7 @@ class HttpTransferServer {
         }
 
       case _WorkerReady():
+      case _WorkerFailed():
         break;
     }
   }
@@ -488,7 +517,9 @@ void _workerEntry(List<dynamic> args) async {
   late HttpServer server;
   try {
     server = await HttpServer.bind(address, port, shared: true);
-  } catch (_) {
+  } catch (e) {
+    // Must notify the parent — otherwise start() waits forever on readyCompleter.
+    mainPort.send(_WorkerFailed('$e'));
     return;
   }
 
@@ -518,7 +549,7 @@ void _workerEntry(List<dynamic> args) async {
   });
 
   await for (final request in server) {
-    _setCorsHeaders(request.response);
+    _setCorsHeaders(request);
 
     if (request.method == 'OPTIONS') {
       request.response
@@ -809,8 +840,9 @@ Future<void> _handleRegisterPeer(HttpRequest request, SendPort mainPort) async {
   }
 }
 
-void _setCorsHeaders(HttpResponse response) {
-  response.headers
+void _setCorsHeaders(HttpRequest request) {
+  final headers = request.response.headers;
+  headers
     ..set('Access-Control-Allow-Origin', '*')
     ..set('Access-Control-Allow-Methods', 'GET, POST, HEAD, OPTIONS')
     ..set(
@@ -820,7 +852,12 @@ void _setCorsHeaders(HttpResponse response) {
     ..set(
       'Access-Control-Expose-Headers',
       'X-File-Name, X-File-Size, X-Received-Bytes, Content-Range, ${TransferProtocol.headerFileMtimeMs}',
-    );
+    )
+    // Chrome Private / Local Network Access: HTTPS (and some localhost)
+    // pages fetching RFC1918 LAN URLs send a PNA preflight. Without this
+    // header the reverse-pull GET /download is blocked even when POST
+    // /transfer from the same origin already succeeded in older Chrome.
+    ..set('Access-Control-Allow-Private-Network', 'true');
 }
 
 Future<void> _handleUpload(

@@ -159,7 +159,8 @@ class _FileMeta {
   final String fileName;
   int? size;
   final String? s3Key;
-  final String? transferType;
+  String? transferType;
+  String? phase;
   String? localPath;
   int? lastModifiedMs;
   _FileMeta({
@@ -167,6 +168,7 @@ class _FileMeta {
     this.size,
     this.s3Key,
     this.transferType,
+    this.phase,
     this.localPath,
     this.lastModifiedMs,
   });
@@ -545,6 +547,62 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   void _setMessageStatus(String localId, String status) {
     _localMessageStatus[localId] = status;
     ChatMessageDao.instance.updateStatus('local_$localId', status);
+  }
+
+  void _setTransferPhase(
+    String localId,
+    String phase, {
+    String? transferType,
+    String? fileName,
+    int? size,
+  }) {
+    final id = 'local_$localId';
+    final prev = _fileMetaByMessageId[id];
+    if (prev != null) {
+      final changed =
+          prev.phase != phase ||
+          (transferType != null && prev.transferType != transferType);
+      prev.phase = phase;
+      if (transferType != null) prev.transferType = transferType;
+      if (!changed) return;
+    } else {
+      _fileMetaByMessageId[id] = _FileMeta(
+        fileName: fileName ?? '',
+        size: size,
+        transferType: transferType ?? TransferPhase.channelOf(phase),
+        phase: phase,
+      );
+    }
+    if (mounted) setState(() {});
+  }
+
+  void _insertSendingPlaceholder(
+    String localId,
+    PlatformFile file, {
+    required String phase,
+    String? transferType,
+  }) {
+    final sendingMessage = Message.text(
+      id: 'local_$localId',
+      authorId: _deviceId,
+      createdAt: DateTime.now(),
+      text: _l10n.chatTransferSendingPct(file.name, 0),
+    );
+    _insertOrUpdateMessage(sendingMessage);
+    _fileMetaByMessageId['local_$localId'] = _FileMeta(
+      fileName: file.name,
+      size: file.size,
+      transferType: transferType ?? TransferPhase.channelOf(phase),
+      phase: phase,
+      localPath: file.path,
+    );
+    if (mounted) {
+      setState(() {
+        _localMessageStatus[localId] = 'uploading';
+        _localMessageProgress[localId] = 0;
+      });
+    }
+    _scrollToBottom();
   }
 
   Future<void> _loadDevicePanelState() async {
@@ -3880,7 +3938,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         }
         final payload = msg.payload as Map;
         final targetIds = payload['targetDeviceIds'];
-        if (targetIds is List && targetIds.contains(_deviceId)) {
+        if (isLanFileOfferForMe(
+          me: _deviceId,
+          toDeviceId: msg.toDeviceId ?? toDeviceId,
+          targetDeviceIds: targetIds,
+        )) {
           final pullUrl = payload['pullUrl']?.toString();
           final pullSize = (payload['size'] as num?)?.toInt() ?? 0;
           final offerLocalId = payload['localId']?.toString();
@@ -5558,7 +5620,26 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     var sent = false;
     final allowPush = hops.contains(TransferHop.httpPush);
     final allowPull = hops.contains(TransferHop.httpPull);
+    final httpTried = allowPush || allowPull;
+    final firstPhase = hops.first == TransferHop.s3
+        ? TransferPhase.tryingS3
+        : hops.first == TransferHop.webrtc
+        ? TransferPhase.connectingWebrtc
+        : TransferPhase.tryingHttp;
+    _insertSendingPlaceholder(
+      localId,
+      file,
+      phase: firstPhase,
+      transferType: TransferPhase.channelOf(firstPhase),
+    );
     if (allowPush || allowPull) {
+      _setTransferPhase(
+        localId,
+        TransferPhase.tryingHttp,
+        transferType: 'lan',
+        fileName: file.name,
+        size: file.size,
+      );
       sent = await _sendSingleFileViaLan(
         file,
         targets,
@@ -5586,6 +5667,19 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     if (!sent && hops.contains(TransferHop.webrtc)) {
       final targetId = selectedTargets.firstOrNull;
       if (targetId != null && file.path != null && file.path!.isNotEmpty) {
+        _setTransferPhase(
+          localId,
+          httpTried
+              ? TransferPhase.connectingWebrtcFallback
+              : TransferPhase.connectingWebrtc,
+          transferType: 'webrtc',
+          fileName: file.name,
+          size: file.size,
+        );
+        _updateSendingMessage(
+          localId,
+          _l10n.chatTransferSendingPct(file.name, 0),
+        );
         final remainingHasS3 = hops.contains(TransferHop.s3);
         sent = await _sendFilesViaWebRTC(
           [file],
@@ -5604,6 +5698,19 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     }
 
     if (!sent && hops.contains(TransferHop.s3)) {
+      _setTransferPhase(
+        localId,
+        httpTried || hops.contains(TransferHop.webrtc)
+            ? TransferPhase.tryingS3Fallback
+            : TransferPhase.tryingS3,
+        transferType: 's3',
+        fileName: file.name,
+        size: file.size,
+      );
+      _updateSendingMessage(
+        localId,
+        _l10n.chatTransferSendingPct(file.name, 0),
+      );
       final s3ToDeviceId =
           (convDeviceId != null &&
               convDeviceId != s3VirtualDeviceId &&
@@ -5752,6 +5859,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         fileName: file.name,
         size: file.size,
         transferType: 'webrtc',
+        phase: TransferPhase.connectingWebrtc,
       );
       setState(() {
         _localMessageStatus[localId] = 'uploading';
@@ -5776,6 +5884,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       );
       await session.connected;
       logChat.info('WebRTC transfer initiated to $targetDeviceId');
+      for (final localId in fileLocalIds.values) {
+        _setTransferPhase(
+          localId,
+          TransferPhase.sendingWebrtc,
+          transferType: 'webrtc',
+        );
+      }
       return true;
     } catch (e) {
       logChat.warning('WebRTC failed: $e');
@@ -5935,6 +6050,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     final tracker = _speedTrackers['local_$localId'] ?? SpeedTracker();
     _speedTrackers['local_$localId'] = tracker;
     try {
+      final ap = await _accountPartForThreadKey();
       final pulled = await _tryLanReversePullFallback(
         localId: localId,
         fileName: fileName,
@@ -5946,6 +6062,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         lastModifiedMs: lastModifiedMs,
         tracker: tracker,
         cancelToken: fallbackToken,
+        threadKey: threadKeyOneToOne(ap, _deviceId, targetDeviceId),
       );
       if (fallbackToken.isCancelled || !mounted) {
         if (fallbackToken.isCancelled) {
@@ -6004,6 +6121,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     required int? lastModifiedMs,
     required SpeedTracker tracker,
     required CancelToken? cancelToken,
+    String? threadKey,
     Duration pullTimeout = const Duration(seconds: 60),
   }) async {
     if (!mounted) return false;
@@ -6080,27 +6198,51 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     );
     if (pullUrl == null || !mounted) return false;
 
+    var publishedAny = false;
     if (!_effectiveOffline) {
       logChat.info(
         'publish lan_file_offer file=$fileName targets=$targetDeviceIds '
         'pullUrl=$pullUrl timeout=${pullTimeout.inSeconds}s',
       );
-      await sendMessage({
-        'type': 'lan_file_offer',
-        'payload': <String, dynamic>{
-          'fileName': fileName,
-          'size': fileSize,
-          'pullUrl': pullUrl,
-          'offerId': offerId,
-          'targetDeviceIds': targetDeviceIds,
-          'localId': localId,
-          if (lastModifiedMs != null) 'lastModifiedMs': lastModifiedMs,
-        },
-        'fromDeviceId': _deviceId,
-        'ts': DateTime.now().millisecondsSinceEpoch,
-      });
+      for (final targetId in targetDeviceIds) {
+        if (targetId.isEmpty) continue;
+        try {
+          await sendMessage({
+            'type': 'lan_file_offer',
+            'payload': <String, dynamic>{
+              'fileName': fileName,
+              'size': fileSize,
+              'pullUrl': pullUrl,
+              'offerId': offerId,
+              'targetDeviceIds': targetDeviceIds,
+              'targetDeviceId': targetId,
+              'localId': localId,
+              if (lastModifiedMs != null) 'lastModifiedMs': lastModifiedMs,
+            },
+            'fromDeviceId': _deviceId,
+            'toDeviceId': targetId,
+            if (threadKey != null && threadKey.isNotEmpty) 'threadKey': threadKey,
+            'ts': DateTime.now().millisecondsSinceEpoch,
+          });
+          publishedAny = true;
+        } catch (e) {
+          logChat.warning('publish lan_file_offer to $targetId failed: $e');
+        }
+      }
+    }
+    if (!publishedAny) {
+      logChat.warning(
+        'lan reverse-pull offer not published for $fileName '
+        'offline=$_effectiveOffline targets=$targetDeviceIds',
+      );
+      return false;
     }
     if (mounted) {
+      _setTransferPhase(
+        localId,
+        TransferPhase.waitingPull,
+        transferType: 'lan',
+      );
       _updateSendingMessage(
         localId,
         _l10n.chatTransferWaitingPeerLine(fileName),
@@ -6214,6 +6356,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       fileName: file.name,
       size: file.size,
       transferType: 'lan',
+      phase: TransferPhase.tryingHttp,
     );
     if (mounted) setState(() => _localMessageStatus[localId] = 'uploading');
     final tracker = SpeedTracker();
@@ -6237,7 +6380,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         fromDeviceId: _deviceId,
         localId: localId,
         cancelToken: cancelToken,
-        onConnected: () => anyPushConnected = true,
+        onConnected: () {
+          anyPushConnected = true;
+          _setTransferPhase(
+            localId,
+            TransferPhase.sendingHttp,
+            transferType: 'lan',
+          );
+        },
         onProgress: (sent, total) {
           if (!mounted || cancelToken.isCancelled) return;
           tracker.update(sent);
@@ -6245,6 +6395,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
             localId,
             sent,
             totalBytes: total > 0 ? total : file.size,
+          );
+          _setTransferPhase(
+            localId,
+            TransferPhase.sendingHttp,
+            transferType: 'lan',
           );
           final pct = total > 0
               ? (sent * 100 / total).round().clamp(0, 100)
@@ -6337,6 +6492,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
           tracker: tracker,
           cancelToken: cancelToken,
           pullTimeout: pullWait,
+          threadKey: outbound.threadKey,
         );
         if (cancelToken.isCancelled) {
           await TransferStateManager.instance.markStatus(localId, 'paused');
@@ -6563,6 +6719,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         fileName: file.name,
         size: file.size,
         transferType: 's3',
+        phase: TransferPhase.tryingS3,
       );
       if (mounted) {
         setState(() {
@@ -6601,6 +6758,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
             );
           }
           if (mounted) {
+            _setTransferPhase(
+              localId,
+              TransferPhase.sendingS3,
+              transferType: 's3',
+            );
             setState(() {
               _localMessageProgress[localId] = pct;
             });
@@ -7030,6 +7192,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     final fileName = _webrtcFileNameMap[fileId];
     if (fileName != null) {
       final status = _localMessageStatus[localId];
+      if (status == 'uploading') {
+        _setTransferPhase(
+          localId,
+          TransferPhase.sendingWebrtc,
+          transferType: 'webrtc',
+        );
+      }
       final progressLine = status == 'uploading'
           ? _l10n.chatTransferSendingPct(fileName, pct)
           : _l10n.chatTransferReceivingPct(fileName, pct);
@@ -9473,14 +9642,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
           ? DateTime.now().difference(startTime)
           : null;
       final progressMeta = _fileMetaByMessageId[message.id];
+      final probing = TransferPhase.isConnecting(progressMeta?.phase);
       bubble = TransferProgressBubble(
         colors: colors,
         fileName: fileName,
-        progress: pct / 100.0,
+        progress: probing ? null : pct / 100.0,
         isUploading: direction == '发送中' || direction == 'Sending',
-        speed: speedStr,
-        speedBytesPerSecond: speedBps,
-        elapsed: elapsed,
+        speed: probing ? null : speedStr,
+        speedBytesPerSecond: probing ? null : speedBps,
+        elapsed: probing ? null : elapsed,
         canCancel: canCancel,
         onCancel: canCancel
             ? () {
@@ -9496,6 +9666,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         isSentByMe: isSentByMe,
         transferLabel: transferTypeLabel(progressMeta?.transferType),
         transferType: progressMeta?.transferType,
+        transferPhase: progressMeta?.phase,
         fileSize: progressMeta?.size,
       );
     } else if (_matchWaiting(text) case final waitingMatch?) {
@@ -9514,12 +9685,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         fileName: fileName,
         progress: null,
         isUploading: true,
-        statusText: AppLocalizations.of(context).chatTransferWaitingPeerShort,
         canCancel: canCancel,
         onCancel: canCancel ? () => _cancelTransfer(localId!) : null,
         isSentByMe: isSentByMe,
         transferLabel: transferTypeLabel(waitMeta?.transferType),
-        transferType: waitMeta?.transferType,
+        transferType: waitMeta?.transferType ?? 'lan',
+        transferPhase: waitMeta?.phase ?? TransferPhase.waitingPull,
         fileSize: waitMeta?.size,
       );
     } else if (_isCancelledTransferLine(text)) {

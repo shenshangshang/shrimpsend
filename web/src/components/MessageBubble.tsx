@@ -5,11 +5,17 @@ import { Loader2, Copy, Trash2, SquareCheck } from 'lucide-react';
 import type { ChatMessage, LocalStatus } from '@/lib/api';
 import { getFileCategory, formatFileSize } from '@/lib/fileUtils';
 import { FileIcon } from './FileIcon';
-import { FileCard } from './FileCard';
+import { FileCard, TransferTypePill } from './FileCard';
 import { ImagePreview } from './ImagePreview';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useI18n } from '@/contexts/I18nContext';
+import {
+  fileTransferTypeFromPayload,
+  isConnectingTransferPhase,
+  transferChannelLabel,
+  transferPhaseMessageKey,
+} from '@/lib/transferPathCascade';
 
 type FilePayload = {
   key?: string;
@@ -120,6 +126,7 @@ function messageBubbleDataEqual(a: ChatMessage, b: ChatMessage): boolean {
   if (a.type !== b.type || a.ts !== b.ts || a.fromDeviceId !== b.fromDeviceId) return false;
   if (a._localId !== b._localId || a.id !== b.id) return false;
   if (a._status !== b._status || a._progress !== b._progress || a._speed !== b._speed) return false;
+  if (a._phase !== b._phase || a._transferType !== b._transferType) return false;
   return a.payload === b.payload;
 }
 
@@ -175,13 +182,22 @@ function MessageBubbleInner({
     const fp = payload as FilePayload;
     const isTransferring = status === 'uploading' || status === 'downloading';
     const category = getFileCategory(fp?.fileName);
-    const progressLabel = status === 'downloading' ? t('chat.bubble.receiving') : t('chat.bubble.transferSending');
+    const transferType = msg._transferType ?? fileTransferTypeFromPayload(fp);
+    const channel = transferChannelLabel(transferType);
+    const phaseKey = transferPhaseMessageKey(msg._phase);
+    const connecting = isConnectingTransferPhase(msg._phase)
+      || (isTransferring && (progress == null || progress === 0) && !speed);
+    const progressLabel = phaseKey
+      ? t(phaseKey)
+      : channel
+        ? t(status === 'downloading' ? 'chat.bubble.receivingVia' : 'chat.bubble.sendingVia', { channel })
+        : status === 'downloading' ? t('chat.bubble.receiving') : t('chat.bubble.transferSending');
     const showByteRow = fp?.size != null && fp.size > 0;
     const doneBytes =
       showByteRow && progress != null ? Math.round((fp.size! * progress) / 100) : null;
 
-    // transferring state
-    if (isTransferring && progress != null) {
+    // transferring / probing state
+    if (isTransferring) {
       return (
         <div className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}>
           <div className="max-w-[70%] flex flex-col">
@@ -191,8 +207,9 @@ function MessageBubbleInner({
               <div className="flex-1 min-w-0">
                 <div className="flex items-start gap-2 min-w-0">
                   <p className="text-sm font-medium truncate flex-1">{fp?.fileName ?? t('chat.bubble.fileFallback')}</p>
+                  <TransferTypePill type={transferType} />
                   <div className="flex shrink-0 items-center gap-1.5">
-                    {!showByteRow && (
+                    {!connecting && !showByteRow && progress != null && (
                       <span className="text-xs font-semibold tabular-nums text-primary">{progress}%</span>
                     )}
                   </div>
@@ -201,8 +218,14 @@ function MessageBubbleInner({
                   {progressLabel}
                   {!showByteRow && fp?.size != null && ` · ${formatFileSize(fp.size)}`}
                 </p>
-                <Progress value={progress} className="mt-2 h-1.5" />
-                {(showByteRow || speed) && (
+                {connecting ? (
+                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+                    <div className="h-full w-1/3 rounded-full bg-primary/80 animate-pulse" />
+                  </div>
+                ) : (
+                  <Progress value={progress ?? 0} className="mt-2 h-1.5" />
+                )}
+                {!connecting && (showByteRow || speed) && (
                   <div className="flex w-full items-start gap-2 mt-1 text-[11px] text-muted-foreground">
                     <span className="min-w-0 flex-1 truncate">
                       {showByteRow && doneBytes != null && fp.size != null
@@ -240,20 +263,23 @@ function MessageBubbleInner({
               <FileIcon category={category} size={32} />
               <div className="min-w-0 flex-1">
                 <p className={`text-sm truncate ${status === 'failed' ? 'text-destructive' : ''}`}>{fp?.fileName ?? t('chat.bubble.fileFallback')}</p>
-                <span className="text-[11px] text-muted-foreground">
-                  {status === 'sending' && t('chat.bubble.sendingEllipsis')}
-                  {status === 'cancelled' && t('chat.bubble.cancelled')}
-                  {status === 'failed' && (
-                    <>
-                      {t('chat.bubble.sendFailed')}
-                      {onRetry && (
-                        <button data-no-select-toggle type="button" onClick={onRetry} className="ml-2 underline underline-offset-2 text-primary hover:no-underline">
-                          {t('chat.bubble.retry')}
-                        </button>
-                      )}
-                    </>
-                  )}
-                </span>
+                <div className="mt-0.5 flex items-center gap-2">
+                  <TransferTypePill type={transferType} />
+                  <span className="text-[11px] text-muted-foreground">
+                    {status === 'sending' && (phaseKey ? t(phaseKey) : t('chat.bubble.sendingEllipsis'))}
+                    {status === 'cancelled' && t('chat.bubble.cancelled')}
+                    {status === 'failed' && (
+                      <>
+                        {t('chat.bubble.sendFailed')}
+                        {onRetry && (
+                          <button data-no-select-toggle type="button" onClick={onRetry} className="ml-2 underline underline-offset-2 text-primary hover:no-underline">
+                            {t('chat.bubble.retry')}
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
@@ -288,6 +314,7 @@ function MessageBubbleInner({
               fileName={fp?.fileName}
               s3Key={fp?.key}
               size={fp?.size}
+              transferType={transferType}
             />
             {!selectMode && (
               <HoverActions isText={false} onDelete={onDelete} onEnterMultiSelect={onEnterMultiSelect} />

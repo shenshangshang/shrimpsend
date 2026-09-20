@@ -95,6 +95,15 @@ void main() {
     });
   });
 
+  group('TransferPhase', () {
+    test('connecting phases are indeterminate', () {
+      expect(TransferPhase.isConnecting(TransferPhase.tryingHttp), isTrue);
+      expect(TransferPhase.isConnecting(TransferPhase.connectingWebrtcFallback), isTrue);
+      expect(TransferPhase.isConnecting(TransferPhase.sendingHttp), isFalse);
+      expect(TransferPhase.channelOf(TransferPhase.tryingS3Fallback), 's3');
+    });
+  });
+
   group('TransferHopSkipCache', () {
     test('skips a hop that just failed until TTL', () {
       final cache = TransferHopSkipCache(ttl: const Duration(seconds: 30));
@@ -112,6 +121,42 @@ void main() {
       cache.markFailed('peer', TransferHop.httpPush);
       cache.markSucceeded('peer', TransferHop.httpPush);
       expect(cache.shouldSkip('peer', TransferHop.httpPush), isFalse);
+    });
+  });
+
+  group('isLanFileOfferForMe', () {
+    test('directed toDeviceId wins over target list', () {
+      expect(
+        isLanFileOfferForMe(
+          me: 'web',
+          toDeviceId: 'web',
+          targetDeviceIds: ['phone'],
+        ),
+        isTrue,
+      );
+      expect(
+        isLanFileOfferForMe(
+          me: 'web',
+          toDeviceId: 'phone',
+          targetDeviceIds: ['web'],
+        ),
+        isFalse,
+      );
+    });
+
+    test('falls back to targetDeviceIds when toDeviceId is absent', () {
+      expect(
+        isLanFileOfferForMe(
+          me: 'web',
+          targetDeviceIds: ['web', 'phone'],
+        ),
+        isTrue,
+      );
+      expect(
+        isLanFileOfferForMe(me: 'web', targetDeviceIds: ['phone']),
+        isFalse,
+      );
+      expect(isLanFileOfferForMe(me: 'web'), isFalse);
     });
   });
 }

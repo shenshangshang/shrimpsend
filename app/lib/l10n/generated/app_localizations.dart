@@ -4752,6 +4752,54 @@ abstract class AppLocalizations {
   /// **'Waiting for peer…'**
   String get chatTransferWaitingPeerShort;
 
+  /// No description provided for @chatTransferPhaseTryingHttp.
+  ///
+  /// In en, this message translates to:
+  /// **'Trying LAN HTTP…'**
+  String get chatTransferPhaseTryingHttp;
+
+  /// No description provided for @chatTransferPhaseWaitingPull.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for the other device to pull…'**
+  String get chatTransferPhaseWaitingPull;
+
+  /// No description provided for @chatTransferPhaseConnectingWebrtc.
+  ///
+  /// In en, this message translates to:
+  /// **'Connecting WebRTC…'**
+  String get chatTransferPhaseConnectingWebrtc;
+
+  /// No description provided for @chatTransferPhaseConnectingWebrtcFallback.
+  ///
+  /// In en, this message translates to:
+  /// **'LAN unavailable, connecting WebRTC…'**
+  String get chatTransferPhaseConnectingWebrtcFallback;
+
+  /// No description provided for @chatTransferPhaseTryingS3.
+  ///
+  /// In en, this message translates to:
+  /// **'Uploading to cloud storage…'**
+  String get chatTransferPhaseTryingS3;
+
+  /// No description provided for @chatTransferPhaseTryingS3Fallback.
+  ///
+  /// In en, this message translates to:
+  /// **'Direct path failed, switching to cloud storage…'**
+  String get chatTransferPhaseTryingS3Fallback;
+
+  /// No description provided for @chatTransferSendingVia.
+  ///
+  /// In en, this message translates to:
+  /// **'Sending via {channel}'**
+  String chatTransferSendingVia(String channel);
+
+  /// No description provided for @chatTransferReceivingVia.
+  ///
+  /// In en, this message translates to:
+  /// **'Receiving via {channel}'**
+  String chatTransferReceivingVia(String channel);
+
   /// No description provided for @chatTransferCancelledBare.
   ///
   /// In en, this message translates to:

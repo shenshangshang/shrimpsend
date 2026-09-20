@@ -119,6 +119,7 @@ class TransferProgressBubble extends StatelessWidget {
   final bool isSentByMe;
   final String? transferLabel;
   final String? transferType;
+  final String? transferPhase;
   final int? fileSize;
   final double? speedBytesPerSecond;
   final Duration? elapsed;
@@ -136,6 +137,7 @@ class TransferProgressBubble extends StatelessWidget {
     required this.isSentByMe,
     this.transferLabel,
     this.transferType,
+    this.transferPhase,
     this.fileSize,
     this.speedBytesPerSecond,
     this.elapsed,
@@ -170,19 +172,17 @@ class TransferProgressBubble extends StatelessWidget {
 
   String _buildSubLine(AppLocalizations l10n) {
     final parts = <String>[];
-    if (statusText != null) {
+    if (statusText != null && statusText!.isNotEmpty) {
       parts.add(statusText!);
     } else {
       parts.add(
-        isUploading
-            ? l10n.chatTransferProgressSending
-            : l10n.chatTransferProgressReceiving,
+        transferPhaseStatus(
+          l10n,
+          phase: transferPhase,
+          transferType: transferType,
+          isUploading: isUploading,
+        ),
       );
-    }
-    if (transferType == null &&
-        transferLabel != null &&
-        transferLabel!.isNotEmpty) {
-      parts.add(transferLabel!);
     }
     final showSizeHere = !(progress != null &&
         fileSize != null &&
@@ -238,6 +238,16 @@ class TransferProgressBubble extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
+                    if (transferTypeLabel(transferType).isNotEmpty) ...[
+                      const SizedBox(width: 6),
+                      TransferTypeMark(
+                        transferType: transferType,
+                        color: colors.bubbleAccent(
+                          isSentByMe,
+                          AppColorTheme.protocolColor(transferType),
+                        ),
+                      ),
+                    ],
                     if (!showByteRow && pct != null) ...[
                       const SizedBox(width: 6),
                       Text(
@@ -390,6 +400,16 @@ class TransferStatusBubble extends StatelessWidget {
                         style: theme.textTheme.bodyMedium?.copyWith(color: color),
                       ),
                     ),
+                    if (transferTypeLabel(transferType).isNotEmpty) ...[
+                      const SizedBox(width: 6),
+                      TransferTypeMark(
+                        transferType: transferType,
+                        color: colors.bubbleAccent(
+                          isSentByMe,
+                          AppColorTheme.protocolColor(transferType),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
                 if (subtitle != null) ...[

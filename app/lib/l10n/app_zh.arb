@@ -1002,6 +1002,28 @@
     }
   },
   "chatTransferWaitingPeerShort": "等待接收方连接…",
+  "chatTransferPhaseTryingHttp": "正在尝试局域网 HTTP…",
+  "chatTransferPhaseWaitingPull": "正在等待对方从本机拉取…",
+  "chatTransferPhaseConnectingWebrtc": "正在连接 WebRTC…",
+  "chatTransferPhaseConnectingWebrtcFallback": "局域网未通，正在连接 WebRTC…",
+  "chatTransferPhaseTryingS3": "正在上传到云存储…",
+  "chatTransferPhaseTryingS3Fallback": "直连未通，正在改用云存储…",
+  "chatTransferSendingVia": "{channel} 发送中",
+  "@chatTransferSendingVia": {
+    "placeholders": {
+      "channel": {
+        "type": "String"
+      }
+    }
+  },
+  "chatTransferReceivingVia": "{channel} 接收中",
+  "@chatTransferReceivingVia": {
+    "placeholders": {
+      "channel": {
+        "type": "String"
+      }
+    }
+  },
   "chatTransferCancelledBare": "已取消",
   "chatTransferCancelledNamed": "{fileName} 已取消",
   "@chatTransferCancelledNamed": {

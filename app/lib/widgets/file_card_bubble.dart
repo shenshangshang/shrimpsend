@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../color_theme.dart';
 import '../color_theme_store.dart';
 import '../ui/app_ui.dart';
 import '../utils/file_utils.dart';
+import 'chat/chat_theme_helpers.dart';
 import 'file_icon_widget.dart';
 
 class FileCardBubble extends StatelessWidget {
@@ -79,6 +81,17 @@ class FileCardBubble extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
+                    if (transferTypeLabel(transferType).isNotEmpty) ...[
+                      const SizedBox(width: 6),
+                      TransferTypeMark(
+                        transferType: transferType,
+                        color: colorTheme.bubbleAccent(
+                          brightness,
+                          isSentByMe: isSentByMe,
+                          accent: AppColorTheme.protocolColor(transferType),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
                 if (sizeStr.isNotEmpty) ...[

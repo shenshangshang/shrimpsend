@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.ultrasend.backend.realtime.RealtimePublisher;
 import dev.ultrasend.backend.config.MessageEncryptionProperties;
 import dev.ultrasend.backend.config.UserDataEncryptionProperties;
+import dev.ultrasend.backend.entity.Device;
 import dev.ultrasend.backend.entity.Message;
 import dev.ultrasend.backend.entity.User;
 import dev.ultrasend.backend.repository.DeviceRepository;
@@ -120,6 +121,41 @@ class MessageServiceTest {
         verify(messageRepository, never()).save(any());
         verify(mailboxService).storeIfEphemeral(eq(1L), same(envelope));
         verify(realtimePublisher).publishToUserBestEffort(eq("1"), same(envelope));
+        verify(realtimePublisher, never()).publishToDeviceBestEffort(any(), any());
+    }
+
+    @Test
+    void sendDirectedEphemeralAlsoPublishesToExternalDevice() {
+        Map<String, Object> envelope = new java.util.HashMap<>();
+        envelope.put("type", "lan_file_offer");
+        envelope.put("payload", Map.of("pullUrl", "http://10.0.0.2/f"));
+        envelope.put("fromDeviceId", "device_a");
+        envelope.put("toDeviceId", "web-guest");
+        envelope.put("ts", 1L);
+        when(deviceRepository.findByDeviceId("web-guest")).thenReturn(Optional.empty());
+
+        messageService.send("1", envelope);
+
+        verify(realtimePublisher).publishToUserBestEffort(eq("1"), same(envelope));
+        verify(realtimePublisher).publishToDeviceBestEffort(eq("web-guest"), same(envelope));
+    }
+
+    @Test
+    void sendDirectedEphemeralDoesNotDoublePublishSameAccountDevice() {
+        Map<String, Object> envelope = new java.util.HashMap<>();
+        envelope.put("type", "lan_file_offer");
+        envelope.put("payload", Map.of("pullUrl", "http://10.0.0.2/f"));
+        envelope.put("fromDeviceId", "device_a");
+        envelope.put("toDeviceId", "web-own");
+        envelope.put("ts", 1L);
+        User owner = User.builder().id(1L).build();
+        Device web = Device.builder().deviceId("web-own").name("Web").user(owner).build();
+        when(deviceRepository.findByDeviceId("web-own")).thenReturn(Optional.of(web));
+
+        messageService.send("1", envelope);
+
+        verify(realtimePublisher).publishToUserBestEffort(eq("1"), same(envelope));
+        verify(realtimePublisher, never()).publishToDeviceBestEffort(any(), any());
     }
 
     @Test
@@ -294,5 +330,19 @@ class MessageServiceTest {
         verify(mailboxService).storeIfEphemeral(isNull(), any());
         verify(realtimePublisher).publishToDeviceBestEffort(eq("peer"), any());
         verify(messageRepository, never()).save(any());
+    }
+
+    @Test
+    void sendFromDevicePublishesLanFileOfferToPeer() {
+        Map<String, Object> envelope = new java.util.HashMap<>();
+        envelope.put("type", "lan_file_offer");
+        envelope.put("toDeviceId", "peer");
+        envelope.put("payload", Map.of("pullUrl", "http://10.0.0.2/f", "targetDeviceId", "peer"));
+        when(devicePairingService.canSignal("dev-a", "peer")).thenReturn(true);
+        when(deviceRepository.findByDeviceId("peer")).thenReturn(Optional.empty());
+
+        messageService.sendFromDevice("dev-a", envelope);
+
+        verify(realtimePublisher).publishToDeviceBestEffort(eq("peer"), any());
     }
 }

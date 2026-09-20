@@ -77,6 +77,7 @@ public class MessageService {
             log.debug("ephemeral message (type={}) mailbox + broadcast", type);
         }
         realtimePublisher.publishToUserBestEffort(userId, data);
+        publishDirectedToExternalDeviceIfNeeded(uid, data);
     }
 
     /**
@@ -121,6 +122,33 @@ public class MessageService {
         mailboxService.storeIfEphemeral(mailboxUserId, map);
         realtimePublisher.publishToDeviceBestEffort(toDeviceId, map);
         log.debug("device send type={} from={} to={}", type, fromDeviceId, toDeviceId);
+    }
+
+    /**
+     * WuKongIM connects as {@code uid=deviceId}. {@link RealtimePublisher#publishToUser}
+     * fans out to the sender account's devices only, so a directed envelope aimed
+     * at a guest / other-account peer never arrives unless we also publish to
+     * that device channel.
+     */
+    void publishDirectedToExternalDeviceIfNeeded(long senderUserId, Object data) {
+        if (!(data instanceof Map<?, ?> map)) {
+            return;
+        }
+        Object toObj = map.get("toDeviceId");
+        if (toObj == null) {
+            return;
+        }
+        String toDeviceId = toObj.toString();
+        if (toDeviceId.isBlank()) {
+            return;
+        }
+        var found = deviceRepository.findByDeviceId(toDeviceId);
+        Device boundTo = found != null ? found.orElse(null) : null;
+        Long boundUid = (boundTo != null && boundTo.getUser() != null) ? boundTo.getUser().getId() : null;
+        if (boundUid != null && boundUid.equals(senderUserId)) {
+            return;
+        }
+        realtimePublisher.publishToDeviceBestEffort(toDeviceId, data);
     }
 
     /** Ensures persisted envelopes carry a canonical {@code threadKey}. */

@@ -505,7 +505,18 @@
       "cancel": "取消",
       "sendingEllipsis": "发送中…",
       "cancelled": "已取消",
-      "fileFallback": "文件"
+      "fileFallback": "文件",
+      "channelHttp": "HTTP",
+      "channelWebrtc": "WebRTC",
+      "channelS3": "S3",
+      "phaseTryingHttp": "正在尝试局域网 HTTP…",
+      "phaseWaitingPull": "正在等待对方从本机拉取…",
+      "phaseConnectingWebrtc": "正在连接 WebRTC…",
+      "phaseConnectingWebrtcFallback": "局域网未通，正在连接 WebRTC…",
+      "phaseTryingS3": "正在上传到云存储…",
+      "phaseTryingS3Fallback": "直连未通，正在改用云存储…",
+      "sendingVia": "{channel} 发送中",
+      "receivingVia": "{channel} 接收中"
     }
   },
   "devices": {

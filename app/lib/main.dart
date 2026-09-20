@@ -63,6 +63,7 @@ import 'services/desktop_paste_dispatcher.dart';
 import 'services/desktop_file_drop_dispatcher.dart';
 import 'services/share_receive_service.dart';
 import 'services/saf_storage_service.dart';
+import 'services/boot_best_effort.dart';
 import 'services/shared_preferences_bootstrap.dart';
 import 'services/windows_launch_at_startup_service.dart';
 import 'utils/runtime_platform.dart';
@@ -169,7 +170,10 @@ Future<void> _bootstrap(List<String> args) async {
   logBoot.info('boot: shared preferences ready');
   final launchedAtStartup = WindowsLaunchAtStartupService.isStartupLaunch(args);
   if (Platform.isWindows) {
-    await WindowsLaunchAtStartupService.syncWithPreference();
+    await bestEffortBootStep(
+      'windows launch at startup',
+      WindowsLaunchAtStartupService.syncWithPreference,
+    );
   }
 
   final localeRegionStore = LocaleRegionStore();
@@ -177,11 +181,14 @@ Future<void> _bootstrap(List<String> args) async {
   await loadSendShortcutMode();
   logBoot.info('boot: locale/region + shortcuts loaded');
 
-  await OpenpanelBootstrap.initIfEligible();
-  logBoot.info('boot: openpanel init done');
-
-  await FeedmatterBootstrap.initIfEligible();
-  logBoot.info('boot: feedmatter init done');
+  await bestEffortBootStep(
+    'openpanel init',
+    OpenpanelBootstrap.initIfEligible,
+  );
+  await bestEffortBootStep(
+    'feedmatter init',
+    FeedmatterBootstrap.initIfEligible,
+  );
 
   // 桌面更新 zip 内需含与 windows/CMakeLists.txt BINARY_NAME 一致的主程序（cn: 虾传.exe，intl: Shrimpsend.exe）。
   // MSIX/商店安装目录不可被 ZIP 覆盖，故不配置内置更新器（由商店负责更新）。

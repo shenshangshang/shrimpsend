@@ -54,6 +54,9 @@ class LanReceiver {
   /// Fewer workers reduces concurrent partial writes on the receiver cache.
   static const int _workerCount = 2;
   static const Duration _pullExpiry = Duration(minutes: 5);
+  static const Duration _wifiIpTimeout = Duration(seconds: 3);
+  static const Duration _portBindTimeout = Duration(seconds: 8);
+  static const Duration _startOverallTimeout = Duration(seconds: 12);
 
   bool get isActive => _lanHttpUrl != null;
   String? get lanHttpUrl => _lanHttpUrl;
@@ -108,10 +111,12 @@ class LanReceiver {
   static Future<String?> _getLanIp() async {
     try {
       final info = NetworkInfo();
-      final wifiIp = await info.getWifiIP();
+      final wifiIp = await info.getWifiIP().timeout(_wifiIpTimeout);
       if (wifiIp != null && wifiIp.isNotEmpty && wifiIp != '127.0.0.1') {
         return wifiIp;
       }
+    } on TimeoutException {
+      _log.warning('LanReceiver getWifiIP timed out after ${_wifiIpTimeout.inSeconds}s');
     } catch (e) {
       _log.warning('LanReceiver getWifiIP failed: $e');
     }
@@ -149,10 +154,33 @@ class LanReceiver {
   }
 
   /// Starts the HTTP transfer server on a free port, gets LAN IP, and registers lanHttpUrl.
+  ///
+  /// Bounded by [_startOverallTimeout] so a hung WiFi IP lookup / isolate bind
+  /// cannot block callers (and thus cloud realtime) forever.
   Future<String?> start() async {
     if (_httpServer != null) return _lanHttpUrl;
+    final startedAt = DateTime.now();
+    final deadline = startedAt.add(_startOverallTimeout);
+    _log.info('LanReceiver start begin');
+    try {
+      return await _startUnbounded(deadline);
+    } catch (e) {
+      _log.warning('LanReceiver start failed: $e');
+      return null;
+    } finally {
+      _log.info(
+        'LanReceiver start end ms=${DateTime.now().difference(startedAt).inMilliseconds} '
+        'url=${_lanHttpUrl ?? 'null'}',
+      );
+    }
+  }
 
+  Future<String?> _startUnbounded(DateTime deadline) async {
     _tempDirPath ??= await FileStore.getReceiveDir();
+    if (DateTime.now().isAfter(deadline)) {
+      _log.warning('LanReceiver start deadline exceeded before IP lookup');
+      return null;
+    }
     final lanIp = await _getLanIp();
     if (lanIp == null || lanIp.isEmpty) {
       _log.warning('LanReceiver no usable LAN IP');
@@ -160,6 +188,13 @@ class LanReceiver {
     }
 
     for (int port = _portMin; port <= _portMax; port++) {
+      if (DateTime.now().isAfter(deadline)) {
+        _log.warning(
+          'LanReceiver start deadline exceeded after ${_startOverallTimeout.inSeconds}s '
+          '(stopped at port $port)',
+        );
+        return null;
+      }
       HttpTransferServer? tentative;
       try {
         tentative = HttpTransferServer(
@@ -169,18 +204,27 @@ class LanReceiver {
           onMessageReceived: onMessageReceived,
           onPeerRegistered: onPeerRegistered,
         );
-        await tentative.start(
-          lanIp,
-          port,
-          _workerCount,
-          _tempDirPath!,
-          deviceId: deviceId,
-          deviceName: deviceName,
-          platform: platform,
-        );
+        await tentative
+            .start(
+              lanIp,
+              port,
+              _workerCount,
+              _tempDirPath!,
+              deviceId: deviceId,
+              deviceName: deviceName,
+              platform: platform,
+            )
+            .timeout(_portBindTimeout);
         final url = buildLanHttpBaseUrl(lanIp, port);
         _log.info('LanReceiver serving at $url');
-        await _onRegisterLanHttpUrl(url);
+        // Registration (Bonsoir + cloud updateDevice) must not block serving.
+        try {
+          await _onRegisterLanHttpUrl(url).timeout(const Duration(seconds: 5));
+        } catch (e) {
+          _log.warning(
+            'LanReceiver onRegisterLanHttpUrl failed (non-blocking): $e',
+          );
+        }
         _httpServer = tentative;
         _lanHttpUrl = url;
         return _lanHttpUrl;

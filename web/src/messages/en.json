@@ -505,7 +505,18 @@
       "cancel": "Cancel",
       "sendingEllipsis": "Sending…",
       "cancelled": "Cancelled",
-      "fileFallback": "File"
+      "fileFallback": "File",
+      "channelHttp": "HTTP",
+      "channelWebrtc": "WebRTC",
+      "channelS3": "S3",
+      "phaseTryingHttp": "Trying LAN HTTP…",
+      "phaseWaitingPull": "Waiting for the other device to pull…",
+      "phaseConnectingWebrtc": "Connecting WebRTC…",
+      "phaseConnectingWebrtcFallback": "LAN unavailable, connecting WebRTC…",
+      "phaseTryingS3": "Uploading to cloud storage…",
+      "phaseTryingS3Fallback": "Direct path failed, switching to cloud storage…",
+      "sendingVia": "Sending via {channel}",
+      "receivingVia": "Receiving via {channel}"
     }
   },
   "devices": {

@@ -15,6 +15,39 @@ enum TransferHop {
   s3,
 }
 
+/// Runtime UI phase while the send cascade probes and then transfers.
+abstract final class TransferPhase {
+  static const tryingHttp = 'tryingHttp';
+  static const waitingPull = 'waitingPull';
+  static const connectingWebrtc = 'connectingWebrtc';
+  static const connectingWebrtcFallback = 'connectingWebrtcFallback';
+  static const tryingS3 = 'tryingS3';
+  static const tryingS3Fallback = 'tryingS3Fallback';
+  static const sendingHttp = 'sendingHttp';
+  static const sendingWebrtc = 'sendingWebrtc';
+  static const sendingS3 = 'sendingS3';
+
+  static bool isConnecting(String? phase) {
+    return phase == tryingHttp ||
+        phase == waitingPull ||
+        phase == connectingWebrtc ||
+        phase == connectingWebrtcFallback ||
+        phase == tryingS3 ||
+        phase == tryingS3Fallback;
+  }
+
+  static String? channelOf(String? phase) {
+    return switch (phase) {
+      tryingHttp || waitingPull || sendingHttp => 'lan',
+      connectingWebrtc ||
+      connectingWebrtcFallback ||
+      sendingWebrtc => 'webrtc',
+      tryingS3 || tryingS3Fallback || sendingS3 => 's3',
+      _ => null,
+    };
+  }
+}
+
 class TransferPathInput {
   const TransferPathInput({
     required this.localIsWeb,
@@ -34,6 +67,25 @@ class TransferPathInput {
   final bool s3Configured;
   final bool s3Online;
   final bool isS3VirtualSession;
+}
+
+/// Whether this device should act on a `lan_file_offer`.
+///
+/// Directed envelopes (`toDeviceId`) win so guest `device-send` and
+/// logged-in 1:1 signaling reach the intended peer. Broadcast offers still
+/// match [targetDeviceIds].
+bool isLanFileOfferForMe({
+  required String me,
+  String? toDeviceId,
+  Object? targetDeviceIds,
+}) {
+  if (toDeviceId != null && toDeviceId.isNotEmpty) {
+    return toDeviceId == me;
+  }
+  if (targetDeviceIds is List) {
+    return targetDeviceIds.contains(me);
+  }
+  return false;
 }
 
 /// Hops that can be attempted for this pair, fastest first.

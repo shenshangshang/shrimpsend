@@ -34,7 +34,10 @@ import {
 } from '@/lib/sendTargetStorage';
 import {
   applicableTransferHops,
+  isLanFileOfferForMe,
   TransferHopSkipCache,
+  type TransferPhase,
+  type TransferChannel,
 } from '@/lib/transferPathCascade';
 import { normalizeMessageLocalId, rowMatchesLocalId } from '@/lib/chatMessageDedupe';
 import { loadAutoCopyIncomingText } from '@/lib/autoCopyPreferences';
@@ -215,6 +218,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const webrtcFileSizeMap = useRef<Map<string, number>>(new Map());
   const pendingLanHttpProbesRef = useRef<Map<string, (result: { success: boolean; lanHttpUrl?: string; senderReachable?: boolean }) => void>>(new Map());
   const pendingPullProbesRef = useRef<Map<string, (success: boolean) => void>>(new Map());
+  const seenLanOfferIdsRef = useRef(new Set<string>());
   const diagnosticSessionRef = useRef(0);
 
   const [connectionDiagnostic, setConnectionDiagnostic] = useState<ConnectionDiagnosticState | null>(null);
@@ -331,6 +335,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         _status: 'sent',
         _progress: undefined,
         _speed: undefined,
+        _phase: undefined,
+        _transferType: 'webrtc',
         payload: { fileName, webrtc: true, ...(fileSize != null && fileSize > 0 ? { size: fileSize } : {}) },
       });
       logger.info(TAG, 'WebRTC file received', fileName);
@@ -349,6 +355,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         _status: 'sent',
         _progress: undefined,
         _speed: undefined,
+        _phase: undefined,
+        _transferType: 'webrtc',
         payload: { fileName, webrtc: true, ...(fileSize != null && fileSize > 0 ? { size: fileSize } : {}) },
       });
       const uid = userIdRef.current;
@@ -685,16 +693,42 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             pullUrl?: string;
             fileName?: string;
             size?: number;
+            offerId?: string;
             targetDeviceIds?: string[];
             localId?: string;
           };
-          const targetIds = payload.targetDeviceIds;
           const me = getOrCreateDeviceId();
-          if (Array.isArray(targetIds) && targetIds.includes(me) && payload.pullUrl) {
+          if (
+            isLanFileOfferForMe({
+              me,
+              toDeviceId: data.toDeviceId,
+              targetDeviceIds: payload.targetDeviceIds,
+            }) &&
+            payload.pullUrl
+          ) {
+            const offerId = typeof payload.offerId === 'string' ? payload.offerId : '';
+            if (offerId) {
+              if (seenLanOfferIdsRef.current.has(offerId)) return;
+              seenLanOfferIdsRef.current.add(offerId);
+              if (seenLanOfferIdsRef.current.size > 64) {
+                const first = seenLanOfferIdsRef.current.values().next().value;
+                if (first) seenLanOfferIdsRef.current.delete(first);
+              }
+            }
             pullFileFromOffer(payload.pullUrl, payload.fileName ?? t('chat.bubble.fileFallback'), payload.size, {
               localId: typeof payload.localId === 'string' ? payload.localId : undefined,
               fromDeviceId: data.fromDeviceId,
             });
+          } else {
+            logger.debug(
+              TAG,
+              'drop lan_file_offer me=',
+              me,
+              'to=',
+              data.toDeviceId,
+              'targets=',
+              payload.targetDeviceIds,
+            );
           }
         }
         return;
@@ -1388,9 +1422,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     file: File,
     useLan: boolean,
     targetDevices: DeviceDto[],
-    opts?: { reportTerminalFailure?: boolean },
+    opts?: { reportTerminalFailure?: boolean; reuseLocalId?: string },
   ): Promise<boolean> => {
-    const localId = generateUUID();
+    const localId = opts?.reuseLocalId ?? generateUUID();
     const deviceId = getOrCreateDeviceId();
     const reportFailure = opts?.reportTerminalFailure !== false;
     if (!selectedDeviceId) {
@@ -1416,14 +1450,34 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       }
       retryInfoRef.current.set(localId, { file, channel: 'lan', targetDevices });
       const lanPayload = { fileName: file.name, size: file.size, lan: true, targetDeviceIds: targetDevices.map((d) => d.deviceId), localId };
-      const placeholder: ChatMessage = { type: 'file', payload: lanPayload, fromDeviceId: deviceId, ts: Date.now(), _localId: localId, _status: 'uploading', _progress: 0 };
-      setMessages((prev) => [...prev, placeholder]);
+      const placeholder: ChatMessage = {
+        type: 'file',
+        payload: lanPayload,
+        fromDeviceId: deviceId,
+        ts: Date.now(),
+        _localId: localId,
+        _status: 'uploading',
+        _progress: 0,
+        _phase: 'tryingHttp',
+        _transferType: 'lan',
+      };
+      if (opts?.reuseLocalId) {
+        updateMessageByLocalId(localId, {
+          payload: lanPayload,
+          _status: 'uploading',
+          _progress: 0,
+          _phase: 'tryingHttp',
+          _transferType: 'lan',
+        });
+      } else {
+        setMessages((prev) => [...prev, placeholder]);
+      }
       const lanTracker = new SpeedTracker();
       speedTrackersRef.current.set(localId, lanTracker);
       try {
         const lanOk = await trySendFileViaLan(file, targetDevices, abortController, (pct) => {
           lanTracker.update(Math.round(file.size * pct / 100));
-          updateMessageByLocalId(localId, { _progress: pct, _speed: lanTracker.formatted });
+          updateMessageByLocalId(localId, { _progress: pct, _speed: lanTracker.formatted, _phase: 'sendingHttp', _transferType: 'lan' });
         }, localId);
         if (abortController.signal.aborted) return false;
         if (!lanOk) throw new Error('chat.httpSendFailed');
@@ -1441,7 +1495,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           logger.warn(TAG, 'guest LAN file echo skipped', e);
         }
         retryInfoRef.current.delete(localId);
-        updateMessageByLocalId(localId, { _status: 'sent', _progress: undefined, _speed: undefined });
+        updateMessageByLocalId(localId, { _status: 'sent', _progress: undefined, _speed: undefined, _phase: undefined, _transferType: 'lan' });
         return true;
       } catch (e) {
         if (e instanceof DOMException && e.name === 'AbortError') {
@@ -1486,8 +1540,29 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       return false;
     }
     retryInfoRef.current.set(localId, { file, channel: 's3', targetDevices: [] });
-    const placeholder: ChatMessage = { type: 'file', payload: { fileName: file.name, size: file.size, localId }, fromDeviceId: deviceId, ts: Date.now(), _localId: localId, _status: 'uploading', _progress: 0 };
-    setMessages((prev) => [...prev, placeholder]);
+    const s3Payload = { fileName: file.name, size: file.size, localId };
+    const placeholder: ChatMessage = {
+      type: 'file',
+      payload: s3Payload,
+      fromDeviceId: deviceId,
+      ts: Date.now(),
+      _localId: localId,
+      _status: 'uploading',
+      _progress: 0,
+      _phase: opts?.reuseLocalId ? 'tryingS3Fallback' : 'tryingS3',
+      _transferType: 's3',
+    };
+    if (opts?.reuseLocalId) {
+      updateMessageByLocalId(localId, {
+        payload: s3Payload,
+        _status: 'uploading',
+        _progress: 0,
+        _phase: 'tryingS3Fallback',
+        _transferType: 's3',
+      });
+    } else {
+      setMessages((prev) => [...prev, placeholder]);
+    }
     const s3Tracker = new SpeedTracker();
     speedTrackersRef.current.set(localId, s3Tracker);
     let lastLoggedPct = 0;
@@ -1497,7 +1572,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         (sent, total) => {
           s3Tracker.update(sent);
           const pct = total > 0 ? Math.min(Math.round((sent / total) * 100), 100) : 0;
-          updateMessageByLocalId(localId, { _progress: pct, _speed: s3Tracker.formatted });
+          updateMessageByLocalId(localId, { _progress: pct, _speed: s3Tracker.formatted, _phase: 'sendingS3', _transferType: 's3' });
           if (pct >= lastLoggedPct + 10 || pct === 100) {
             lastLoggedPct = pct;
           }
@@ -1514,7 +1589,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         ...(outbound.toDeviceId != null ? { toDeviceId: outbound.toDeviceId } : {}),
       });
       retryInfoRef.current.delete(localId);
-      updateMessageByLocalId(localId, { _status: 'sent', _progress: undefined, _speed: undefined, payload: { key: result.key, fileName: file.name, size: file.size, localId } });
+      updateMessageByLocalId(localId, { _status: 'sent', _progress: undefined, _speed: undefined, _phase: undefined, _transferType: 's3', payload: { key: result.key, fileName: file.name, size: file.size, localId } });
       return true;
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') {
@@ -1535,16 +1610,18 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const sendFilesViaWebRTC = useCallback(async (
     files: File[],
     targetDeviceId: string,
-    opts?: { fallbackS3?: boolean; reportTerminalFailure?: boolean },
+    opts?: { fallbackS3?: boolean; reportTerminalFailure?: boolean; reuseLocalId?: string },
   ): Promise<boolean> => {
     const mgr = webrtcManagerRef.current;
     if (!mgr) return false;
     const fallbackS3 = opts?.fallbackS3 === true;
     const reportFailure = opts?.reportTerminalFailure !== false;
     const deviceId = getOrCreateDeviceId();
-    const pendingWithMeta = files.map((file) => {
+    const pendingWithMeta = files.map((file, index) => {
       const fileId = generateUUID();
-      const localId = generateUUID();
+      const localId = opts?.reuseLocalId && files.length === 1 && index === 0
+        ? opts.reuseLocalId
+        : generateUUID();
       const meta: FileMetadata = {
         fileId,
         fileName: file.name,
@@ -1559,12 +1636,33 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       if (meta.fileSize > 0) webrtcFileSizeMap.current.set(meta.fileId, meta.fileSize);
       retryInfoRef.current.set(localId, { file, channel: 'webrtc', targetDevices: [], webrtcTargetDeviceId: targetDeviceId });
       speedTrackersRef.current.set(localId, new SpeedTracker());
-      const placeholder: ChatMessage = { type: 'file', payload: { fileName: meta.fileName, size: meta.fileSize, webrtc: true, localId }, fromDeviceId: deviceId, ts: Date.now(), _localId: localId, _status: 'uploading', _progress: 0 };
-      setMessages((prev) => [...prev, placeholder]);
+      const placeholder: ChatMessage = {
+        type: 'file',
+        payload: { fileName: meta.fileName, size: meta.fileSize, webrtc: true, localId },
+        fromDeviceId: deviceId,
+        ts: Date.now(),
+        _localId: localId,
+        _status: 'uploading',
+        _progress: 0,
+        _phase: 'connectingWebrtc',
+        _transferType: 'webrtc',
+      };
+      setMessages((prev) => {
+        const idx = prev.findIndex((m) => m._localId === localId);
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = { ...next[idx], ...placeholder };
+          return next;
+        }
+        return [...prev, placeholder];
+      });
     }
     try {
       const session = await mgr.initiateTransfer(targetDeviceId, pendingWithMeta);
       await session.connected;
+      for (const { localId } of pendingWithMeta) {
+        updateMessageByLocalId(localId, { _phase: 'sendingWebrtc', _transferType: 'webrtc' });
+      }
       await session.sendsFinished;
       return true;
     } catch (err) {
@@ -1681,15 +1779,42 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }
 
     await runWithConcurrency(filesToSend, MAX_PARALLEL_FILE_SENDS, async (file) => {
+      const localId = generateUUID();
+      const deviceId = getOrCreateDeviceId();
+      const httpTried = hops.includes('httpPush');
+      const firstHop = hops[0];
+      const firstPhase: TransferPhase = firstHop === 's3'
+        ? 'tryingS3'
+        : firstHop === 'webrtc'
+          ? 'connectingWebrtc'
+          : 'tryingHttp';
+      const firstType: TransferChannel = firstHop === 's3'
+        ? 's3'
+        : firstHop === 'webrtc'
+          ? 'webrtc'
+          : 'lan';
+      setMessages((prev) => [...prev, {
+        type: 'file',
+        payload: { fileName: file.name, size: file.size, localId },
+        fromDeviceId: deviceId,
+        ts: Date.now(),
+        _localId: localId,
+        _status: 'uploading',
+        _progress: 0,
+        _phase: firstPhase,
+        _transferType: firstType,
+      }]);
+
       let sent = false;
       if (hops.includes('httpPush')) {
+        updateMessageByLocalId(localId, { _phase: 'tryingHttp', _transferType: 'lan' });
         const candidates = buildFreshLanDevices(new Set([targetId]));
         const withUrl = candidates.length > 0
           ? candidates
           : devices.filter((d) => d.deviceId === targetId && !!d.lanHttpUrl);
         const verified = await verifyLanTargets(withUrl);
         if (verified.length > 0) {
-          sent = await sendSingleFile(file, true, verified, { reportTerminalFailure: false });
+          sent = await sendSingleFile(file, true, verified, { reportTerminalFailure: false, reuseLocalId: localId });
           if (sent) {
             hopSkipCacheRef.current.markSucceeded(targetId, 'httpPush');
             return;
@@ -1698,9 +1823,16 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         hopSkipCacheRef.current.markFailed(targetId, 'httpPush');
       }
       if (!sent && hops.includes('webrtc')) {
+        updateMessageByLocalId(localId, {
+          _phase: httpTried ? 'connectingWebrtcFallback' : 'connectingWebrtc',
+          _transferType: 'webrtc',
+          _progress: 0,
+          payload: { fileName: file.name, size: file.size, webrtc: true, localId },
+        });
         sent = await sendFilesViaWebRTC([file], targetId, {
           fallbackS3: false,
           reportTerminalFailure: !hops.includes('s3'),
+          reuseLocalId: localId,
         });
         if (sent) {
           hopSkipCacheRef.current.markSucceeded(targetId, 'webrtc');
@@ -1709,10 +1841,16 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         hopSkipCacheRef.current.markFailed(targetId, 'webrtc');
       }
       if (!sent && hops.includes('s3')) {
-        await sendSingleFile(file, false, []);
+        updateMessageByLocalId(localId, {
+          _phase: httpTried || hops.includes('webrtc') ? 'tryingS3Fallback' : 'tryingS3',
+          _transferType: 's3',
+          _progress: 0,
+        });
+        await sendSingleFile(file, false, [], { reuseLocalId: localId });
         return;
       }
       if (!sent) {
+        updateMessageByLocalId(localId, { _status: 'failed', _progress: undefined, _speed: undefined, _phase: undefined });
         setFileError('chat.errors.selectOnlineTargets');
       }
     });
@@ -1726,6 +1864,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     verifyLanTargets,
     sendSingleFile,
     sendFilesViaWebRTC,
+    updateMessageByLocalId,
   ]);
 
   const handleSendFiles = useCallback(() => {

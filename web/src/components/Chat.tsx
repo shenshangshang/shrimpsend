@@ -538,12 +538,16 @@ export function Chat({
             pullUrl?: string;
             fileName?: string;
             size?: number;
+            offerId?: string;
             targetDeviceIds?: string[];
             localId?: string;
           };
-          const targetIds = payload.targetDeviceIds;
           const me = getOrCreateDeviceId();
-          if (Array.isArray(targetIds) && targetIds.includes(me) && payload.pullUrl) {
+          if (
+            (data.toDeviceId === me ||
+              (Array.isArray(payload.targetDeviceIds) && payload.targetDeviceIds.includes(me))) &&
+            payload.pullUrl
+          ) {
             pullFileFromOffer(payload.pullUrl, payload.fileName ?? t('chat.bubble.fileFallback'), payload.size, {
               localId: typeof payload.localId === 'string' ? payload.localId : undefined,
               fromDeviceId: data.fromDeviceId,

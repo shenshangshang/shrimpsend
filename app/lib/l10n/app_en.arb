@@ -1455,6 +1455,28 @@
     }
   },
   "chatTransferWaitingPeerShort": "Waiting for peer…",
+  "chatTransferPhaseTryingHttp": "Trying LAN HTTP…",
+  "chatTransferPhaseWaitingPull": "Waiting for the other device to pull…",
+  "chatTransferPhaseConnectingWebrtc": "Connecting WebRTC…",
+  "chatTransferPhaseConnectingWebrtcFallback": "LAN unavailable, connecting WebRTC…",
+  "chatTransferPhaseTryingS3": "Uploading to cloud storage…",
+  "chatTransferPhaseTryingS3Fallback": "Direct path failed, switching to cloud storage…",
+  "chatTransferSendingVia": "Sending via {channel}",
+  "@chatTransferSendingVia": {
+    "placeholders": {
+      "channel": {
+        "type": "String"
+      }
+    }
+  },
+  "chatTransferReceivingVia": "Receiving via {channel}",
+  "@chatTransferReceivingVia": {
+    "placeholders": {
+      "channel": {
+        "type": "String"
+      }
+    }
+  },
   "chatTransferCancelledBare": "Cancelled",
   "chatTransferCancelledNamed": "{fileName} cancelled",
   "@chatTransferCancelledNamed": {

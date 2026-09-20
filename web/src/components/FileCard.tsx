@@ -8,6 +8,17 @@ import { RefreshCw, Download } from 'lucide-react';
 import { FileIcon } from './FileIcon';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import { transferChannelLabel } from '@/lib/transferPathCascade';
+
+export function TransferTypePill({ type }: { type?: string | null }) {
+  const label = transferChannelLabel(type);
+  if (!label) return null;
+  return (
+    <span className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-primary bg-primary/12">
+      {label}
+    </span>
+  );
+}
 
 type Props = {
   fileName?: string;
@@ -55,6 +66,7 @@ export function FileCard({ fileName, s3Key, size, transferType }: Props) {
       <div className="flex-1 min-w-0">
         <div className="flex items-start gap-2 min-w-0">
           <p className="text-sm font-medium truncate text-foreground flex-1">{fileName || t('chat.bubble.fileFallback')}</p>
+          <TransferTypePill type={transferType} />
         </div>
         <div className="flex items-center gap-2 mt-0.5">
           {sizeStr && <span className="text-[11px] text-muted-foreground">{sizeStr}</span>}

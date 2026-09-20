@@ -2548,6 +2548,34 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chatTransferWaitingPeerShort => '等待接收方连接…';
 
   @override
+  String get chatTransferPhaseTryingHttp => '正在尝试局域网 HTTP…';
+
+  @override
+  String get chatTransferPhaseWaitingPull => '正在等待对方从本机拉取…';
+
+  @override
+  String get chatTransferPhaseConnectingWebrtc => '正在连接 WebRTC…';
+
+  @override
+  String get chatTransferPhaseConnectingWebrtcFallback => '局域网未通，正在连接 WebRTC…';
+
+  @override
+  String get chatTransferPhaseTryingS3 => '正在上传到云存储…';
+
+  @override
+  String get chatTransferPhaseTryingS3Fallback => '直连未通，正在改用云存储…';
+
+  @override
+  String chatTransferSendingVia(String channel) {
+    return '$channel 发送中';
+  }
+
+  @override
+  String chatTransferReceivingVia(String channel) {
+    return '$channel 接收中';
+  }
+
+  @override
   String get chatTransferCancelledBare => '已取消';
 
   @override

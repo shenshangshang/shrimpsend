@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../color_theme.dart';
 import '../../color_theme_store.dart';
+import '../../l10n/generated/app_localizations.dart';
+import '../../network/transfer_path_cascade.dart';
 import '../../ui/app_ui.dart';
 
 class ChatColors {
@@ -100,6 +102,77 @@ String transferTypeLabel(String? type) {
     's3' => 'S3',
     _ => '',
   };
+}
+
+String transferPhaseStatus(
+  AppLocalizations l10n, {
+  String? phase,
+  String? transferType,
+  required bool isUploading,
+}) {
+  switch (phase) {
+    case TransferPhase.tryingHttp:
+      return l10n.chatTransferPhaseTryingHttp;
+    case TransferPhase.waitingPull:
+      return l10n.chatTransferPhaseWaitingPull;
+    case TransferPhase.connectingWebrtc:
+      return l10n.chatTransferPhaseConnectingWebrtc;
+    case TransferPhase.connectingWebrtcFallback:
+      return l10n.chatTransferPhaseConnectingWebrtcFallback;
+    case TransferPhase.tryingS3:
+      return l10n.chatTransferPhaseTryingS3;
+    case TransferPhase.tryingS3Fallback:
+      return l10n.chatTransferPhaseTryingS3Fallback;
+    case TransferPhase.sendingHttp:
+      return l10n.chatTransferSendingVia(transferTypeLabel('lan'));
+    case TransferPhase.sendingWebrtc:
+      return l10n.chatTransferSendingVia(transferTypeLabel('webrtc'));
+    case TransferPhase.sendingS3:
+      return l10n.chatTransferSendingVia(transferTypeLabel('s3'));
+  }
+  final channel = transferTypeLabel(transferType);
+  if (channel.isEmpty) {
+    return isUploading
+        ? l10n.chatTransferProgressSending
+        : l10n.chatTransferProgressReceiving;
+  }
+  return isUploading
+      ? l10n.chatTransferSendingVia(channel)
+      : l10n.chatTransferReceivingVia(channel);
+}
+
+class TransferTypeMark extends StatelessWidget {
+  const TransferTypeMark({
+    super.key,
+    required this.transferType,
+    required this.color,
+  });
+
+  final String? transferType;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = transferTypeLabel(transferType);
+    if (label.isEmpty) return const SizedBox.shrink();
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          height: 1.2,
+          letterSpacing: 0.2,
+        ),
+      ),
+    );
+  }
 }
 
 /// API/DB may store flags as string `"true"`; [targetDeviceIds] implies LAN when `lan` is absent.
