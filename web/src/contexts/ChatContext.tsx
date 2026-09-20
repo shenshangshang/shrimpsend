@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRealtime } from '@/contexts/RealtimeContext';
 import { useSendTargetProbes, isReachOnline, type ReachStatus, type DeviceReachEntry, type DeviceReachDetail } from '@/hooks/useSendTargetProbes';
-import { listDevices, registerDevice, updateDevicePresence, sendMessage, pairDevice, getMessageHistory, deleteMessage, deleteThreadMessages, hasS3Config, checkS3Online, updateDevice } from '@/lib/api';
+import { listDevices, registerDevice, updateDevicePresence, sendMessage, pairDevice, getMessageHistory, deleteMessage, deleteThreadMessages, hasS3Config, checkS3Online, updateDevice, DeviceSendRateLimitedError } from '@/lib/api';
 import type { DeviceDto, MessageEnvelope, ChatMessage } from '@/lib/api';
 import { getOrCreateDeviceId, getDeviceName, getOrCreatePresenceSessionId, generateUUID } from '@/lib/deviceId';
 import { logger } from '@/lib/logger';
@@ -1434,6 +1434,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         length_bucket: lengthBucket,
       });
     } catch (e) {
+      if (e instanceof DeviceSendRateLimitedError) {
+        updateMessageByLocalId(localId, { _status: 'failed' });
+        return;
+      }
       const msg = e instanceof Error ? e.message : 'chat.sendFailed';
       logger.warn(TAG, 'sendMessage failed', msg);
       setSendError(msg);
@@ -1604,6 +1608,18 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       await session.connected;
       await session.sendsFinished;
     } catch (err) {
+      if (err instanceof DeviceSendRateLimitedError) {
+        for (const { meta } of pendingWithMeta) {
+          const localId = webrtcFileLocalIdMap.current.get(meta.fileId);
+          if (localId) {
+            webrtcFileLocalIdMap.current.delete(meta.fileId);
+            webrtcFileSizeMap.current.delete(meta.fileId);
+            speedTrackersRef.current.delete(localId);
+            updateMessageByLocalId(localId, { _status: 'failed', _progress: undefined, _speed: undefined });
+          }
+        }
+        return;
+      }
       if (s3OnlineRef.current) {
         await runWithConcurrency(pendingWithMeta, MAX_PARALLEL_FILE_SENDS, async ({ file, meta }) => {
           const localId = webrtcFileLocalIdMap.current.get(meta.fileId);

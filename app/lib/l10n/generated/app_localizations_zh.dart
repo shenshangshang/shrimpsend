@@ -2742,6 +2742,45 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get deviceSendQuotaHint => '未登录发送有频率限制';
+
+  @override
+  String deviceSendQuotaMessage(int used, int limit) {
+    return '消息 $used/$limit';
+  }
+
+  @override
+  String deviceSendQuotaSignaling(int used, int limit) {
+    return '信令 $used/$limit';
+  }
+
+  @override
+  String get deviceSendQuotaTitle => '发送过于频繁';
+
+  @override
+  String deviceSendQuotaMessageBody(int used, int limit, int seconds) {
+    return '本分钟文字额度已用完（$used/$limit）。请 $seconds 秒后再试。';
+  }
+
+  @override
+  String deviceSendQuotaSignalingBody(int used, int limit, int seconds) {
+    return '本分钟传输信令额度已用完（$used/$limit）。请 $seconds 秒后再试，或稍后再发文件。';
+  }
+
+  @override
+  String deviceSendQuotaInfoBody(
+    int messageUsed,
+    int messageLimit,
+    int signalingUsed,
+    int signalingLimit,
+  ) {
+    return '未登录发送需防刷限制。当前消息 $messageUsed/$messageLimit，信令 $signalingUsed/$signalingLimit。登录后不受此限制。';
+  }
+
+  @override
+  String get deviceSendQuotaGotIt => '知道了';
+
+  @override
   String get chatScreenFileMissing => '文件不存在，可能已被删除';
 
   @override

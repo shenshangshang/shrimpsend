@@ -27,6 +27,7 @@ export type { DeviceDto } from './devices';
 export { registerDevice, updateDevice, updateDevicePresence, deleteDevice, listDevices } from './devices';
 export type { MessageEnvelope, LocalStatus, ChatMessage, MessageHistoryItem } from './messages';
 export { getMessageHistory, sendMessage, deleteMessage, deleteThreadMessages, pairDevice } from './messages';
+export { DeviceSendRateLimitedError, fetchDeviceQuota } from './deviceSendQuota';
 export type { S3ConfigRequest, S3ConfigResponse, S3StorageMode, PresignUploadResponse } from './s3';
 export {
   getS3Config,

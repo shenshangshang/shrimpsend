@@ -25,6 +25,7 @@ import '../providers/auth_session_provider.dart';
 import '../providers/realtime_hub_provider.dart';
 import '../services/auth_session_controller.dart';
 import '../providers/device_provider.dart';
+import '../providers/device_send_quota_provider.dart';
 import '../device_pair_hello.dart';
 import '../providers/webdav_provider.dart';
 import 'package:uuid/uuid.dart';
@@ -50,6 +51,7 @@ import '../widgets/chat/chat_message_bubbles.dart';
 import '../widgets/chat/chat_screen_overlays.dart';
 import '../widgets/chat/chat_session_body.dart';
 import '../widgets/chat/chat_theme_helpers.dart';
+import '../widgets/chat/device_send_quota_bar.dart';
 import '../widgets/chat/connection_diagnostic_dialog.dart';
 import '../widgets/chat/delete_file_message_dialog.dart';
 import '../widgets/layout/main_layout.dart';
@@ -84,6 +86,7 @@ import '../services/received_file_dao.dart';
 import '../services/received_file_index_pipeline.dart';
 import '../services/save_folder_listing_service.dart';
 import '../services/visible_export_target.dart';
+import '../chat/chat_bubble_identity.dart';
 import '../chat/thread_key.dart';
 import '../services/desktop_file_clipboard.dart';
 import '../services/desktop_file_drop_dispatcher.dart';
@@ -4200,7 +4203,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         if (!OhosCapabilities.webrtc) return;
         final signal = Map<String, dynamic>.from(msg.payload as Map);
         if (msg.type == 'webrtc_offer') {
-          _handleWebRTCOffer(signal, msg.fromDeviceId);
+          try {
+            _handleWebRTCOffer(signal, msg.fromDeviceId);
+          } catch (e, st) {
+            logChat.warning('_handleWebRTCOffer failed: $e\n$st');
+          }
         }
         _webrtcManager.handleSignal(signal, _deviceId);
         return;
@@ -4252,12 +4259,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       final message = envelopeToMessage(msg);
       var skipUiForLanOrWebrtcDup = false;
       // When the inbound `file` matches a local LAN/WebRTC receiver bubble
-      // we've already shown, "upgrade" that bubble's id to the server-side
-      // ${ts}_${fromDeviceId} so future updates target it instead of
-      // inserting a duplicate. Identity is always per-transfer localId,
-      // never fileName — so re-sending a same-named file still creates a
-      // fresh bubble + received_files row.
+      // we've already shown, keep that bubble's id. flutter_chat_ui keys
+      // ChatAnimatedListReversed children by message.id; retargeting to
+      // ${ts}_${fromDeviceId} (or inserting a second row with that id after
+      // mailbox+WS already inserted it) crashes with Duplicate GlobalKey.
+      // Identity is still per-transfer localId, never fileName.
       String? upgradeFromMsgId;
+      String? receiveBubbleOverrideId;
       if (msg.type == 'file' && msg.payload is Map) {
         final payload = msg.payload as Map;
         _registerFileMetaFromPayload(message, 'file', payload);
@@ -4296,11 +4304,26 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
           if (msg.fromDeviceId == _deviceId) return;
           final targetDeviceId = payload['targetDeviceId']?.toString();
           if (targetDeviceId != null && targetDeviceId != _deviceId) return;
-          if (senderLocalId != null &&
-              senderLocalId.isNotEmpty &&
-              _webrtcRecvLocalIds.contains(senderLocalId)) {
-            skipUiForLanOrWebrtcDup = true;
-            upgradeFromMsgId = _lanLocalIdToMessageId[senderLocalId];
+          if (senderLocalId != null && senderLocalId.isNotEmpty) {
+            final stableId = fileReceiveBubbleId(
+              senderLocalId: senderLocalId,
+              fallbackId: message.id,
+            );
+            final alreadyShown =
+                _webrtcRecvLocalIds.contains(senderLocalId) ||
+                _findMessageById(stableId) != null ||
+                _findMessageById(message.id) != null;
+            if (alreadyShown) {
+              skipUiForLanOrWebrtcDup = true;
+              upgradeFromMsgId =
+                  _lanLocalIdToMessageId[senderLocalId] ??
+                  (_findMessageById(stableId)?.id) ??
+                  (_findMessageById(message.id)?.id);
+            } else {
+              _webrtcRecvLocalIds.add(senderLocalId);
+              _lanLocalIdToMessageId[senderLocalId] = stableId;
+              receiveBubbleOverrideId = stableId;
+            }
           }
         }
       }
@@ -4310,67 +4333,29 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
           upgradeFromMsgId != null &&
           viewTk != null &&
           rowTk == viewTk) {
-        final existing = _findMessageById(upgradeFromMsgId);
-        if (existing != null) {
-          _chatController.updateMessage(existing, message);
-          _loadedMessageIds.remove(upgradeFromMsgId);
-          _loadedMessageIds.add(message.id);
-        }
+        // Leave the on-screen receive bubble alone: persist often arrives
+        // while WebRTC bytes are still flowing, and changing its id (or
+        // its progress text) races ChatAnimatedListReversed.
       } else if (!skipUiForLanOrWebrtcDup &&
           viewTk != null &&
           rowTk == viewTk) {
-        _chatController.insertMessage(message);
-        _loadedMessageIds.add(message.id);
+        final toShow = receiveBubbleOverrideId != null
+            ? _withMessageId(message, receiveBubbleOverrideId)
+            : message;
+        if (receiveBubbleOverrideId != null && msg.payload is Map) {
+          _registerFileMetaFromPayload(toShow, 'file', msg.payload);
+        }
+        _insertOrUpdateMessage(toShow);
+        _loadedMessageIds.add(toShow.id);
         _scrollToBottom();
       }
       final userId = await _getCurrentUserId();
       if (userId != null) {
-        // If we just upgraded a local LAN/WebRTC bubble to the server id,
-        // drop the receiver's local-only chat row so it doesn't show up
-        // as a duplicate next time the chat is reopened, and re-key the
-        // matching received_files row to the server id so taps via the
-        // server id also resolve to this transfer's on-disk file (and
-        // not some same-named older file).
-        if (upgradeFromMsgId != null && upgradeFromMsgId != message.id) {
-          try {
-            await ChatMessageDao.instance.deleteById(upgradeFromMsgId);
-          } catch (e) {
-            logChat.warning(
-              'chat_screen failed to delete upgraded local row '
-              '$upgradeFromMsgId: $e',
-            );
-          }
-          try {
-            await ReceivedFileIndexPipeline.instance.rekeyAfterBubbleUpgrade(
-              oldMessageId: upgradeFromMsgId,
-              newMessageId: message.id,
-              userId: userId,
-              threadKey: rowTk,
-              fromDeviceId: msg.fromDeviceId,
-            );
-          } catch (e) {
-            logChat.warning(
-              'chat_screen failed to re-key received_files from '
-              '$upgradeFromMsgId to ${message.id}: $e',
-            );
-          }
-          // Carry over in-memory meta + cached deps to the server id.
-          final meta = _fileMetaByMessageId.remove(upgradeFromMsgId);
-          if (meta != null) {
-            _fileMetaByMessageId[message.id] = meta;
-          }
-          final tracker = _speedTrackers.remove(upgradeFromMsgId);
-          if (tracker != null) {
-            _speedTrackers[message.id] = tracker;
-          }
-          final startTime = _transferStartTimes.remove(upgradeFromMsgId);
-          if (startTime != null) {
-            _transferStartTimes[message.id] = startTime;
-          }
-        }
+        final daoId =
+            receiveBubbleOverrideId ?? upgradeFromMsgId ?? message.id;
         await ChatMessageDao.instance.insertMessage(
           userId: userId,
-          id: message.id,
+          id: daoId,
           type: msg.type,
           payload: msg.payload,
           fromDeviceId: msg.fromDeviceId,
@@ -4955,12 +4940,44 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     }
   }
 
+  /// Copy a chat list item onto a new id without changing its other fields.
+  /// Used so persist/offer share `local_<senderLocalId>` instead of retargeting
+  /// an on-screen [ValueKey].
+  Message _withMessageId(Message message, String id) {
+    if (message.id == id) return message;
+    return switch (message) {
+      TextMessage(:final authorId, :final createdAt, :final text) =>
+        Message.text(
+          id: id,
+          authorId: authorId,
+          createdAt: createdAt,
+          text: text,
+        ),
+      _ => message,
+    };
+  }
+
   void _upgradeLocalBubbleToServerMessage(
     String localMessageId,
     Message serverMessage,
   ) {
     final existing = _findMessageById(localMessageId);
-    if (existing == null) return;
+    if (existing == null) {
+      _insertOrUpdateMessage(serverMessage);
+      _loadedMessageIds.add(serverMessage.id);
+      return;
+    }
+    if (existing.id == serverMessage.id) {
+      _chatController.updateMessage(existing, serverMessage);
+      return;
+    }
+    if (wouldDuplicateChatBubbleId(
+      existingBubbleId: existing.id,
+      serverId: serverMessage.id,
+      serverIdAlreadyOnScreen: _findMessageById(serverMessage.id) != null,
+    )) {
+      return;
+    }
     _chatController.updateMessage(existing, serverMessage);
     _loadedMessageIds.remove(localMessageId);
     _loadedMessageIds.add(serverMessage.id);
@@ -5959,12 +5976,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       logChat.info('WebRTC transfer initiated to $targetDeviceId');
     } catch (e) {
       logChat.warning('WebRTC failed: $e');
+      final rateLimited = e is DeviceSendRateLimitedException;
       // Try LAN reverse-pull fallback per file before surfacing failure.
       // We intentionally do NOT show the "webrtc failed, try http" toast yet
       // — if the fallback succeeds the user shouldn't see a failure message.
       bool anyFallbackSucceeded = false;
       bool anyFallbackAttempted = false;
-      for (final fileWithMeta in filesWithMeta) {
+      if (!rateLimited) {
+        for (final fileWithMeta in filesWithMeta) {
         final fileId = fileWithMeta.meta.fileId;
         final localId = fileLocalIds[fileId];
         if (localId == null) continue;
@@ -5987,11 +6006,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
           // so the failure loop below skips this entry.
           fileLocalIds.remove(fileId);
         }
+        }
       }
       // Only show the "WebRTC failed" toast if at least one file truly failed
       // (fallback didn't recover it). Avoids a misleading toast when every
       // file was rescued by reverse-pull.
-      if (mounted &&
+      if (!rateLimited &&
+          mounted &&
           fileLocalIds.isNotEmpty &&
           (!anyFallbackAttempted || !anyFallbackSucceeded)) {
         AppToast.show(context, message: _l10n.chatScreenWebRtcFailedTryHttp);
@@ -7058,7 +7079,59 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
           continue;
         }
 
-        final localId = const Uuid().v4();
+        // Prefer the sender's localId so a racing Centrifugo `file` persist
+        // attaches to this same ChatAnimatedList row instead of inserting
+        // `${ts}_${fromDeviceId}` beside it.
+        final localId = (senderLocalId != null && senderLocalId.isNotEmpty)
+            ? senderLocalId
+            : const Uuid().v4();
+        final mappedId = senderLocalId != null
+            ? _lanLocalIdToMessageId[senderLocalId]
+            : null;
+        final existingBubble =
+            _findMessageById(localBubbleId(localId)) ??
+            (mappedId != null && mappedId.isNotEmpty
+                ? _findMessageById(mappedId)
+                : null);
+        if (existingBubble != null) {
+          _webrtcFileLocalIdMap[fileId] = localId;
+          _webrtcLocalIdToFileIdMap[localId] = fileId;
+          _webrtcFileNameMap[fileId] = fileName;
+          if (fileSize != null && fileSize > 0) {
+            _webrtcFileSizeMap[fileId] = fileSize;
+          }
+          _speedTrackers[existingBubble.id] = SpeedTracker();
+          _speedTrackers['local_$localId'] = _speedTrackers[existingBubble.id]!;
+          _transferStartTimes[existingBubble.id] = DateTime.now();
+          _transferStartTimes['local_$localId'] =
+              _transferStartTimes[existingBubble.id]!;
+          if (senderLocalId != null) {
+            _webrtcRecvLocalIds.add(senderLocalId);
+            _lanLocalIdToMessageId[senderLocalId] = existingBubble.id;
+          }
+          setState(() {
+            _setMessageStatus(localId, 'downloading');
+            _localMessageProgress[localId] = 0;
+          });
+          _chatController.updateMessage(
+            existingBubble,
+            Message.text(
+              id: existingBubble.id,
+              authorId: existingBubble.authorId,
+              createdAt: existingBubble.createdAt,
+              text: _l10n.chatTransferReceivingPct(fileName, 0),
+            ),
+          );
+          TransferKeepAlive.instance.retain(
+            _webrtcKeepAliveId(localId),
+            totalBytes: fileSize ?? 0,
+            fileName: fileName,
+            direction: TransferDirection.receive,
+            peerLabel: _peerLabelForDevice(fromDeviceId),
+          );
+          continue;
+        }
+
         _webrtcFileLocalIdMap[fileId] = localId;
         _webrtcLocalIdToFileIdMap[localId] = fileId;
         _webrtcFileNameMap[fileId] = fileName;
@@ -7084,7 +7157,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
           _localMessageStatus[localId] = 'downloading';
           _localMessageProgress[localId] = 0;
         });
-        _chatController.insertMessage(msg);
+        _insertOrUpdateMessage(msg);
+        _loadedMessageIds.add(msg.id);
         _scrollToBottom();
         TransferKeepAlive.instance.retain(
           _webrtcKeepAliveId(localId),
@@ -7096,6 +7170,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         final ts = DateTime.now().millisecondsSinceEpoch;
         final payload = <String, dynamic>{'fileName': fileName, 'webrtc': true};
         if (fileSize != null && fileSize > 0) payload['size'] = fileSize;
+        if (senderLocalId != null) payload['localId'] = senderLocalId;
         _getCurrentUserId().then((userId) async {
           if (userId == null) return;
           final ap = await _accountPartForThreadKey();
@@ -7449,11 +7524,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   }
 
   void _updateSendingMessage(String localId, String text) {
-    final msgId = 'local_$localId';
-    final existing = _findMessageById(msgId);
+    final mappedId = _lanLocalIdToMessageId[localId];
+    final existing =
+        (mappedId != null ? _findMessageById(mappedId) : null) ??
+        _findMessageById('local_$localId');
     if (existing != null) {
       final newMsg = Message.text(
-        id: msgId,
+        id: existing.id,
         authorId: existing.authorId,
         createdAt: existing.createdAt,
         text: text,
@@ -9048,6 +9125,25 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<DeviceSendQuota?>(deviceSendQuotaProvider, (prev, next) {
+      if (next == null || !next.limited) return;
+      if (prev?.hitSeq == next.hitSeq) return;
+      final notifier = ref.read(deviceSendQuotaProvider.notifier);
+      if (notifier.dialogOpen) return;
+      notifier.dialogOpen = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted) {
+          notifier.dialogOpen = false;
+          return;
+        }
+        await showDeviceSendQuotaDialog(
+          context,
+          quota: next,
+          limited: true,
+        );
+        notifier.dialogOpen = false;
+      });
+    });
     if (_isIOS26OrLater) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _syncNativeTabBarState();

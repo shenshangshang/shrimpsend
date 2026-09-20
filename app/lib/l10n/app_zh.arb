@@ -1125,6 +1125,48 @@
       }
     }
   },
+  "deviceSendQuotaHint": "未登录发送有频率限制",
+  "deviceSendQuotaMessage": "消息 {used}/{limit}",
+  "@deviceSendQuotaMessage": {
+    "placeholders": {
+      "used": { "type": "int" },
+      "limit": { "type": "int" }
+    }
+  },
+  "deviceSendQuotaSignaling": "信令 {used}/{limit}",
+  "@deviceSendQuotaSignaling": {
+    "placeholders": {
+      "used": { "type": "int" },
+      "limit": { "type": "int" }
+    }
+  },
+  "deviceSendQuotaTitle": "发送过于频繁",
+  "deviceSendQuotaMessageBody": "本分钟文字额度已用完（{used}/{limit}）。请 {seconds} 秒后再试。",
+  "@deviceSendQuotaMessageBody": {
+    "placeholders": {
+      "used": { "type": "int" },
+      "limit": { "type": "int" },
+      "seconds": { "type": "int" }
+    }
+  },
+  "deviceSendQuotaSignalingBody": "本分钟传输信令额度已用完（{used}/{limit}）。请 {seconds} 秒后再试，或稍后再发文件。",
+  "@deviceSendQuotaSignalingBody": {
+    "placeholders": {
+      "used": { "type": "int" },
+      "limit": { "type": "int" },
+      "seconds": { "type": "int" }
+    }
+  },
+  "deviceSendQuotaInfoBody": "未登录发送需防刷限制。当前消息 {messageUsed}/{messageLimit}，信令 {signalingUsed}/{signalingLimit}。登录后不受此限制。",
+  "@deviceSendQuotaInfoBody": {
+    "placeholders": {
+      "messageUsed": { "type": "int" },
+      "messageLimit": { "type": "int" },
+      "signalingUsed": { "type": "int" },
+      "signalingLimit": { "type": "int" }
+    }
+  },
+  "deviceSendQuotaGotIt": "知道了",
   "chatScreenFileMissing": "文件不存在，可能已被删除",
   "chatScreenCannotOpenFile": "无法打开此文件",
   "chatScreenSavedToGallery": "已保存到相册",

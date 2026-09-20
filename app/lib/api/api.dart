@@ -15,6 +15,7 @@ export 'client.dart'
 export 'auth.dart';
 export 'devices.dart';
 export 'messages.dart';
+export 'device_send_quota.dart';
 export 's3.dart';
 export 'realtime_token.dart';
 export 'mailbox.dart';

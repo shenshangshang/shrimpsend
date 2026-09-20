@@ -5094,6 +5094,59 @@ abstract class AppLocalizations {
   /// **'Send failed: {error}'**
   String chatScreenSendFailedWithError(String error);
 
+  /// No description provided for @deviceSendQuotaHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Sending without an account is rate-limited'**
+  String get deviceSendQuotaHint;
+
+  /// No description provided for @deviceSendQuotaMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Messages {used}/{limit}'**
+  String deviceSendQuotaMessage(int used, int limit);
+
+  /// No description provided for @deviceSendQuotaSignaling.
+  ///
+  /// In en, this message translates to:
+  /// **'Signaling {used}/{limit}'**
+  String deviceSendQuotaSignaling(int used, int limit);
+
+  /// No description provided for @deviceSendQuotaTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Sending too frequently'**
+  String get deviceSendQuotaTitle;
+
+  /// No description provided for @deviceSendQuotaMessageBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This minute\'s message quota is used up ({used}/{limit}). Try again in {seconds}s.'**
+  String deviceSendQuotaMessageBody(int used, int limit, int seconds);
+
+  /// No description provided for @deviceSendQuotaSignalingBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This minute\'s transfer signaling quota is used up ({used}/{limit}). Try again in {seconds}s, or send the file later.'**
+  String deviceSendQuotaSignalingBody(int used, int limit, int seconds);
+
+  /// No description provided for @deviceSendQuotaInfoBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Guest sending is rate-limited. Messages {messageUsed}/{messageLimit}, signaling {signalingUsed}/{signalingLimit}. Sign in to remove this limit.'**
+  String deviceSendQuotaInfoBody(
+    int messageUsed,
+    int messageLimit,
+    int signalingUsed,
+    int signalingLimit,
+  );
+
+  /// No description provided for @deviceSendQuotaGotIt.
+  ///
+  /// In en, this message translates to:
+  /// **'Got it'**
+  String get deviceSendQuotaGotIt;
+
   /// No description provided for @chatScreenFileMissing.
   ///
   /// In en, this message translates to:

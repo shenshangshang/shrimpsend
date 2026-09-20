@@ -1578,6 +1578,48 @@
       }
     }
   },
+  "deviceSendQuotaHint": "Sending without an account is rate-limited",
+  "deviceSendQuotaMessage": "Messages {used}/{limit}",
+  "@deviceSendQuotaMessage": {
+    "placeholders": {
+      "used": { "type": "int" },
+      "limit": { "type": "int" }
+    }
+  },
+  "deviceSendQuotaSignaling": "Signaling {used}/{limit}",
+  "@deviceSendQuotaSignaling": {
+    "placeholders": {
+      "used": { "type": "int" },
+      "limit": { "type": "int" }
+    }
+  },
+  "deviceSendQuotaTitle": "Sending too frequently",
+  "deviceSendQuotaMessageBody": "This minute's message quota is used up ({used}/{limit}). Try again in {seconds}s.",
+  "@deviceSendQuotaMessageBody": {
+    "placeholders": {
+      "used": { "type": "int" },
+      "limit": { "type": "int" },
+      "seconds": { "type": "int" }
+    }
+  },
+  "deviceSendQuotaSignalingBody": "This minute's transfer signaling quota is used up ({used}/{limit}). Try again in {seconds}s, or send the file later.",
+  "@deviceSendQuotaSignalingBody": {
+    "placeholders": {
+      "used": { "type": "int" },
+      "limit": { "type": "int" },
+      "seconds": { "type": "int" }
+    }
+  },
+  "deviceSendQuotaInfoBody": "Guest sending is rate-limited. Messages {messageUsed}/{messageLimit}, signaling {signalingUsed}/{signalingLimit}. Sign in to remove this limit.",
+  "@deviceSendQuotaInfoBody": {
+    "placeholders": {
+      "messageUsed": { "type": "int" },
+      "messageLimit": { "type": "int" },
+      "signalingUsed": { "type": "int" },
+      "signalingLimit": { "type": "int" }
+    }
+  },
+  "deviceSendQuotaGotIt": "Got it",
   "chatScreenFileMissing": "File no longer exists — it may have been deleted",
   "chatScreenCannotOpenFile": "Cannot open this file",
   "chatScreenSavedToGallery": "Saved to Photos",

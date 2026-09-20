@@ -10,6 +10,7 @@ class AppConfirmDialog extends StatelessWidget {
   final String confirmLabel;
   final bool isDanger;
   final IconData? icon;
+  final bool showCancel;
 
   const AppConfirmDialog({
     super.key,
@@ -19,6 +20,7 @@ class AppConfirmDialog extends StatelessWidget {
     required this.confirmLabel,
     this.isDanger = false,
     this.icon,
+    this.showCancel = true,
   });
 
   /// 显示确认对话框，点击确认返回 [true]，取消返回 [false]。
@@ -31,6 +33,7 @@ class AppConfirmDialog extends StatelessWidget {
     bool isDanger = false,
     IconData? icon,
     bool barrierDismissible = true,
+    bool showCancel = true,
   }) async {
     final result = await showDialog<bool>(
       context: context,
@@ -42,6 +45,7 @@ class AppConfirmDialog extends StatelessWidget {
         confirmLabel: confirmLabel,
         isDanger: isDanger,
         icon: icon,
+        showCancel: showCancel,
       ),
     );
     return result == true;
@@ -115,16 +119,18 @@ class AppConfirmDialog extends StatelessWidget {
       actions: [
         Row(
           children: [
-            Expanded(
-              child: OutlinedButton(
-                onPressed: () => Navigator.pop(context, false),
-                style: OutlinedButton.styleFrom(
-                  minimumSize: const Size.fromHeight(44),
+            if (showCancel) ...[
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(44),
+                  ),
+                  child: Text(cancelLabel),
                 ),
-                child: Text(cancelLabel),
               ),
-            ),
-            const SizedBox(width: AppSpacing.xs),
+              const SizedBox(width: AppSpacing.xs),
+            ],
             Expanded(
               child: FilledButton(
                 onPressed: () => Navigator.pop(context, true),

@@ -1,5 +1,6 @@
 import { logger } from '../logger';
 import { getApiUrl, TAG, AuthError, getToken, getDeviceAccessToken, isAuthFailure, withAuthRetry } from './client';
+import { DeviceSendRateLimitedError, publishDeviceSendQuota, readQuotaFromResponse } from './deviceSendQuota';
 
 export type MessageEnvelope = {
   type: 'text' | 'file' | 'control' | 'lan_file_offer' | 'lan_pull_probe' | 'lan_pull_probe_result'
@@ -110,6 +111,12 @@ export async function sendMessage(data: MessageEnvelope): Promise<void> {
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${deviceToken}` },
     body: JSON.stringify({ data }),
   });
+  const quota = await readQuotaFromResponse(res);
+  if (quota) publishDeviceSendQuota(quota);
+  if (res.status === 429) {
+    logger.warn(TAG, 'sendMessage device-send 429');
+    throw new DeviceSendRateLimitedError(quota ?? { message: { used: 90, limit: 90, remaining: 0, retryAfterMs: 1000 }, signaling: { used: 0, limit: 600, remaining: 600, retryAfterMs: 0 }, kind: 'message', limited: true });
+  }
   if (!res.ok) {
     logger.warn(TAG, 'sendMessage device-send failed', res.status);
     throw new Error('Failed to send message');

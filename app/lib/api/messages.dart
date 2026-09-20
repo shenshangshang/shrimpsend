@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../logger.dart';
 import 'client.dart';
+import 'device_send_quota.dart';
 
 class MessageEnvelope {
   final String type;
@@ -120,6 +121,21 @@ Future<void> sendMessage(Map<String, dynamic> data) async {
     headers: deviceApiHeaders,
     body: jsonEncode({'data': data}),
   );
+  publishDeviceSendQuotaFromResponse(r);
+  if (r.statusCode == 429) {
+    final quota = parseDeviceSendQuota(
+      headers: r.headers,
+      body: r.body,
+      limited: true,
+    );
+    throw DeviceSendRateLimitedException(
+      quota ??
+          DeviceSendQuota.fromJson(const {
+            'error': 'rate_limited',
+            'kind': 'message',
+          }, limited: true),
+    );
+  }
   if (r.statusCode != 204) {
     throw Exception(errorMessageFromResponse(r, '发送失败'));
   }

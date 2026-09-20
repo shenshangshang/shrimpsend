@@ -14,6 +14,7 @@ import '../../providers/device_provider.dart';
 import '../../ui/app_ui.dart';
 import '../../utils/runtime_platform.dart';
 import '../busy_status_indicator.dart';
+import 'device_send_quota_bar.dart';
 import 'transfer_mode_dot_legend.dart';
 
 class TransferModeBar extends ConsumerWidget {
@@ -50,6 +51,7 @@ class TransferModeBar extends ConsumerWidget {
     final l10n = lookupAppLocalizations(ref.watch(appLocaleProvider));
 
     if (selectedDeviceId == null || selectedDeviceId == s3VirtualDeviceId) {
+      if (!isLoggedIn) return const DeviceSendQuotaBar();
       return const SizedBox.shrink();
     }
 
@@ -75,7 +77,10 @@ class TransferModeBar extends ConsumerWidget {
             })
             .toList();
 
-    if (allModes.isEmpty) return const SizedBox.shrink();
+    if (allModes.isEmpty) {
+      if (!isLoggedIn) return const DeviceSendQuotaBar();
+      return const SizedBox.shrink();
+    }
 
     final sorted = [...allModes]
       ..sort((a, b) {
@@ -83,72 +88,78 @@ class TransferModeBar extends ConsumerWidget {
         return a.available ? -1 : 1;
       });
 
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: embedded ? 0 : AppSpacing.sm,
-        vertical: AppSpacing.xs,
-      ),
-      decoration: BoxDecoration(
-        border: embedded
-            ? null
-            : Border(
-                bottom: BorderSide(
-                  color: colors.border.withValues(alpha: 0.5),
-                  width: 0.5,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: EdgeInsets.symmetric(
+            horizontal: embedded ? 0 : AppSpacing.sm,
+            vertical: AppSpacing.xs,
+          ),
+          decoration: BoxDecoration(
+            border: embedded
+                ? null
+                : Border(
+                    bottom: BorderSide(
+                      color: colors.border.withValues(alpha: 0.5),
+                      width: 0.5,
+                    ),
+                  ),
+            color: embedded ? Colors.transparent : colors.surface,
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Text(
+                l10n.transportModeLabel,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: colors.textSecondary,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
-        color: embedded ? Colors.transparent : colors.surface,
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Text(
-            l10n.transportModeLabel,
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: colors.textSecondary,
-              fontSize: 11,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const TransferModeDotLegendButton(),
-          const SizedBox(width: AppSpacing.xs),
-          Expanded(
-            child: Wrap(
-              spacing: 2,
-              runSpacing: 2,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: sorted.map((m) {
-                return _TransferModeChip(
-                  item: m,
-                  s3Configured: s3Configured,
-                  onModeSelected: onModeSelected,
-                );
-              }).toList(),
-            ),
-          ),
-          if (onRefresh != null)
-            SizedBox(
-              width: 28,
-              height: 28,
-              child: IconButton(
-                icon: sessionProbing
-                    ? BusyStatusIndicator(
-                        size: 14,
-                        strokeWidth: 1.5,
-                        color: colors.textTertiary,
-                      )
-                    : Icon(
-                        LucideIcons.refreshCw,
-                        size: 14,
-                        color: colors.textTertiary,
-                      ),
-                onPressed: sessionProbing ? null : onRefresh,
-                tooltip: l10n.connectionBarRefreshOnlineStatus,
-                padding: EdgeInsets.zero,
+              const TransferModeDotLegendButton(),
+              const SizedBox(width: AppSpacing.xs),
+              Expanded(
+                child: Wrap(
+                  spacing: 2,
+                  runSpacing: 2,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: sorted.map((m) {
+                    return _TransferModeChip(
+                      item: m,
+                      s3Configured: s3Configured,
+                      onModeSelected: onModeSelected,
+                    );
+                  }).toList(),
+                ),
               ),
-            ),
-        ],
-      ),
+              if (onRefresh != null)
+                SizedBox(
+                  width: 28,
+                  height: 28,
+                  child: IconButton(
+                    icon: sessionProbing
+                        ? BusyStatusIndicator(
+                            size: 14,
+                            strokeWidth: 1.5,
+                            color: colors.textTertiary,
+                          )
+                        : Icon(
+                            LucideIcons.refreshCw,
+                            size: 14,
+                            color: colors.textTertiary,
+                          ),
+                    onPressed: sessionProbing ? null : onRefresh,
+                    tooltip: l10n.connectionBarRefreshOnlineStatus,
+                    padding: EdgeInsets.zero,
+                  ),
+                ),
+            ],
+          ),
+        ),
+        if (!isLoggedIn) const DeviceSendQuotaBar(),
+      ],
     );
   }
 }

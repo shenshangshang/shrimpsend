@@ -1,14 +1,19 @@
 package dev.ultrasend.backend.controller;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.ultrasend.backend.dto.SendMessageRequest;
+import dev.ultrasend.backend.service.DeviceSendRateLimit;
 import dev.ultrasend.backend.service.InMemoryRateLimiter;
 import dev.ultrasend.backend.service.MessageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -18,8 +23,11 @@ import java.util.Map;
 @Slf4j
 public class MessageController {
 
+    public static final String QUOTA_HEADER = "X-Device-Send-Quota";
+
     private final MessageService messageService;
     private final InMemoryRateLimiter rateLimiter;
+    private final ObjectMapper objectMapper;
 
     @PostMapping("/send")
     public ResponseEntity<Void> send(Authentication auth, @RequestBody SendMessageRequest req) {
@@ -36,18 +44,39 @@ public class MessageController {
     }
 
     @PostMapping("/device-send")
-    public ResponseEntity<Void> deviceSend(Authentication auth, @RequestBody SendMessageRequest req) {
+    public ResponseEntity<?> deviceSend(Authentication auth, @RequestBody SendMessageRequest req) {
         if (auth == null || !auth.isAuthenticated() || !AuthRoles.isDevice(auth)) {
             return ResponseEntity.status(401).build();
         }
         String deviceId = AuthRoles.deviceId(auth);
-        if (!rateLimiter.tryAcquire("device-send:" + deviceId, 60, 60_000L)) {
-            return ResponseEntity.status(429).build();
-        }
         Object data = req.getData();
-        log.info("messages/device-send deviceId={}", deviceId);
+        String type = DeviceSendRateLimit.envelopeType(data);
+        String kind = DeviceSendRateLimit.kindForType(type);
+        String bucket = DeviceSendRateLimit.bucketKey(deviceId, type);
+        int max = DeviceSendRateLimit.maxPerWindow(type);
+        InMemoryRateLimiter.Snapshot hit = rateLimiter.tryAcquireWithSnapshot(
+                bucket, max, DeviceSendRateLimit.WINDOW_MS);
+        HttpHeaders headers = quotaHeaders(deviceId, kind);
+        if (!hit.acquired()) {
+            log.warn("messages/device-send 429 deviceId={} type={} bucket={}", deviceId, type, bucket);
+            Map<String, Object> body = new LinkedHashMap<>(DeviceSendRateLimit.quotaView(rateLimiter, deviceId));
+            body.put("error", "rate_limited");
+            body.put("kind", kind);
+            return ResponseEntity.status(429).headers(headers).body(body);
+        }
+        log.info("messages/device-send deviceId={} type={}", deviceId, type);
         messageService.sendFromDevice(deviceId, data);
-        return ResponseEntity.noContent().build();
+        return ResponseEntity.noContent().headers(headers).build();
+    }
+
+    @GetMapping("/device-quota")
+    public ResponseEntity<Map<String, Object>> deviceQuota(Authentication auth) {
+        if (auth == null || !auth.isAuthenticated() || !AuthRoles.isDevice(auth)) {
+            return ResponseEntity.status(401).build();
+        }
+        String deviceId = AuthRoles.deviceId(auth);
+        Map<String, Object> body = DeviceSendRateLimit.quotaView(rateLimiter, deviceId);
+        return ResponseEntity.ok().headers(quotaHeaders(deviceId, null)).body(body);
     }
 
     @DeleteMapping("/thread")
@@ -102,5 +131,19 @@ public class MessageController {
         }
         log.info("messages/search disabled; cloud content search is no longer supported");
         return ResponseEntity.status(410).body(List.of());
+    }
+
+    private HttpHeaders quotaHeaders(String deviceId, String kind) {
+        Map<String, Object> payload = new LinkedHashMap<>(DeviceSendRateLimit.quotaView(rateLimiter, deviceId));
+        if (kind != null && !kind.isBlank()) {
+            payload.put("kind", kind);
+        }
+        HttpHeaders headers = new HttpHeaders();
+        try {
+            headers.add(QUOTA_HEADER, objectMapper.writeValueAsString(payload));
+        } catch (JsonProcessingException e) {
+            log.warn("device-send quota header encode failed: {}", e.getMessage());
+        }
+        return headers;
     }
 }

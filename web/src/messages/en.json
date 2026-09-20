@@ -446,6 +446,16 @@
       "loadMore": "Load more…",
       "dropHint": "Release to add files"
     },
+    "quota": {
+      "hint": "Sending without an account is rate-limited",
+      "message": "Messages {used}/{limit}",
+      "signaling": "Signaling {used}/{limit}",
+      "title": "Sending too frequently",
+      "messageBody": "This minute's message quota is used up ({used}/{limit}). Try again in {seconds}s.",
+      "signalingBody": "This minute's transfer signaling quota is used up ({used}/{limit}). Try again in {seconds}s, or send the file later.",
+      "infoBody": "Guest sending is rate-limited. Messages {messageUsed}/{messageLimit}, signaling {signalingUsed}/{signalingLimit}. Sign in to remove this limit.",
+      "gotIt": "Got it"
+    },
     "scrollBottom": "Scroll to bottom",
     "selectToggle": "Select",
     "deselectToggle": "Deselect",

@@ -2879,6 +2879,46 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get deviceSendQuotaHint =>
+      'Sending without an account is rate-limited';
+
+  @override
+  String deviceSendQuotaMessage(int used, int limit) {
+    return 'Messages $used/$limit';
+  }
+
+  @override
+  String deviceSendQuotaSignaling(int used, int limit) {
+    return 'Signaling $used/$limit';
+  }
+
+  @override
+  String get deviceSendQuotaTitle => 'Sending too frequently';
+
+  @override
+  String deviceSendQuotaMessageBody(int used, int limit, int seconds) {
+    return 'This minute\'s message quota is used up ($used/$limit). Try again in ${seconds}s.';
+  }
+
+  @override
+  String deviceSendQuotaSignalingBody(int used, int limit, int seconds) {
+    return 'This minute\'s transfer signaling quota is used up ($used/$limit). Try again in ${seconds}s, or send the file later.';
+  }
+
+  @override
+  String deviceSendQuotaInfoBody(
+    int messageUsed,
+    int messageLimit,
+    int signalingUsed,
+    int signalingLimit,
+  ) {
+    return 'Guest sending is rate-limited. Messages $messageUsed/$messageLimit, signaling $signalingUsed/$signalingLimit. Sign in to remove this limit.';
+  }
+
+  @override
+  String get deviceSendQuotaGotIt => 'Got it';
+
+  @override
   String get chatScreenFileMissing =>
       'File no longer exists — it may have been deleted';
 
