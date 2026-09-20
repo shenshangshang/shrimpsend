@@ -361,44 +361,18 @@ final selectedLanTargetsProvider =
       (_) => SelectedTargetsNotifier(),
     );
 
-/// Selected targets filtered to only include devices visible in the current
-/// send mode's device list, excluding the current device.
+/// Selected targets filtered to devices visible in the roster, excluding self.
 final effectiveSelectedTargetsProvider = Provider<Set<String>>((ref) {
   final selected = ref.watch(selectedLanTargetsProvider);
   if (selected.isEmpty) return {};
-  final mode = ref.watch(selectedSendModeProvider);
-  if (mode == SendMode.s3) return {};
   final currentDeviceId = ref.watch(deviceInfoProvider).valueOrNull?.id;
-  switch (mode) {
-    case SendMode.nearby:
-      final lanIds = ref
-          .watch(lanDevicesProvider)
-          .valueOrNull
-          ?.where(
-            (d) =>
-                d.lanHttpUrl != null &&
-                d.lanHttpUrl!.isNotEmpty &&
-                d.deviceId != currentDeviceId,
-          )
-          .map((d) => d.deviceId)
-          .toSet();
-      if (lanIds == null) return {};
-      return selected.intersection(lanIds);
-    case SendMode.lan:
-    case SendMode.webrtc:
-      final myIds = ref
-          .watch(myDevicesProvider)
-          .where((d) => d.deviceId != currentDeviceId)
-          .map((d) => d.deviceId)
-          .toSet();
-      final nearbyIds = ref
-          .watch(nearbyDevicesProvider)
-          .map((d) => d.deviceId)
-          .toSet();
-      return selected.intersection(myIds.union(nearbyIds));
-    case SendMode.s3:
-      return {};
-  }
+  final myIds = ref
+      .watch(myDevicesProvider)
+      .where((d) => d.deviceId != currentDeviceId)
+      .map((d) => d.deviceId)
+      .toSet();
+  final nearbyIds = ref.watch(nearbyDevicesProvider).map((d) => d.deviceId).toSet();
+  return selected.intersection(myIds.union(nearbyIds));
 });
 
 /// Effective selected target count based on available devices.

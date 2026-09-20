@@ -2,7 +2,9 @@
 
 This is a condensed English overview of the ShrimpSend / 虾传 transfer protocol for readers who do not read Chinese. The full, authoritative specification lives in [shared/protocol.md](protocol.md); when the two disagree, the Chinese document wins.
 
-ShrimpSend moves data between a user's own devices. It picks the best available path at send time and degrades gracefully when the network is hostile, rather than failing the transfer. The paths, in order of preference, are: HTTP direct push on the LAN, HTTP reverse pull, WebRTC peer-to-peer, and S3-compatible relay.
+ShrimpSend moves data between a user's own devices. Users pick a destination device, not a transport. At send time the client probes paths in speed order and uses the first one that can transfer: HTTP direct push on the LAN, HTTP reverse pull, WebRTC peer-to-peer, then S3-compatible relay. There is no session-level mode picker.
+
+Web browsers have no LAN HTTP server, so direction is fixed: Web → App is HTTP push only; App → Web is HTTP reverse pull only; Web → Web skips HTTP. Guest (unsigned-in) sessions use the same HTTP direction rules; S3 remains login-only.
 
 ## Why a multi-path protocol
 

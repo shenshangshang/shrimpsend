@@ -4,7 +4,7 @@ import { createContext, useContext, useState, useCallback, useEffect, useMemo, u
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRealtime } from '@/contexts/RealtimeContext';
-import { useSendTargetProbes, isReachOnline, type ReachStatus, type DeviceReachEntry, type DeviceReachDetail } from '@/hooks/useSendTargetProbes';
+import { useSendTargetProbes, type DeviceReachEntry } from '@/hooks/useSendTargetProbes';
 import { listDevices, registerDevice, updateDevicePresence, sendMessage, pairDevice, getMessageHistory, deleteMessage, deleteThreadMessages, hasS3Config, checkS3Online, updateDevice, DeviceSendRateLimitedError } from '@/lib/api';
 import type { DeviceDto, MessageEnvelope, ChatMessage } from '@/lib/api';
 import { getOrCreateDeviceId, getDeviceName, getOrCreatePresenceSessionId, generateUUID } from '@/lib/deviceId';
@@ -30,16 +30,12 @@ import { transferStateManager } from '@/lib/services/transferStateManager';
 import { runWithConcurrency, AsyncSemaphore } from '@/lib/concurrency';
 import {
   loadSelectedTargets,
-  loadSendModeForDevice,
   persistSelectedTargets,
-  persistSendModeForDevice,
-  type WebSendMode,
 } from '@/lib/sendTargetStorage';
 import {
-  buildTransferModeOptions,
-  resolveSendModeAutoPreferHttp,
-  resolveSendModeWithMemory,
-} from '@/lib/sendModeResolution';
+  applicableTransferHops,
+  TransferHopSkipCache,
+} from '@/lib/transferPathCascade';
 import { normalizeMessageLocalId, rowMatchesLocalId } from '@/lib/chatMessageDedupe';
 import { loadAutoCopyIncomingText } from '@/lib/autoCopyPreferences';
 import {
@@ -107,9 +103,7 @@ export type ChatContextValue = {
   selectedDeviceId: string | null;
   setSelectedDeviceId: (id: string | null) => void;
 
-  // Send mode & targets
-  sendMode: WebSendMode;
-  onSendModeChange: (m: WebSendMode) => void;
+  // Targets
   selectedTargets: Set<string>;
   toggleTarget: (deviceId: string) => void;
 
@@ -174,9 +168,6 @@ export type ChatContextValue = {
   s3Online: boolean;
   s3Checking: boolean;
   checkS3Config: () => Promise<void>;
-
-  // Best send mode for a specific device
-  bestSendModeForDevice: (deviceId: string) => WebSendMode;
 };
 
 const ChatContext = createContext<ChatContextValue | null>(null);
@@ -198,16 +189,15 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const pendingPatchesRef = useRef<Map<string, Partial<ChatMessage>>>(new Map());
   const rafFlushingRef = useRef<number | null>(null);
   const pullSemaphoreRef = useRef(new AsyncSemaphore(3));
-  const sendSingleFileRef = useRef<(file: File, useLan: boolean, targetDevices: DeviceDto[]) => Promise<void>>(async () => {});
-  const sendFilesViaWebRTCRef = useRef<(files: File[], targetDeviceId: string) => Promise<void>>(async () => {});
+  const hopSkipCacheRef = useRef(new TransferHopSkipCache());
+  const sendSingleFileRef = useRef<(file: File, useLan: boolean, targetDevices: DeviceDto[], opts?: { reportTerminalFailure?: boolean }) => Promise<boolean>>(async () => false);
+  const sendFilesViaWebRTCRef = useRef<(files: File[], targetDeviceId: string, opts?: { fallbackS3?: boolean; reportTerminalFailure?: boolean }) => Promise<boolean>>(async () => false);
 
   const [devices, setDevices] = useState<DeviceDto[]>([]);
-  const [sendMode, setSendMode] = useState<WebSendMode>('lan');
   const [selectedTargets, setSelectedTargets] = useState<Set<string>>(() => new Set());
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   const userIdRef = useRef<string | null>(null);
   const selectedDeviceIdRef = useRef<string | null>(null);
-  const sendModeAutoRef = useRef(true);
   const selectedPeerReachSnapshotRef = useRef<{
     presence: string;
     lanHttpUrl: string;
@@ -946,67 +936,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   const webrtcAvailable = typeof window !== 'undefined' && window.isSecureContext;
 
-  const reconcileSendModeForSelection = useCallback(
-    (deviceId: string): WebSendMode => {
-      if (deviceId === S3_VIRTUAL_DEVICE_ID) return 's3';
-      const peer = devices.find((d) => d.deviceId === deviceId);
-      const peerIsWeb = isWebPeer(peer?.platform);
-      const entry = deviceReach[deviceId];
-      const methods = entry?.methods;
-      const httpAvailable = !!(
-        methods?.directHttp ||
-        methods?.pullReachable ||
-        methods?.peerHttpHealthy ||
-        methods?.lanSignaling
-      );
-      const s3Available = !!(userId && s3Configured && s3Online);
-      const options = buildTransferModeOptions({
-        peerIsWeb,
-        webrtcAvailable,
-        httpAvailable,
-        webrtcReachable: methods?.webrtc ?? null,
-        s3Available,
-        guest: !userId,
-      });
-      if (sendModeAutoRef.current) {
-        return resolveSendModeAutoPreferHttp(options);
-      }
-      let preferred = loadSendModeForDevice(deviceId);
-      if (preferred === 'webrtc' && !webrtcAvailable) {
-        preferred = s3Available ? 's3' : 'lan';
-      }
-      return resolveSendModeWithMemory(preferred, options);
-    },
-    [devices, deviceReach, webrtcAvailable, s3Configured, s3Online, userId],
-  );
-
-  useEffect(() => {
-    const deviceId = selectedDeviceIdRef.current;
-    if (sendMode === 'webrtc' && !webrtcAvailable && deviceId) {
-      const fallback: WebSendMode =
-        s3Configured && s3Online ? 's3' : 'lan';
-      setSendMode(fallback);
-      if (
-        deviceId !== S3_VIRTUAL_DEVICE_ID &&
-        !sendModeAutoRef.current
-      ) {
-        persistSendModeForDevice(deviceId, fallback);
-      }
-    }
-  }, [sendMode, webrtcAvailable, s3Configured, s3Online]);
-
-  // ─── Send mode & target helpers ───────────────────────────────────────
-
-  const onSendModeChange = useCallback((m: WebSendMode) => {
-    if (m === 'webrtc' && typeof window !== 'undefined' && !window.isSecureContext) return;
-    sendModeAutoRef.current = false;
-    setSendMode(m);
-    const deviceId = selectedDeviceIdRef.current;
-    if (deviceId && deviceId !== S3_VIRTUAL_DEVICE_ID) {
-      persistSendModeForDevice(deviceId, m);
-    }
-  }, []);
-
   const toggleTarget = useCallback((deviceId: string) => {
     setSelectedTargets((prev) => {
       const next = new Set(prev);
@@ -1455,17 +1384,25 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   // ─── File sending ─────────────────────────────────────────────────────
 
-  const sendSingleFile = useCallback(async (file: File, useLan: boolean, targetDevices: DeviceDto[]) => {
+  const sendSingleFile = useCallback(async (
+    file: File,
+    useLan: boolean,
+    targetDevices: DeviceDto[],
+    opts?: { reportTerminalFailure?: boolean },
+  ): Promise<boolean> => {
     const localId = generateUUID();
     const deviceId = getOrCreateDeviceId();
-    if (!userId || !selectedDeviceId) {
+    const reportFailure = opts?.reportTerminalFailure !== false;
+    if (!selectedDeviceId) {
       setFileError('chat.errors.needSessionDevice');
-      return;
+      return false;
     }
-    const outbound = outboundForWebChat(userId, selectedDeviceId, deviceId);
-    if (!outbound) {
+    const outbound = userId
+      ? outboundForWebChat(userId, selectedDeviceId, deviceId)
+      : outboundForGuestChat(selectedDeviceId, deviceId);
+    if (!outbound || (!userId && !outbound.toDeviceId)) {
       setFileError('chat.errors.needSessionDevice');
-      return;
+      return false;
     }
     const abortController = new AbortController();
     activeTransfersRef.current.set(localId, abortController);
@@ -1473,9 +1410,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     if (useLan) {
       if (targetDevices.length === 0) {
         logger.warn(TAG, 'sendFile LAN no reachable devices', file.name);
-        setFileError('chat.errors.deviceUnavailable');
+        if (reportFailure) setFileError('chat.errors.deviceUnavailable');
         activeTransfersRef.current.delete(localId);
-        return;
+        return false;
       }
       retryInfoRef.current.set(localId, { file, channel: 'lan', targetDevices });
       const lanPayload = { fileName: file.name, size: file.size, lan: true, targetDeviceIds: targetDevices.map((d) => d.deviceId), localId };
@@ -1488,50 +1425,65 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           lanTracker.update(Math.round(file.size * pct / 100));
           updateMessageByLocalId(localId, { _progress: pct, _speed: lanTracker.formatted });
         }, localId);
-        if (abortController.signal.aborted) return;
+        if (abortController.signal.aborted) return false;
         if (!lanOk) throw new Error('chat.httpSendFailed');
-        await sendMessage({
-          type: 'file',
-          payload: lanPayload,
-          fromDeviceId: deviceId,
-          ts: Date.now(),
-          threadKey: outbound.threadKey,
-          ...(outbound.toDeviceId != null ? { toDeviceId: outbound.toDeviceId } : {}),
-        });
+        try {
+          await sendMessage({
+            type: 'file',
+            payload: lanPayload,
+            fromDeviceId: deviceId,
+            ts: Date.now(),
+            threadKey: outbound.threadKey,
+            ...(outbound.toDeviceId != null ? { toDeviceId: outbound.toDeviceId } : {}),
+          });
+        } catch (e) {
+          if (userId) throw e;
+          logger.warn(TAG, 'guest LAN file echo skipped', e);
+        }
         retryInfoRef.current.delete(localId);
         updateMessageByLocalId(localId, { _status: 'sent', _progress: undefined, _speed: undefined });
+        return true;
       } catch (e) {
         if (e instanceof DOMException && e.name === 'AbortError') {
           updateMessageByLocalId(localId, { _status: 'cancelled', _progress: undefined, _speed: undefined });
-          return;
+          return false;
         }
         const errMsg = e instanceof Error ? e.message : String(e);
         if (
-          errMsg.includes(TRANSFER_STALL_TIMEOUT_MESSAGE) ||
-          errMsg.includes('停滞') ||
-          errMsg.includes('stall') ||
-          errMsg.includes('timeout') ||
-          errMsg.includes('Timeout')
+          reportFailure && (
+            errMsg.includes(TRANSFER_STALL_TIMEOUT_MESSAGE) ||
+            errMsg.includes('停滞') ||
+            errMsg.includes('stall') ||
+            errMsg.includes('timeout') ||
+            errMsg.includes('Timeout')
+          )
         ) {
           setFileError('chat.errors.httpStall');
         }
-        updateMessageByLocalId(localId, { _status: 'failed', _speed: undefined, _progress: undefined });
+        if (reportFailure) {
+          updateMessageByLocalId(localId, { _status: 'failed', _speed: undefined, _progress: undefined });
+        }
+        return false;
       } finally {
         activeTransfersRef.current.delete(localId);
         speedTrackersRef.current.delete(localId);
       }
-      return;
     }
 
-    if (!s3Configured) {
-      setFileError('chat.errors.configureS3First');
+    if (!userId) {
+      if (reportFailure) setFileError('chat.errors.guestTextNeedsLogin');
       activeTransfersRef.current.delete(localId);
-      return;
+      return false;
+    }
+    if (!s3Configured) {
+      if (reportFailure) setFileError('chat.errors.configureS3First');
+      activeTransfersRef.current.delete(localId);
+      return false;
     }
     if (!s3Online) {
-      setFileError('chat.errors.s3Unavailable');
+      if (reportFailure) setFileError('chat.errors.s3Unavailable');
       activeTransfersRef.current.delete(localId);
-      return;
+      return false;
     }
     retryInfoRef.current.set(localId, { file, channel: 's3', targetDevices: [] });
     const placeholder: ChatMessage = { type: 'file', payload: { fileName: file.name, size: file.size, localId }, fromDeviceId: deviceId, ts: Date.now(), _localId: localId, _status: 'uploading', _progress: 0 };
@@ -1563,28 +1515,35 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       });
       retryInfoRef.current.delete(localId);
       updateMessageByLocalId(localId, { _status: 'sent', _progress: undefined, _speed: undefined, payload: { key: result.key, fileName: file.name, size: file.size, localId } });
+      return true;
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') {
         updateMessageByLocalId(localId, { _status: 'cancelled', _progress: undefined, _speed: undefined });
-        return;
+        return false;
       }
-      setFileError(e instanceof Error ? e.message : 'chat.sendFailed');
-      updateMessageByLocalId(localId, { _status: 'failed', _speed: undefined });
+      if (reportFailure) {
+        setFileError(e instanceof Error ? e.message : 'chat.sendFailed');
+        updateMessageByLocalId(localId, { _status: 'failed', _speed: undefined });
+      }
+      return false;
     } finally {
       activeTransfersRef.current.delete(localId);
       speedTrackersRef.current.delete(localId);
     }
   }, [updateMessageByLocalId, userId, selectedDeviceId, s3Configured, s3Online]);
 
-  const sendFilesViaWebRTC = useCallback(async (files: File[], targetDeviceId: string) => {
+  const sendFilesViaWebRTC = useCallback(async (
+    files: File[],
+    targetDeviceId: string,
+    opts?: { fallbackS3?: boolean; reportTerminalFailure?: boolean },
+  ): Promise<boolean> => {
     const mgr = webrtcManagerRef.current;
-    if (!mgr) return;
+    if (!mgr) return false;
+    const fallbackS3 = opts?.fallbackS3 === true;
+    const reportFailure = opts?.reportTerminalFailure !== false;
     const deviceId = getOrCreateDeviceId();
     const pendingWithMeta = files.map((file) => {
       const fileId = generateUUID();
-      // Sender's per-transfer localId is mirrored into the WebRTC meta so the
-      // receiver can dedup the eventual Centrifugo `file` publication by
-      // localId (not fileName) against its local receiver bubble.
       const localId = generateUUID();
       const meta: FileMetadata = {
         fileId,
@@ -1607,6 +1566,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       const session = await mgr.initiateTransfer(targetDeviceId, pendingWithMeta);
       await session.connected;
       await session.sendsFinished;
+      return true;
     } catch (err) {
       if (err instanceof DeviceSendRateLimitedError) {
         for (const { meta } of pendingWithMeta) {
@@ -1618,9 +1578,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             updateMessageByLocalId(localId, { _status: 'failed', _progress: undefined, _speed: undefined });
           }
         }
-        return;
+        return false;
       }
-      if (s3OnlineRef.current) {
+      if (fallbackS3 && s3OnlineRef.current) {
         await runWithConcurrency(pendingWithMeta, MAX_PARALLEL_FILE_SENDS, async ({ file, meta }) => {
           const localId = webrtcFileLocalIdMap.current.get(meta.fileId);
           if (localId) {
@@ -1631,7 +1591,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           }
           await sendSingleFile(file, false, []);
         });
-      } else {
+        return true;
+      }
+      if (reportFailure) {
         const peer = devices.find((d) => d.deviceId === targetDeviceId);
         setFileError(
           !userIdRef.current
@@ -1650,6 +1612,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           }
         }
       }
+      return false;
     }
   }, [updateMessageByLocalId, sendSingleFile, devices]);
 
@@ -1692,90 +1655,90 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   // ─── File send orchestration ──────────────────────────────────────────
 
-  const sendFileToTargets = useCallback(async (mode: 'webrtc' | 'lan' | 's3', selectedIds?: Set<string>, freshDevices?: DeviceDto[]) => {
-    const filesToSend = [...pendingFiles];
-    setPendingFiles([]);
-    setFileError(null);
-    if (filesToSend.length === 0) return;
-    if (mode === 'webrtc' && selectedIds) {
-      const targetIds = Array.from(selectedIds);
-      await runWithConcurrency(targetIds, MAX_PARALLEL_WEBRTC_TARGETS, async (targetId) => {
-        await sendFilesViaWebRTC(filesToSend, targetId);
-      });
+  const sendFilesViaCascade = useCallback(async (filesToSend: File[], targetId: string) => {
+    const peer = devices.find((d) => d.deviceId === targetId);
+    const hops = hopSkipCacheRef.current.filter(
+      targetId,
+      applicableTransferHops({
+        localIsWeb: true,
+        peerIsWeb: isWebPeer(peer?.platform),
+        isLoggedIn: !!userId,
+        webrtcAvailable,
+        s3Configured,
+        s3Online,
+        isS3VirtualSession: targetId === S3_VIRTUAL_DEVICE_ID,
+      }),
+    );
+    if (hops.length === 0) {
+      setFileError(
+        !userId
+          ? 'chat.errors.guestTextNeedsLogin'
+          : !s3Configured
+            ? 'chat.errors.configureS3First'
+            : 'chat.errors.selectOnlineTargets',
+      );
       return;
     }
-    const useLan = mode === 'lan';
-    const selectedLanTargets = useLan
-      ? (freshDevices && freshDevices.length > 0 ? freshDevices : (selectedIds ? devices.filter((d) => selectedIds.has(d.deviceId) && d.lanHttpUrl) : []))
-      : [];
-    const targetDevices = useLan ? await verifyLanTargets(selectedLanTargets) : [];
-    if (useLan && targetDevices.length === 0) {
-      setFileError('chat.errors.preflightPartial');
-      await runWithConcurrency(filesToSend, MAX_PARALLEL_FILE_SENDS, async (file) => { await sendSingleFile(file, true, selectedLanTargets); });
-      return;
-    }
-    if (useLan && targetDevices.length < selectedLanTargets.length) {
-      setFileError('chat.errors.skippedUnreachable');
-    }
-    await runWithConcurrency(filesToSend, MAX_PARALLEL_FILE_SENDS, async (file) => { await sendSingleFile(file, useLan, targetDevices); });
-  }, [pendingFiles, devices, sendFilesViaWebRTC, sendSingleFile, verifyLanTargets]);
+
+    await runWithConcurrency(filesToSend, MAX_PARALLEL_FILE_SENDS, async (file) => {
+      let sent = false;
+      if (hops.includes('httpPush')) {
+        const candidates = buildFreshLanDevices(new Set([targetId]));
+        const withUrl = candidates.length > 0
+          ? candidates
+          : devices.filter((d) => d.deviceId === targetId && !!d.lanHttpUrl);
+        const verified = await verifyLanTargets(withUrl);
+        if (verified.length > 0) {
+          sent = await sendSingleFile(file, true, verified, { reportTerminalFailure: false });
+          if (sent) {
+            hopSkipCacheRef.current.markSucceeded(targetId, 'httpPush');
+            return;
+          }
+        }
+        hopSkipCacheRef.current.markFailed(targetId, 'httpPush');
+      }
+      if (!sent && hops.includes('webrtc')) {
+        sent = await sendFilesViaWebRTC([file], targetId, {
+          fallbackS3: false,
+          reportTerminalFailure: !hops.includes('s3'),
+        });
+        if (sent) {
+          hopSkipCacheRef.current.markSucceeded(targetId, 'webrtc');
+          return;
+        }
+        hopSkipCacheRef.current.markFailed(targetId, 'webrtc');
+      }
+      if (!sent && hops.includes('s3')) {
+        await sendSingleFile(file, false, []);
+        return;
+      }
+      if (!sent) {
+        setFileError('chat.errors.selectOnlineTargets');
+      }
+    });
+  }, [
+    devices,
+    userId,
+    webrtcAvailable,
+    s3Configured,
+    s3Online,
+    buildFreshLanDevices,
+    verifyLanTargets,
+    sendSingleFile,
+    sendFilesViaWebRTC,
+  ]);
 
   const handleSendFiles = useCallback(() => {
     if (pendingFiles.length === 0) return;
-
-    if (!userId) {
-      if (selectedDeviceId === S3_VIRTUAL_DEVICE_ID) {
-        setFileError('chat.errors.guestTextNeedsLogin');
-        return;
-      }
-      if (!webrtcAvailable) {
-        setFileError('chat.errors.webrtcNotSupported');
-        return;
-      }
-      if (!selectedDeviceId) {
-        setFileError('chat.errors.needSessionDevice');
-        return;
-      }
-      void sendFileToTargets('webrtc', new Set([selectedDeviceId]));
+    if (!selectedDeviceId) {
+      setFileError('chat.errors.needSessionDevice');
       return;
     }
-
-    // S3 virtual device: always use S3
-    if (selectedDeviceId === S3_VIRTUAL_DEVICE_ID || sendMode === 's3') {
-      void sendFileToTargets('s3');
-      return;
-    }
-
-    if (sendMode === 'webrtc' && !webrtcAvailable) {
-      setFileError('chat.errors.webrtcNotSupported');
-      return;
-    }
-    const selectedPeer = selectedDeviceId
-      ? devices.find((d) => d.deviceId === selectedDeviceId)
-      : undefined;
-    if (sendMode === 'lan' && isWebPeer(selectedPeer?.platform)) {
-      setFileError('chat.errors.httpNotSupportedWebPeer');
-      return;
-    }
-    const onlineTargets = [...selectedTargets].filter(
-      (id) => otherDevices.some((d) => d.deviceId === id) && isReachOnline(deviceReach[id]),
-    );
-
-    if (onlineTargets.length === 0) {
-      setFileError('chat.errors.selectOnlineTargets');
-      return;
-    }
-
-    if (sendMode === 'webrtc') {
-      void sendFileToTargets('webrtc', new Set(onlineTargets));
-      return;
-    }
-    if (sendMode === 'lan') {
-      const lanOnline = new Set(onlineTargets.filter((id) => lanDevices.some((d) => d.deviceId === id)));
-      void sendFileToTargets('lan', lanOnline, buildFreshLanDevices(lanOnline));
-      return;
-    }
-  }, [pendingFiles, sendMode, selectedDeviceId, devices, webrtcAvailable, selectedTargets, otherDevices, lanDevices, deviceReach, sendFileToTargets, buildFreshLanDevices, userId]);
+    const filesToSend = [...pendingFiles];
+    setPendingFiles([]);
+    setFileError(null);
+    void sendFilesViaCascade(filesToSend, selectedDeviceId);
+  }, [pendingFiles, selectedDeviceId, sendFilesViaCascade]);
 
   const addPendingFiles = useCallback((files: File[]) => {
     if (files.length === 0) return;
@@ -1949,44 +1912,16 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [selectMode, exitSelectMode]);
 
-  // ─── Auto-select best send mode for a device ─────────────────────────
-
-  const bestSendModeForDevice = useCallback((deviceId: string): WebSendMode => {
-    if (deviceId === S3_VIRTUAL_DEVICE_ID) return 's3';
-    if (!userId) return webrtcAvailable ? 'webrtc' : 'lan';
-    const peer = devices.find((d) => d.deviceId === deviceId);
-    if (isWebPeer(peer?.platform)) {
-      const entry = deviceReach[deviceId];
-      if (isReachOnline(entry) && webrtcAvailable && entry.methods.webrtc) {
-        return 'webrtc';
-      }
-      if (s3Configured && s3Online) return 's3';
-      return 'webrtc';
-    }
-    const entry = deviceReach[deviceId];
-    if (isReachOnline(entry)) {
-      if ((entry.methods.directHttp || entry.methods.lanSignaling) && lanDevices.some((d) => d.deviceId === deviceId)) return 'lan';
-      if (webrtcAvailable && entry.methods.webrtc) return 'webrtc';
-      if (s3Configured && s3Online) return 's3';
-    }
-    if (s3Configured && s3Online) return 's3';
-    return 'lan';
-  }, [deviceReach, lanDevices, webrtcAvailable, devices, s3Configured, s3Online, userId]);
-
   // ─── Auto-select device as target when selectedDeviceId changes ──────
 
   const probeSingleRef = useRef(probeSingleDevice);
   probeSingleRef.current = probeSingleDevice;
-  const reconcileSendModeRef = useRef(reconcileSendModeForSelection);
-  reconcileSendModeRef.current = reconcileSendModeForSelection;
 
   useEffect(() => {
     if (!selectedDeviceId) return;
     if (selectedDeviceId === S3_VIRTUAL_DEVICE_ID) {
-      setSendMode('s3');
       return;
     }
-    sendModeAutoRef.current = true;
     const peer = devices.find((d) => d.deviceId === selectedDeviceId);
     selectedPeerReachSnapshotRef.current = peer
       ? {
@@ -2026,12 +1961,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       probeSingleRef.current(selectedDeviceId);
     }
   }, [selectedDeviceId, devices]);
-
-  useEffect(() => {
-    if (!selectedDeviceId || selectedDeviceId === S3_VIRTUAL_DEVICE_ID) return;
-    const resolved = reconcileSendModeRef.current(selectedDeviceId);
-    setSendMode(resolved);
-  }, [selectedDeviceId, deviceReach, reconcileSendModeForSelection, webrtcAvailable, s3Configured, s3Online]);
 
   useEffect(() => {
     if (!selectedDeviceId) return;
@@ -2079,8 +2008,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     refreshDevices,
     selectedDeviceId,
     setSelectedDeviceId,
-    sendMode,
-    onSendModeChange,
     selectedTargets,
     toggleTarget,
     deviceReach,
@@ -2125,10 +2052,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     s3Online,
     s3Checking,
     checkS3Config,
-    bestSendModeForDevice,
   }), [
     connected, devices, currentDeviceId, otherDevices, lanDevices, refreshDevices,
-    selectedDeviceId, sendMode, onSendModeChange, selectedTargets, toggleTarget,
+    selectedDeviceId, selectedTargets, toggleTarget,
     deviceReach, targetsProbing, refreshSendTargets, probeSingleDevice,
     runSessionConnectionDiagnostic, connectionDiagnostic, diagnosticSheetOpen, setDiagnosticSheetOpen,
     messages, sendTextMessage, sending, sendError, fileError,
@@ -2136,7 +2062,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     handleDeleteMessage, cancelTransfer, handleRetryText, handleRetryFile,
     loadMoreMessages, loadingMore,
     selectMode, selectedKeys, toggleMessageSelect, exitSelectMode, toggleSelectAllMessages, enterSelectWithKey, handleBulkDelete, clearCurrentThreadMessages,
-    webrtcAvailable, userId, addPeerByDeviceId, s3Configured, s3Online, s3Checking, checkS3Config, bestSendModeForDevice, probeSingleDevice,
+    webrtcAvailable, userId, addPeerByDeviceId, s3Configured, s3Online, s3Checking, checkS3Config, probeSingleDevice,
     runSessionConnectionDiagnostic, connectionDiagnostic, diagnosticSheetOpen, setDiagnosticSheetOpen,
   ]);
 

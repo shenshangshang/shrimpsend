@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'package:http/http.dart' as http;
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
@@ -52,16 +53,14 @@ import '../widgets/chat/chat_screen_overlays.dart';
 import '../widgets/chat/chat_session_body.dart';
 import '../widgets/chat/chat_theme_helpers.dart';
 import '../widgets/chat/device_send_quota_bar.dart';
-import '../widgets/chat/connection_diagnostic_dialog.dart';
 import '../widgets/chat/delete_file_message_dialog.dart';
 import '../widgets/layout/main_layout.dart';
 import '../widgets/pending_files_bar.dart';
 import '../widgets/pending_outbox_badge_button.dart';
-import '../network/connection_bar_view_model.dart';
 import '../network/connection_diagnostic.dart';
-import '../network/connection_orchestrator.dart';
 import '../network/connection_resolution.dart';
 import '../network/probe_priority.dart';
+import '../network/transfer_path_cascade.dart';
 import '../widgets/desktop_file_drag_source.dart';
 import '../widgets/desktop_hover_action_bar.dart';
 import '../widgets/file_card_bubble.dart';
@@ -346,6 +345,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
 
   LanReceiver? _lanReceiver;
   LanDiscoveryService? _lanDiscovery;
+  final TransferHopSkipCache _hopSkipCache = TransferHopSkipCache();
   bool _statusCheckDone = false;
   int _serverConnectionCheckGeneration = 0;
   bool get _isOffline => ref.read(isOfflineModeProvider);
@@ -378,7 +378,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   final Map<String, int> _probeRequestSeqByPeer = {};
   final Set<String> _probeRunningPeers = {};
   final Map<String, _QueuedProbeRequest> _pendingProbeByPeer = {};
-  bool _manualSwitchBusy = false;
   final Map<String, CancelToken> _activeTransfers = {};
 
   /// Tracks the Future of each active send so we can await it before retry.
@@ -600,7 +599,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
 
   ProviderSubscription? _authSub;
   ProviderSubscription? _selectedDeviceSub;
-  ProviderSubscription<ConnectionOrchestratorState>? _connectionOrchestratorSub;
   StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
   String get _presenceSessionId =>
       ref.read(realtimeHubProvider).presenceSessionId;
@@ -657,7 +655,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
           if (!mounted) return;
           // Tear down the always-on foreground service on logout.
           unawaited(TransferKeepAlive.instance.disablePersistent());
-          ref.read(selectedSendModeProvider.notifier).resetForLogout();
           if (ref.read(selectedDeviceIdProvider) != null) {
             ref.read(selectedDeviceIdProvider.notifier).select(null);
           }
@@ -676,15 +673,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       next,
     ) {
       if (prev != next) {
-        ref.read(selectedSendModeProvider.notifier).activateDevice(next);
-        ref.read(connectionSwitchProbeProvider.notifier).state = null;
         if (isPeerSelection(next)) {
-          ref.read(chatSendModeAutoProvider.notifier).state = true;
-          ref.read(connectionManualOverrideProvider.notifier).state = false;
-          ref.read(connectionManualModeProvider.notifier).state = null;
-          ref
-              .read(selectedSendModeProvider.notifier)
-              .select(SendMode.lan, persist: false);
           _seedSelectedPeerReachabilitySnapshot(next!);
         } else {
           _clearSelectedPeerReachabilitySnapshot();
@@ -718,13 +707,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         _scheduleDiffProbeNewPeers();
         _checkSelectedPeerReachabilitySignal();
       },
-    );
-    _connectionOrchestratorSub = ref.listenManual<ConnectionOrchestratorState>(
-      connectionOrchestratorProvider,
-      (prev, next) {
-        _reconcileSendModeWithAvailability(next);
-      },
-      fireImmediately: true,
     );
     FileStore.addReceiveDirChangedListener(_onReceiveDirChanged);
     WidgetsBinding.instance.addObserver(this);
@@ -1134,96 +1116,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     if (selected != null && selected != s3VirtualDeviceId) {
       await _probeSingleDevice(selected);
     }
-  }
-
-  void _reconcileSendModeWithAvailability(
-    ConnectionOrchestratorState orchestrator,
-  ) {
-    final peerId = ref.read(selectedDeviceIdProvider);
-    if (peerId == null || peerId == s3VirtualDeviceId) return;
-
-    final isLoggedIn = ref.read(authProvider).isLoggedIn;
-    final isRegisteredPeer = ref
-        .read(myDevicesProvider)
-        .any((d) => d.deviceId == peerId);
-    final auto = ref.read(chatSendModeAutoProvider);
-    final preferred = ref.read(selectedSendModeProvider);
-    final resolved = auto
-        ? resolveSendModeAutoPreferHttp(
-            candidates: orchestrator.candidates,
-            isLoggedIn: isLoggedIn,
-            isRegisteredPeer: isRegisteredPeer,
-            fallback: preferred,
-          )
-        : resolveSendModeWithMemory(
-            preferred: preferred,
-            candidates: orchestrator.candidates,
-            isLoggedIn: isLoggedIn,
-            isRegisteredPeer: isRegisteredPeer,
-          );
-    if (resolved != preferred) {
-      logChat.info(
-        'send mode ${auto ? 'auto' : 'manual'} ${preferred.name} -> ${resolved.name}',
-      );
-      ref
-          .read(selectedSendModeProvider.notifier)
-          .select(resolved, persist: !auto);
-    }
-  }
-
-  Future<void> _confirmAndSwitchMode(SendMode mode) async {
-    if (_manualSwitchBusy || !mounted) return;
-    final peerId = ref.read(selectedDeviceIdProvider);
-    if (peerId == null || peerId == s3VirtualDeviceId) return;
-
-    setState(() => _manualSwitchBusy = true);
-    try {
-      ref.read(chatSendModeAutoProvider.notifier).state = false;
-      ref.read(connectionManualOverrideProvider.notifier).state = true;
-      ref.read(connectionManualModeProvider.notifier).state = mode;
-      ref.read(selectedSendModeProvider.notifier).select(mode);
-      await _probeSelectedModeAfterSwitch(peerId, mode);
-    } finally {
-      if (mounted) setState(() => _manualSwitchBusy = false);
-    }
-  }
-
-  Future<void> _probeSelectedModeAfterSwitch(
-    String peerId,
-    SendMode mode,
-  ) async {
-    final device = _findKnownDeviceById(peerId);
-    if (device == null) return;
-    final l10n = AppLocalizations.of(context);
-    ref
-        .read(connectionSwitchProbeProvider.notifier)
-        .state = ConnectionSwitchProbeState(
-      peerId: peerId,
-      mode: mode,
-      hint: l10n.chatProbeDetecting(connectionModeLabel(mode, l10n: l10n)),
-    );
-    final ok = await _enqueueProbeRequest(
-      device,
-      mode: mode,
-      source: 'manual_switch',
-    );
-    ref
-        .read(connectionSwitchProbeProvider.notifier)
-        .state = ConnectionSwitchProbeState(
-      peerId: peerId,
-      mode: mode,
-      hint: ok == true
-          ? l10n.chatProbeAvailable(connectionModeLabel(mode, l10n: l10n))
-          : ok == false
-          ? (mode == SendMode.lan || mode == SendMode.nearby)
-                ? l10n.chatProbeUnverifiedAttemptable(
-                    connectionModeLabel(mode, l10n: l10n),
-                  )
-                : l10n.chatProbeUnavailable(
-                    connectionModeLabel(mode, l10n: l10n),
-                  )
-          : l10n.chatProbeTriggered(connectionModeLabel(mode, l10n: l10n)),
-    );
   }
 
   bool _isProbeRequestCurrent(String peerId, int requestId) {
@@ -1677,78 +1569,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     await _probeAllDevices(force: true);
   }
 
-  /// Connection bar refresh: re-probe only the open conversation peer (+ S3).
-  Future<void> _refreshSelectedSessionReach() async {
-    if (!mounted) return;
-    final selected = ref.read(selectedDeviceIdProvider);
-    if (selected == null || selected == s3VirtualDeviceId) {
-      if (ref.read(authProvider).isLoggedIn) {
-        await _checkS3Config();
-      }
-      return;
-    }
-
-    final checking =
-        ref.read(deviceReachabilityProvider)[selected]?.checking ?? false;
-    if (checking) return;
-
-    final device = _findKnownDeviceById(selected);
-    if (device == null) return;
-
-    final l10n = AppLocalizations.of(context);
-    final peerLabel = connectionPeerLabel(selected, device: device);
-    final nearbyIds = ref
-        .read(nearbyDevicesProvider)
-        .map((d) => d.deviceId)
-        .toSet();
-    final myDeviceIds = ref
-        .read(myDevicesProvider)
-        .map((d) => d.deviceId)
-        .toSet();
-    final priority = classifyDevice(
-      device,
-      nearbyIds: nearbyIds,
-      myDeviceIds: myDeviceIds,
-    );
-    final orderedIds = diagnosticStepOrder(devicePriority: priority);
-    final steps = orderedIds
-        .map(
-          (id) => ConnectionDiagnosticStep(
-            id: id,
-            title: diagnosticStepTitle(l10n, id),
-          ),
-        )
-        .toList(growable: false);
-
-    final diagnosticNotifier = ref.read(connectionDiagnosticProvider.notifier);
-    diagnosticNotifier.startSession(
-      peerId: selected,
-      peerLabel: peerLabel,
-      steps: steps,
-    );
-    final reporter = ConnectionDiagnosticReporter(diagnosticNotifier);
-
-    unawaited(showConnectionDiagnosticSheet(context));
-
-    try {
-      await _enqueueProbeRequest(
-        device,
-        source: 'session_reach_refresh',
-        force: true,
-        reporter: reporter,
-      );
-
-      if (mounted) {
-        reporter.setSummary(_buildConnectionDiagnosticSummary(selected, l10n));
-      }
-    } catch (e) {
-      logChat.warning('_refreshSelectedSessionReach diagnostic failed: $e');
-      if (mounted) {
-        reporter.setSummary(l10n.connectionDiagSummaryNoRoute);
-      }
-    }
-  }
-
   Future<void> _runConnectionDiagnostic(
     DeviceDto device, {
     required int requestId,
@@ -1907,25 +1727,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
           checking: false,
           provisionalOnline: false,
         );
-  }
-
-  String _buildConnectionDiagnosticSummary(
-    String peerId,
-    AppLocalizations l10n,
-  ) {
-    final orchestrator = ref.read(connectionOrchestratorProvider);
-    ConnectionCandidate? best;
-    for (final c in orchestrator.candidates) {
-      if (c.available) {
-        best = c;
-        break;
-      }
-    }
-    if (best == null) {
-      return l10n.connectionDiagSummaryNoRoute;
-    }
-    final modeLabel = transferModeBarLabel(best.mode, l10n: l10n);
-    return l10n.connectionDiagSummaryRecommend(modeLabel, best.reason);
   }
 
   Future<void> _confirmDeleteThisDevice() async {
@@ -5582,42 +5383,40 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   Future<void> _showFileSendModal() async {
     if (ref.read(pendingFilesProvider).isEmpty || !mounted) return;
 
-    var selectedTargets = ref.read(effectiveSelectedTargetsProvider);
-    // When the S3 virtual device conversation is active, always use S3 mode
-    // regardless of the global send mode setting.
-    final convDeviceIdForMode = ref.read(selectedDeviceIdProvider);
-    var sendMode = convDeviceIdForMode == s3VirtualDeviceId
-        ? SendMode.s3
-        : ref.read(selectedSendModeProvider);
-    final peerIsRegistered =
-        convDeviceIdForMode != null &&
-        ref
-            .read(myDevicesProvider)
-            .any((d) => d.deviceId == convDeviceIdForMode);
-    if (!ref.read(authProvider).isLoggedIn &&
-        convDeviceIdForMode != s3VirtualDeviceId) {
-      if (sendMode != SendMode.nearby && sendMode != SendMode.webrtc) {
-        sendMode = OhosCapabilities.webrtc ? SendMode.webrtc : SendMode.nearby;
-      }
-    } else if (convDeviceIdForMode != s3VirtualDeviceId &&
-        !peerIsRegistered &&
-        sendMode == SendMode.s3) {
-      sendMode = SendMode.nearby;
-    }
-    // In 1:1 conversation mode, always restrict to the conversation device only,
-    // ignoring any stale multi-select state from effectiveSelectedTargets.
-    if (sendMode != SendMode.s3 &&
-        convDeviceIdForMode != null &&
-        convDeviceIdForMode != _deviceId) {
-      selectedTargets = {convDeviceIdForMode};
-    }
-    logChat.info(
-      '_showFileSendModal sendMode=${sendMode.name} '
-      'selectedTargets=$selectedTargets '
-      'count=${selectedTargets.length}',
+    final convDeviceId = ref.read(selectedDeviceIdProvider);
+    final isS3Virtual = convDeviceId == s3VirtualDeviceId;
+    final isLoggedIn = ref.read(authProvider).isLoggedIn;
+    final peer = (convDeviceId != null && !isS3Virtual)
+        ? _findKnownDeviceById(convDeviceId)
+        : null;
+    final hops = _hopSkipCache.filter(
+      convDeviceId ?? '',
+      applicableTransferHops(
+        TransferPathInput(
+          localIsWeb: kIsWeb,
+          peerIsWeb: peer?.isWeb ?? false,
+          isLoggedIn: isLoggedIn,
+          webrtcAvailable: OhosCapabilities.webrtc,
+          s3Configured: ref.read(s3ConfiguredProvider),
+          s3Online: ref.read(s3OnlineProvider),
+          isS3VirtualSession: isS3Virtual,
+        ),
+      ),
     );
 
-    if (sendMode != SendMode.s3 && selectedTargets.isEmpty) {
+    var selectedTargets = ref.read(effectiveSelectedTargetsProvider);
+    if (!isS3Virtual &&
+        convDeviceId != null &&
+        convDeviceId != _deviceId) {
+      selectedTargets = {convDeviceId};
+    }
+
+    logChat.info(
+      '_showFileSendModal hops=${hops.map((h) => h.name).join(',')} '
+      'selectedTargets=$selectedTargets',
+    );
+
+    if (!isS3Virtual && selectedTargets.isEmpty) {
       _activeComposer?.expandDevicePanel();
       if (mounted) {
         AppToast.show(context, message: _l10n.chatScreenSelectTargetFirst);
@@ -5625,61 +5424,78 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       return;
     }
 
-    if (sendMode == SendMode.s3) {
-      if (!ref.read(s3ConfiguredProvider)) {
-        if (!mounted) return;
-        final goConfig = await AppConfirmDialog.show(
-          context,
-          title: _l10n.chatScreenS3NotConfiguredTitle,
-          content: _l10n.chatScreenS3NotConfiguredBody,
-          confirmLabel: _l10n.chatScreenS3GoConfigure,
-          icon: LucideIcons.cloud,
-        );
-        if (goConfig && mounted) {
-          _activeComposer?.unfocus();
-          Navigator.pushNamed(context, '/settings/s3');
-        }
-        return;
+    if (hops.isEmpty) {
+      if (isLoggedIn && isS3Virtual) {
+        await _promptS3SetupIfNeeded();
+      } else if (mounted) {
+        AppToast.show(context, message: _l10n.chatScreenDeviceUnavailable);
       }
-      if (!ref.read(s3OnlineProvider)) {
-        if (!mounted) return;
-        final goConfig = await AppConfirmDialog.show(
-          context,
-          title: _l10n.chatScreenS3UnavailableTitle,
-          content: _l10n.chatScreenS3UnavailableBody,
-          confirmLabel: _l10n.chatScreenS3GoSettings,
-          icon: LucideIcons.cloud,
-        );
-        if (goConfig && mounted) {
-          _activeComposer?.unfocus();
-          Navigator.pushNamed(context, '/settings/s3');
-        }
-        return;
-      }
-      final filesToSend = await _beginPendingSendDispatch();
-      if (filesToSend == null || filesToSend.isEmpty) return;
-      // S3 virtual device conversation is a broadcast to all own devices (no toDeviceId).
-      // A real device conversation uses toDeviceId so only that device gets the notification.
-      final s3ToDeviceId =
-          (convDeviceIdForMode != null &&
-              convDeviceIdForMode != s3VirtualDeviceId &&
-              convDeviceIdForMode != _deviceId)
-          ? convDeviceIdForMode
-          : null;
-      final s3Bytes = filesToSend.fold<int>(0, (a, f) => a + f.size);
-      Analytics.track(AnalyticsEvents.fileSendIntent, {
-        'channel': 's3',
-        'file_count': filesToSend.length,
-        'total_size_bucket': Analytics.sizeBucket(s3Bytes),
-        'target_count': selectedTargets.length,
-      });
-      _sendFilesConcurrently(
-        filesToSend,
-        (f) => _sendSingleFileViaS3(f, toDeviceId: s3ToDeviceId),
-      );
       return;
     }
 
+    if (hops.length == 1 && hops.first == TransferHop.s3) {
+      if (!await _promptS3SetupIfNeeded()) return;
+    }
+
+    final allDevices = await _mergedPeerDevices();
+    if (!mounted) return;
+
+    final filesToSend = await _beginPendingSendDispatch();
+    if (filesToSend == null || filesToSend.isEmpty) return;
+    final bytes = filesToSend.fold<int>(0, (a, f) => a + f.size);
+    Analytics.track(AnalyticsEvents.fileSendIntent, {
+      'channel': 'auto',
+      'file_count': filesToSend.length,
+      'total_size_bucket': Analytics.sizeBucket(bytes),
+      'target_count': selectedTargets.length,
+    });
+    _sendFilesConcurrently(
+      filesToSend,
+      (file) => _sendSingleFileViaCascade(
+        file,
+        hops: hops,
+        allDevices: allDevices,
+        selectedTargets: selectedTargets,
+        convDeviceId: convDeviceId,
+      ),
+    );
+  }
+
+  Future<bool> _promptS3SetupIfNeeded() async {
+    if (!ref.read(s3ConfiguredProvider)) {
+      if (!mounted) return false;
+      final goConfig = await AppConfirmDialog.show(
+        context,
+        title: _l10n.chatScreenS3NotConfiguredTitle,
+        content: _l10n.chatScreenS3NotConfiguredBody,
+        confirmLabel: _l10n.chatScreenS3GoConfigure,
+        icon: LucideIcons.cloud,
+      );
+      if (goConfig && mounted) {
+        _activeComposer?.unfocus();
+        Navigator.pushNamed(context, '/settings/s3');
+      }
+      return false;
+    }
+    if (!ref.read(s3OnlineProvider)) {
+      if (!mounted) return false;
+      final goConfig = await AppConfirmDialog.show(
+        context,
+        title: _l10n.chatScreenS3UnavailableTitle,
+        content: _l10n.chatScreenS3UnavailableBody,
+        confirmLabel: _l10n.chatScreenS3GoSettings,
+        icon: LucideIcons.cloud,
+      );
+      if (goConfig && mounted) {
+        _activeComposer?.unfocus();
+        Navigator.pushNamed(context, '/settings/s3');
+      }
+      return false;
+    }
+    return true;
+  }
+
+  Future<List<DeviceDto>> _mergedPeerDevices() async {
     final lanDevices = _lanDiscovery?.currentDiscovered ?? [];
     List<DeviceDto> cloudDevices = [];
     if (!_effectiveOffline) {
@@ -5687,7 +5503,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         cloudDevices = await listDevices();
       } catch (_) {}
     }
-    if (!mounted) return;
+    if (!mounted) return [];
 
     final mergedById = <String, DeviceDto>{};
     for (final d in lanDevices) {
@@ -5710,123 +5526,107 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         mergedById[d.deviceId] = d;
       }
     }
-    final allDevices = mergedById.values
-        .where((d) => d.deviceId != _deviceId)
-        .toList();
+    for (final d in ref.read(myDevicesProvider)) {
+      mergedById.putIfAbsent(d.deviceId, () => d);
+    }
+    for (final d in ref.read(nearbyDevicesProvider)) {
+      mergedById.putIfAbsent(d.deviceId, () => d);
+    }
+    return mergedById.values.where((d) => d.deviceId != _deviceId).toList();
+  }
 
-    switch (sendMode) {
-      case SendMode.nearby:
-        final targets = allDevices
-            .where(
-              (d) =>
-                  selectedTargets.contains(d.deviceId) &&
-                  d.lanHttpUrl != null &&
-                  d.lanHttpUrl!.isNotEmpty,
-            )
-            .toList();
-        if (targets.isEmpty) {
-          _activeComposer?.expandDevicePanel();
-          if (mounted) {
-            AppToast.show(context, message: _l10n.chatScreenNoNearbyDevice);
-          }
-          return;
+  Future<void> _sendSingleFileViaCascade(
+    PlatformFile file, {
+    required List<TransferHop> hops,
+    required List<DeviceDto> allDevices,
+    required Set<String> selectedTargets,
+    required String? convDeviceId,
+  }) async {
+    final localId = const Uuid().v4();
+    final peerId = convDeviceId ?? selectedTargets.firstOrNull ?? '';
+    final targets = <DeviceDto>[
+      ...allDevices.where((d) => selectedTargets.contains(d.deviceId)),
+    ];
+    for (final id in selectedTargets) {
+      if (targets.any((d) => d.deviceId == id)) continue;
+      final known = _findKnownDeviceById(id);
+      targets.add(
+        known ?? DeviceDto(deviceId: id, name: id),
+      );
+    }
+
+    var sent = false;
+    final allowPush = hops.contains(TransferHop.httpPush);
+    final allowPull = hops.contains(TransferHop.httpPull);
+    if (allowPush || allowPull) {
+      sent = await _sendSingleFileViaLan(
+        file,
+        targets,
+        reuseLocalId: localId,
+        allowPush: allowPush,
+        allowPull: allowPull,
+        reportTerminalFailure: false,
+        pullTimeout:
+            hops.contains(TransferHop.webrtc) || hops.contains(TransferHop.s3)
+            ? const Duration(seconds: 8)
+            : null,
+      );
+      if (sent) {
+        if (allowPush) {
+          _hopSkipCache.markSucceeded(peerId, TransferHop.httpPush);
+        } else {
+          _hopSkipCache.markSucceeded(peerId, TransferHop.httpPull);
         }
-        final nearbyFiles = await _beginPendingSendDispatch();
-        if (nearbyFiles == null || nearbyFiles.isEmpty) return;
-        final nbBytes = nearbyFiles.fold<int>(0, (a, f) => a + f.size);
-        Analytics.track(AnalyticsEvents.fileSendIntent, {
-          'channel': 'nearby',
-          'file_count': nearbyFiles.length,
-          'total_size_bucket': Analytics.sizeBucket(nbBytes),
-          'target_count': targets.length,
-        });
-        _sendFilesConcurrently(
-          nearbyFiles,
-          (file) => _sendSingleFileViaLan(file, targets),
+        return;
+      }
+      if (allowPush) _hopSkipCache.markFailed(peerId, TransferHop.httpPush);
+      if (allowPull) _hopSkipCache.markFailed(peerId, TransferHop.httpPull);
+    }
+
+    if (!sent && hops.contains(TransferHop.webrtc)) {
+      final targetId = selectedTargets.firstOrNull;
+      if (targetId != null && file.path != null && file.path!.isNotEmpty) {
+        final remainingHasS3 = hops.contains(TransferHop.s3);
+        sent = await _sendFilesViaWebRTC(
+          [file],
+          targetId,
+          reuseFileId: null,
+          reuseLocalId: localId,
+          tryLanFallback: false,
+          reportTerminalFailure: !remainingHasS3,
         );
-      case SendMode.lan:
-        final lanReachMap = ref.read(deviceReachabilityProvider);
-        final manualHttpLocked =
-            ref.read(connectionManualOverrideProvider) &&
-            ref.read(connectionManualModeProvider) == SendMode.lan;
-        final lanDiscoveredIds = (_lanDiscovery?.currentDiscovered ?? [])
-            .where((d) => d.lanHttpUrl != null && d.lanHttpUrl!.isNotEmpty)
-            .map((d) => d.deviceId)
-            .toSet();
-        final targets = allDevices
-            .where(
-              (d) =>
-                  selectedTargets.contains(d.deviceId) &&
-                  (manualHttpLocked ||
-                      lanReachMap[d.deviceId]?.directHttp == true ||
-                      lanReachMap[d.deviceId]?.pullReachable == true ||
-                      lanReachMap[d.deviceId]?.peerHttpHealthy == true ||
-                      lanDiscoveredIds.contains(d.deviceId)),
-            )
-            .toList();
-        if (targets.isEmpty) {
-          _activeComposer?.expandDevicePanel();
-          if (mounted) {
-            AppToast.show(context, message: _l10n.chatScreenDeviceUnavailable);
-          }
+        if (sent) {
+          _hopSkipCache.markSucceeded(peerId, TransferHop.webrtc);
           return;
         }
-        final filesToSend = await _beginPendingSendDispatch();
-        if (filesToSend == null || filesToSend.isEmpty) return;
-        final lanBytes = filesToSend.fold<int>(0, (a, f) => a + f.size);
-        Analytics.track(AnalyticsEvents.fileSendIntent, {
-          'channel': 'lan',
-          'file_count': filesToSend.length,
-          'total_size_bucket': Analytics.sizeBucket(lanBytes),
-          'target_count': targets.length,
-        });
-        _sendFilesConcurrently(
-          filesToSend,
-          (file) => _sendSingleFileViaLan(file, targets),
+        _hopSkipCache.markFailed(peerId, TransferHop.webrtc);
+      }
+    }
+
+    if (!sent && hops.contains(TransferHop.s3)) {
+      final s3ToDeviceId =
+          (convDeviceId != null &&
+              convDeviceId != s3VirtualDeviceId &&
+              convDeviceId != _deviceId)
+          ? convDeviceId
+          : null;
+      await _sendSingleFileViaS3(
+        file,
+        toDeviceId: s3ToDeviceId,
+        reuseLocalId: localId,
+      );
+      return;
+    }
+
+    if (!sent) {
+      _notifyPendingDispatchSettled(file.path, success: false);
+      if (mounted) {
+        _updateSendingMessage(
+          localId,
+          _l10n.chatTransferSendFailedNamed(file.name),
         );
-      case SendMode.webrtc:
-        final unsupportedFiles = ref
-            .read(pendingFilesProvider)
-            .where((e) => e.file.path == null || e.file.path!.isEmpty)
-            .toList();
-        if (unsupportedFiles.isNotEmpty) {
-          if (mounted) {
-            AppToast.show(
-              context,
-              message: _l10n.chatScreenWebRtcUnsupportedSource,
-            );
-          }
-          return;
-        }
-        final reachMap = ref.read(deviceReachabilityProvider);
-        final isGuest = !ref.read(authProvider).isLoggedIn;
-        final reachableTargets = selectedTargets.where((id) {
-          if (id.isEmpty || id == _deviceId) return false;
-          if (isGuest) return true;
-          return allDevices.any((d) => d.deviceId == id) &&
-              (reachMap[id]?.isConfirmedOnline ?? false);
-        }).toList();
-        if (reachableTargets.isEmpty) {
-          _activeComposer?.expandDevicePanel();
-          if (mounted) {
-            AppToast.show(context, message: _l10n.chatScreenDeviceUnavailable);
-          }
-          return;
-        }
-        final rtcFiles = await _beginPendingSendDispatch();
-        if (rtcFiles == null || rtcFiles.isEmpty) return;
-        final rtcBytes = rtcFiles.fold<int>(0, (a, f) => a + f.size);
-        Analytics.track(AnalyticsEvents.fileSendIntent, {
-          'channel': 'webrtc',
-          'file_count': rtcFiles.length,
-          'total_size_bucket': Analytics.sizeBucket(rtcBytes),
-          'target_count': reachableTargets.length,
-        });
-        for (final targetId in reachableTargets) {
-          _sendFilesViaWebRTC(rtcFiles, targetId);
-        }
-      case SendMode.s3:
-        break;
+        setState(() => _setMessageStatus(localId, 'failed'));
+      }
     }
   }
 
@@ -5856,11 +5656,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     startNext();
   }
 
-  Future<void> _sendFilesViaWebRTC(
+  Future<bool> _sendFilesViaWebRTC(
     List<PlatformFile> files,
     String targetDeviceId, {
     String? reuseFileId,
     String? reuseLocalId,
+    bool tryLanFallback = true,
+    bool reportTerminalFailure = true,
   }) async {
     // reuseLocalId only makes sense for a single-file retry; callers passing
     // multiple files must rely on freshly-minted ids.
@@ -5974,6 +5776,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       );
       await session.connected;
       logChat.info('WebRTC transfer initiated to $targetDeviceId');
+      return true;
     } catch (e) {
       logChat.warning('WebRTC failed: $e');
       final rateLimited = e is DeviceSendRateLimitedException;
@@ -5982,7 +5785,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       // — if the fallback succeeds the user shouldn't see a failure message.
       bool anyFallbackSucceeded = false;
       bool anyFallbackAttempted = false;
-      if (!rateLimited) {
+      if (!rateLimited && tryLanFallback) {
         for (final fileWithMeta in filesWithMeta) {
         final fileId = fileWithMeta.meta.fileId;
         final localId = fileLocalIds[fileId];
@@ -6012,10 +5815,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       // (fallback didn't recover it). Avoids a misleading toast when every
       // file was rescued by reverse-pull.
       if (!rateLimited &&
+          reportTerminalFailure &&
           mounted &&
           fileLocalIds.isNotEmpty &&
           (!anyFallbackAttempted || !anyFallbackSucceeded)) {
         AppToast.show(context, message: _l10n.chatScreenWebRtcFailedTryHttp);
+      }
+      if (!reportTerminalFailure && !anyFallbackSucceeded) {
+        return false;
       }
       for (final entry in fileLocalIds.entries) {
         final fileName =
@@ -6052,6 +5859,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         TransferKeepAlive.instance.release(_webrtcKeepAliveId(localId));
         _notifyPendingDispatchSettled(filePath, success: false);
       }
+      return anyFallbackSucceeded;
     }
   }
 
@@ -6307,10 +6115,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     return pullOk;
   }
 
-  Future<void> _sendSingleFileViaLan(
+  Future<bool> _sendSingleFileViaLan(
     PlatformFile file,
     List<DeviceDto> targets, {
     String? reuseLocalId,
+    bool allowPush = true,
+    bool allowPull = true,
+    bool reportTerminalFailure = true,
+    Duration? pullTimeout,
   }) async {
     // Reusing the original localId on retry keeps the chat bubble id, the
     // TransferRecord transferId and the receiver-side messageId stable across
@@ -6411,9 +6223,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     int lastLanProgressPersistAtPct = 0;
     bool anyPushConnected = false;
     try {
-      final pushTargets = targets
-          .where((d) => d.lanHttpUrl != null && d.lanHttpUrl!.isNotEmpty)
-          .toList();
+      final pushTargets = allowPush
+          ? targets
+                .where((d) => d.lanHttpUrl != null && d.lanHttpUrl!.isNotEmpty)
+                .toList()
+          : <DeviceDto>[];
       final (
         bool anyPushed,
         List<DeviceDto> pushFailed,
@@ -6449,15 +6263,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       );
       if (cancelToken.isCancelled) {
         await TransferStateManager.instance.markStatus(localId, 'paused');
-        return;
+        return false;
       }
 
-      final needOfferIds = <String>[
-        ...pushFailed.map((d) => d.deviceId),
-        ...targets
-            .where((d) => d.lanHttpUrl == null || d.lanHttpUrl!.isEmpty)
-            .map((d) => d.deviceId),
-      ];
+      final needOfferIds = allowPull
+          ? <String>{
+              ...pushFailed.map((d) => d.deviceId),
+              ...targets
+                  .where(
+                    (d) =>
+                        !allowPush ||
+                        d.lanHttpUrl == null ||
+                        d.lanHttpUrl!.isEmpty,
+                  )
+                  .map((d) => d.deviceId),
+            }.toList()
+          : <String>[];
       bool didSendFile = false;
       if (anyPushed && mounted) {
         if (!_effectiveOffline) {
@@ -6496,9 +6317,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         // upload — receiver-side suppression will drop the offer immediately
         // and a long wait would just stall the UI. Full 60s timeout for
         // never-connected pushes so a slow remote still has a chance.
-        final pullTimeout = anyPushConnected
-            ? const Duration(seconds: 10)
-            : const Duration(seconds: 60);
+        final pullWait = pullTimeout ??
+            (anyPushConnected
+                ? const Duration(seconds: 10)
+                : const Duration(seconds: 60));
         final pulled = await _tryLanReversePullFallback(
           localId: localId,
           fileName: file.name,
@@ -6514,12 +6336,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
           lastModifiedMs: lanMtimeMs,
           tracker: tracker,
           cancelToken: cancelToken,
-          pullTimeout: pullTimeout,
+          pullTimeout: pullWait,
         );
         if (cancelToken.isCancelled) {
           await TransferStateManager.instance.markStatus(localId, 'paused');
           _notifyPendingDispatchSettled(file.path, success: false);
-          return;
+          return false;
         }
         if (pulled) {
           if (!anyPushed && !_effectiveOffline) {
@@ -6588,25 +6410,27 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         transferCompleted = true;
       }
       if (mounted && !didSendFile && !anyPushed) {
-        _updateSendingMessage(
-          localId,
-          _l10n.chatTransferSendFailedNamed(file.name),
-        );
-        setState(() => _setMessageStatus(localId, 'failed'));
-        await TransferStateManager.instance.markStatus(localId, 'failed');
-        Analytics.track(AnalyticsEvents.fileSendOutcome, {
-          'channel': 'lan',
-          'status': 'failed',
-          'size_bucket': Analytics.sizeBucket(file.size),
-        });
-        _notifyPendingDispatchSettled(file.path, success: false);
+        if (reportTerminalFailure) {
+          _updateSendingMessage(
+            localId,
+            _l10n.chatTransferSendFailedNamed(file.name),
+          );
+          setState(() => _setMessageStatus(localId, 'failed'));
+          await TransferStateManager.instance.markStatus(localId, 'failed');
+          Analytics.track(AnalyticsEvents.fileSendOutcome, {
+            'channel': 'lan',
+            'status': 'failed',
+            'size_bucket': Analytics.sizeBucket(file.size),
+          });
+          _notifyPendingDispatchSettled(file.path, success: false);
+        }
       }
     } catch (e) {
       // Distinguish user cancel (paused, resumable) from genuine failure.
       if (cancelToken.isCancelled) {
         await TransferStateManager.instance.markStatus(localId, 'paused');
         _notifyPendingDispatchSettled(file.path, success: false);
-      } else {
+      } else if (reportTerminalFailure) {
         if (mounted) {
           _updateSendingMessage(
             localId,
@@ -6629,6 +6453,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       _transferStartTimes.remove('local_$localId');
       if (!sendCompleter.isCompleted) sendCompleter.complete();
     }
+    return transferCompleted;
   }
 
   Future<void> _sendSingleFileViaS3(
@@ -8901,7 +8726,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     _connectivitySub?.cancel();
     _authSub?.close();
     _selectedDeviceSub?.close();
-    _connectionOrchestratorSub?.close();
     _realtimePublicationSub?.cancel();
     _realtimeConnectedSub?.cancel();
     _chatController.dispose();
@@ -9016,7 +8840,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         sessionId,
         colors,
         isDark,
-        ref.watch(authProvider).isLoggedIn,
       ),
     );
   }
@@ -9469,13 +9292,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     String sessionId,
     ChatColors colors,
     bool isDark,
-    bool isLoggedIn,
   ) {
     _ensureSessionUiResources(sessionId);
     final scrollController = _scrollControllersBySession[sessionId]!;
     return ChatSessionBody(
-      onRefresh: _refreshSelectedSessionReach,
-      onModeSelected: isLoggedIn ? _confirmAndSwitchMode : null,
       currentUserId: _deviceId,
       deviceName: _deviceName,
       chatController: _chatController,

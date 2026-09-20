@@ -47,7 +47,7 @@ void main() {
       );
     });
 
-    test('does not auto-select webrtc even when marked available', () {
+    test('legacy auto-prefer still skips webrtc for session bar helpers', () {
       expect(
         resolveSendModeAutoPreferHttp(
           candidates: candidates(webrtc: true, s3: true),

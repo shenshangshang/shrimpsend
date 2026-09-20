@@ -1,12 +1,11 @@
 'use client';
 
 import { useCallback, useRef, useState } from 'react';
-import { useChatContext, S3_VIRTUAL_DEVICE_ID } from '@/contexts/ChatContext';
+import { useChatContext } from '@/contexts/ChatContext';
 import { ChatHeader } from '@/components/chat/ChatHeader';
 import { MessageList } from '@/components/chat/MessageList';
 import { MessageInput } from '@/components/chat/MessageInput';
-import { TransferModeBar } from '@/components/chat/TransferModeBar';
-import { ConnectionDiagnosticSheet } from '@/components/chat/ConnectionDiagnosticSheet';
+import { DeviceSendQuotaBar } from '@/components/chat/DeviceSendQuotaBar';
 import { PendingFilesBar } from '@/components/chat/PendingFilesBar';
 import { ErrorBar } from '@/components/chat/ErrorBar';
 import { cn } from '@/lib/utils';
@@ -26,9 +25,6 @@ export function ChatDetailPanel({
     selectedDeviceId,
     setPendingFiles,
     setFileError,
-    connectionDiagnostic,
-    diagnosticSheetOpen,
-    setDiagnosticSheetOpen,
   } = useChatContext();
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const dragCounterRef = useRef(0);
@@ -81,7 +77,7 @@ export function ChatDetailPanel({
 
       {selectedDeviceId ? (
         <>
-          <TransferModeBar />
+          <DeviceSendQuotaBar />
           <MessageList />
           <ErrorBar />
           <PendingFilesBar />
@@ -97,12 +93,6 @@ export function ChatDetailPanel({
           <p className="text-sm">{t('chat.header.pickDeviceHint')}</p>
         </div>
       )}
-
-      <ConnectionDiagnosticSheet
-        open={diagnosticSheetOpen}
-        onOpenChange={setDiagnosticSheetOpen}
-        state={connectionDiagnostic}
-      />
     </div>
   );
 }

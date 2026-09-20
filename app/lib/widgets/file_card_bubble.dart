@@ -4,7 +4,6 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../color_theme_store.dart';
 import '../ui/app_ui.dart';
 import '../utils/file_utils.dart';
-import 'chat/transfer_channel_badge.dart';
 import 'file_icon_widget.dart';
 
 class FileCardBubble extends StatelessWidget {
@@ -80,13 +79,6 @@ class FileCardBubble extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    if (transferType != null) ...[
-                      const SizedBox(width: 6),
-                      TransferChannelBadge(
-                        transferType: transferType,
-                        liftOnTintedSentBubble: isSentByMe,
-                      ),
-                    ],
                   ],
                 ),
                 if (sizeStr.isNotEmpty) ...[

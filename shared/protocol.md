@@ -1,5 +1,7 @@
 # 虾传 文件传输协议
 
+用户只选「发给谁」，发送时按速度从快到慢探测：HTTP 直推 → HTTP 反向拉取 → WebRTC → S3（仅登录）。浏览器没有 LAN HTTP 服务：Web→App 只直推，App→Web 只反向拉，Web→Web 跳过 HTTP。未登录同样走 HTTP，只是没有 S3。
+
 ## HTTP 直传（LAN）
 
 ### 直推 (Direct Push)

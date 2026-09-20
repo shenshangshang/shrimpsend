@@ -6,12 +6,10 @@ import type { ChatMessage, LocalStatus } from '@/lib/api';
 import { getFileCategory, formatFileSize } from '@/lib/fileUtils';
 import { FileIcon } from './FileIcon';
 import { FileCard } from './FileCard';
-import { TransferChannelBadge } from './TransferChannelBadge';
 import { ImagePreview } from './ImagePreview';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useI18n } from '@/contexts/I18nContext';
-import { filePayloadTransferChannel } from '@/lib/filePayload';
 
 type FilePayload = {
   key?: string;
@@ -178,7 +176,6 @@ function MessageBubbleInner({
     const isTransferring = status === 'uploading' || status === 'downloading';
     const category = getFileCategory(fp?.fileName);
     const progressLabel = status === 'downloading' ? t('chat.bubble.receiving') : t('chat.bubble.transferSending');
-    const channel = filePayloadTransferChannel(fp);
     const showByteRow = fp?.size != null && fp.size > 0;
     const doneBytes =
       showByteRow && progress != null ? Math.round((fp.size! * progress) / 100) : null;
@@ -195,7 +192,6 @@ function MessageBubbleInner({
                 <div className="flex items-start gap-2 min-w-0">
                   <p className="text-sm font-medium truncate flex-1">{fp?.fileName ?? t('chat.bubble.fileFallback')}</p>
                   <div className="flex shrink-0 items-center gap-1.5">
-                    <TransferChannelBadge transferType={channel} />
                     {!showByteRow && (
                       <span className="text-xs font-semibold tabular-nums text-primary">{progress}%</span>
                     )}
@@ -292,7 +288,6 @@ function MessageBubbleInner({
               fileName={fp?.fileName}
               s3Key={fp?.key}
               size={fp?.size}
-              transferType={filePayloadTransferChannel(fp)}
             />
             {!selectMode && (
               <HoverActions isText={false} onDelete={onDelete} onEnterMultiSelect={onEnterMultiSelect} />

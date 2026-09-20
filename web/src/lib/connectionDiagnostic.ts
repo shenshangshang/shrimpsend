@@ -1,5 +1,5 @@
 import type { DeviceDto } from '@/lib/api';
-import { buildTransferModeOptions } from '@/lib/sendModeResolution';
+import { applicableTransferHops } from '@/lib/transferPathCascade';
 import type { ProbePriority } from '@/lib/probePriority';
 import type { DeviceReachDetail } from '@/hooks/useSendTargetProbes';
 import type { TranslateFn } from '@/contexts/I18nContext';
@@ -111,30 +111,33 @@ export function buildDiagnosticSummary(
     methods.pullReachable ||
     methods.peerHttpHealthy
   );
-  const options = buildTransferModeOptions({
+  const hops = applicableTransferHops({
+    localIsWeb: true,
     peerIsWeb: input.peerIsWeb,
+    isLoggedIn: !input.guest,
     webrtcAvailable: input.webrtcAvailable,
-    httpAvailable,
-    webrtcReachable: methods.webrtc,
-    s3Available: input.s3Available,
-    guest: input.guest,
+    s3Configured: input.s3Available,
+    s3Online: input.s3Available,
   });
-  const best = options.find((o) => o.available);
+  const httpOk = hops.includes('httpPush') && httpAvailable;
+  const webrtcOk = hops.includes('webrtc');
+  const s3Ok = hops.includes('s3') && input.s3Available;
+  const best = httpOk ? 'lan' : webrtcOk ? 'webrtc' : s3Ok ? 's3' : null;
   if (!best) return t('chat.connectionDiag.summaryNoRoute');
 
   const modeLabel =
-    best.value === 'lan'
+    best === 'lan'
       ? t('chat.transportMode.httpLan')
-      : best.value === 'webrtc'
+      : best === 'webrtc'
         ? t('chat.transportMode.webrtcLan')
         : t('chat.transferBar.s3');
 
   const reason =
-    best.value === 'lan'
+    best === 'lan'
       ? methods.directHttp
         ? t('chat.connectionDiag.reasonHttpDirectOk')
         : t('chat.connectionDiag.reasonHttpPullOk')
-      : best.value === 'webrtc'
+      : best === 'webrtc'
         ? t('chat.connectionDiag.reasonWebrtcOnline')
         : t('chat.connectionDiag.reasonS3Online');
 

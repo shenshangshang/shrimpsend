@@ -11,7 +11,6 @@ import '../../utils/file_utils.dart';
 import '../file_icon_widget.dart';
 import 'chat_theme_helpers.dart';
 import 'linkable_message_text.dart';
-import 'transfer_channel_badge.dart';
 
 class PlainTextBubble extends StatelessWidget {
   final ChatColors colors;
@@ -239,13 +238,6 @@ class TransferProgressBubble extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    if (transferType != null) ...[
-                      const SizedBox(width: 6),
-                      TransferChannelBadge(
-                        transferType: transferType,
-                        liftOnTintedSentBubble: isSentByMe,
-                      ),
-                    ],
                     if (!showByteRow && pct != null) ...[
                       const SizedBox(width: 6),
                       Text(
@@ -398,13 +390,6 @@ class TransferStatusBubble extends StatelessWidget {
                         style: theme.textTheme.bodyMedium?.copyWith(color: color),
                       ),
                     ),
-                    if (transferType != null) ...[
-                      const SizedBox(width: 6),
-                      TransferChannelBadge(
-                        transferType: transferType,
-                        liftOnTintedSentBubble: isSentByMe,
-                      ),
-                    ],
                   ],
                 ),
                 if (subtitle != null) ...[
