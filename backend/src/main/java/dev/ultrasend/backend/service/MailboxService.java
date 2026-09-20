@@ -36,7 +36,7 @@ public class MailboxService {
         }
         Object typeObj = map.get("type");
         String type = typeObj != null ? typeObj.toString() : null;
-        if (!RealtimeEnvelopeTypes.isEphemeral(type)) {
+        if (!RealtimeEnvelopeTypes.isEphemeral(type) && !"text".equals(type)) {
             return;
         }
         String fromDeviceId = stringOrNull(map.get("fromDeviceId"));

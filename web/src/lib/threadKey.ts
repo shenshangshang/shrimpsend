@@ -55,6 +55,18 @@ export function outboundForWebChat(
   };
 }
 
+/** Unsigned-in 1:1 chat: device-send requires toDeviceId. */
+export function outboundForGuestChat(
+  selectedPeerId: string | null,
+  myDeviceId: string,
+): { threadKey: string; toDeviceId: string } | null {
+  if (!selectedPeerId || selectedPeerId === S3_VIRTUAL_DEVICE_ID) return null;
+  return {
+    threadKey: threadKeyOneToOne(accountPartOffline(myDeviceId), myDeviceId, selectedPeerId),
+    toDeviceId: selectedPeerId,
+  };
+}
+
 export function threadKeyForS3WebPersist(
   userId: string,
   myDeviceId: string,

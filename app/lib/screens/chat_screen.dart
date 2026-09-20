@@ -2811,7 +2811,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       fromDeviceId: msg.fromDeviceId,
       toDeviceId: map['toDeviceId'] as String? ?? msg.toDeviceId,
       myDeviceId: _deviceId,
-      explicitThreadKey: map['threadKey'] as String? ?? msg.threadKey,
+      explicitThreadKey: localExplicitThreadKey(
+        ap,
+        map['threadKey'] as String? ?? msg.threadKey,
+      ),
     );
   }
 
@@ -4600,7 +4603,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         convDeviceId != s3VirtualDeviceId &&
         convDeviceId != _deviceId &&
         !peerIsRegistered;
-    final useLan = _effectiveOffline || isExternalPeer;
+    final isGuest = !ref.read(authProvider).isLoggedIn;
+    final useLan = !isGuest && isExternalPeer;
     if (useLan) {
       if (selectedTargets.isEmpty) {
         _activeComposer?.expandDevicePanel();
@@ -4624,21 +4628,41 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         offline: _effectiveOffline,
       );
     } else {
+      if (toDeviceIdArg == null || toDeviceIdArg.isEmpty) {
+        _activeComposer?.expandDevicePanel();
+        if (mounted) {
+          AppToast.show(context, message: _l10n.chatScreenSelectTargetFirst);
+          setState(() => _setMessageStatus(localId, 'failed'));
+        }
+        Analytics.track(AnalyticsEvents.chatTextSend, {
+          'result': 'failed',
+          'offline': isGuest,
+          'channel': 'api',
+          'length_bucket': Analytics.lengthBucket(trimmed.length),
+          'reason': 'no_targets',
+        });
+        return;
+      }
       try {
+        if (isGuest) {
+          await ensureDeviceAccessToken();
+        }
         await sendMessage({
           'type': 'text',
           'payload': {'text': trimmed, 'localId': localId},
           'fromDeviceId': _deviceId,
-          if (toDeviceIdArg != null) 'toDeviceId': toDeviceIdArg,
+          'toDeviceId': toDeviceIdArg,
           'threadKey': threadKeyForRow,
           'ts': ts,
         });
         logChat.fine('chat_screen sendText ok');
-        await ChatMessageDao.instance.markSynced('local_$localId');
+        if (userId != null) {
+          await ChatMessageDao.instance.markSynced('local_$localId');
+        }
         if (mounted) setState(() => _setMessageStatus(localId, 'sent'));
         Analytics.track(AnalyticsEvents.chatTextSend, {
           'result': 'sent',
-          'offline': false,
+          'offline': isGuest,
           'channel': 'api',
           'length_bucket': Analytics.lengthBucket(trimmed.length),
         });
@@ -4647,7 +4671,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         if (mounted) setState(() => _setMessageStatus(localId, 'failed'));
         Analytics.track(AnalyticsEvents.chatTextSend, {
           'result': 'failed',
-          'offline': false,
+          'offline': isGuest,
           'channel': 'api',
           'length_bucket': Analytics.lengthBucket(trimmed.length),
         });
@@ -4746,7 +4770,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         convDeviceId != s3VirtualDeviceId &&
         convDeviceId != _deviceId &&
         !peerIsRegistered;
-    final useLan = _effectiveOffline || isExternalPeer;
+    final isGuest = !ref.read(authProvider).isLoggedIn;
+    final useLan = !isGuest && isExternalPeer;
     if (useLan) {
       if (selectedTargets.isEmpty) {
         _activeComposer?.expandDevicePanel();
@@ -4773,20 +4798,41 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     }
     final ts = DateTime.now().millisecondsSinceEpoch;
     final outbound = await _outboundThreadKeyForSelection();
+    final toDeviceId = outbound.toDeviceId;
+    if (toDeviceId == null || toDeviceId.isEmpty) {
+      _activeComposer?.expandDevicePanel();
+      if (mounted) {
+        AppToast.show(context, message: _l10n.chatScreenSelectTargetFirst);
+        setState(() => _setMessageStatus(localId, 'failed'));
+      }
+      Analytics.track(AnalyticsEvents.chatTextRetry, {
+        'result': 'failed',
+        'offline': isGuest,
+        'channel': 'api',
+        'reason': 'no_targets',
+      });
+      return;
+    }
     try {
+      if (isGuest) {
+        await ensureDeviceAccessToken();
+      }
       await sendMessage({
         'type': 'text',
         'payload': {'text': textContent, 'localId': localId},
         'fromDeviceId': _deviceId,
         'threadKey': outbound.threadKey,
-        if (outbound.toDeviceId != null) 'toDeviceId': outbound.toDeviceId,
+        'toDeviceId': toDeviceId,
         'ts': ts,
       });
-      await ChatMessageDao.instance.markSynced(msgId);
+      final userId = await _getCurrentUserId();
+      if (userId != null) {
+        await ChatMessageDao.instance.markSynced(msgId);
+      }
       if (mounted) setState(() => _setMessageStatus(localId, 'sent'));
       Analytics.track(AnalyticsEvents.chatTextRetry, {
         'result': 'sent',
-        'offline': false,
+        'offline': isGuest,
         'channel': 'api',
         'length_bucket': Analytics.lengthBucket(textContent.length),
       });
@@ -4795,7 +4841,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       if (mounted) setState(() => _setMessageStatus(localId, 'failed'));
       Analytics.track(AnalyticsEvents.chatTextRetry, {
         'result': 'failed',
-        'offline': false,
+        'offline': isGuest,
         'channel': 'api',
         'length_bucket': Analytics.lengthBucket(textContent.length),
       });

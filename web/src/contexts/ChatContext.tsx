@@ -13,6 +13,7 @@ import {
   S3_VIRTUAL_DEVICE_ID,
   accountPartLoggedIn,
   outboundForWebChat,
+  outboundForGuestChat,
   threadKeyForS3WebPersist,
   threadKeyOneToOne,
 } from '@/lib/threadKey';
@@ -757,6 +758,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       if (data.type === 'webrtc_probe_result') {
         return;
       }
+      if (!userIdRef.current && data.type === 'text') {
+        const me = getOrCreateDeviceId();
+        const sel = selectedDeviceIdRef.current;
+        if (data.fromDeviceId !== me && data.fromDeviceId !== sel) return;
+      }
       if (data.type === 'text' && data.fromDeviceId !== getOrCreateDeviceId()) {
         const incomingText =
           data.payload && typeof data.payload === 'object'
@@ -1389,16 +1395,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   const sendTextMessage = useCallback(async (text: string) => {
     if (!text.trim() || sending) return;
-    if (!userId) {
-      setSendError('chat.errors.guestTextNeedsLogin');
-      return;
-    }
     if (!selectedDeviceId) return;
-    const outbound = outboundForWebChat(userId, selectedDeviceId, getOrCreateDeviceId());
-    if (!outbound) return;
+    const deviceId = getOrCreateDeviceId();
+    const outbound = userId
+      ? outboundForWebChat(userId, selectedDeviceId, deviceId)
+      : outboundForGuestChat(selectedDeviceId, deviceId);
+    if (!outbound || (!userId && !outbound.toDeviceId)) return;
     setSending(true);
     const localId = generateUUID();
-    const deviceId = getOrCreateDeviceId();
     const envelope: ChatMessage = {
       type: 'text',
       payload: { text, localId },
@@ -1425,7 +1429,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       updateMessageByLocalId(localId, { _status: 'sent' });
       analyticsTrack(AnalyticsEvents.chatTextSend, {
         result: 'sent',
-        offline: false,
+        offline: !userId,
         channel: 'api',
         length_bucket: lengthBucket,
       });
@@ -1436,7 +1440,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       updateMessageByLocalId(localId, { _status: 'failed' });
       analyticsTrack(AnalyticsEvents.chatTextSend, {
         result: 'failed',
-        offline: false,
+        offline: !userId,
         channel: 'api',
         length_bucket: lengthBucket,
       });
@@ -1783,9 +1787,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       if (!msg || msg._status !== 'failed') return;
       const text = (msg.payload as { text?: string })?.text;
       if (!text) return;
-      if (!userId || !selectedDeviceId) return;
-      const outbound = outboundForWebChat(userId, selectedDeviceId, getOrCreateDeviceId());
-      if (!outbound) return;
+      if (!selectedDeviceId) return;
+      const me = getOrCreateDeviceId();
+      const outbound = userId
+        ? outboundForWebChat(userId, selectedDeviceId, me)
+        : outboundForGuestChat(selectedDeviceId, me);
+      if (!outbound || (!userId && !outbound.toDeviceId)) return;
       updateMessageByLocalId(localId, { _status: 'sending' });
       const lengthBucket = analyticsLengthBucket(text.length);
       sendMessage({
@@ -1800,7 +1807,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           updateMessageByLocalId(localId, { _status: 'sent' });
           analyticsTrack(AnalyticsEvents.chatTextRetry, {
             result: 'sent',
-            offline: false,
+            offline: !userId,
             channel: 'api',
             length_bucket: lengthBucket,
           });
@@ -1809,7 +1816,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           updateMessageByLocalId(localId, { _status: 'failed' });
           analyticsTrack(AnalyticsEvents.chatTextRetry, {
             result: 'failed',
-            offline: false,
+            offline: !userId,
             channel: 'api',
             length_bucket: lengthBucket,
           });

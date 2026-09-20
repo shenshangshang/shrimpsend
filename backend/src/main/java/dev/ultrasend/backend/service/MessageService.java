@@ -80,8 +80,9 @@ public class MessageService {
     }
 
     /**
-     * Guest / device-authenticated signaling. Never persists chat; only paired
-     * (or same-account) peers may be addressed. Clients cannot broadcast.
+     * Guest / device-authenticated delivery. Never persists to account chat
+     * history. Signaling envelopes and unsigned-in {@code text} are allowed
+     * between paired (or same-account) peers only.
      */
     @Transactional
     public void sendFromDevice(String fromDeviceId, Object data) {
@@ -92,7 +93,8 @@ public class MessageService {
         Map<String, Object> map = new LinkedHashMap<>((Map<String, Object>) rawMap);
         Object typeObj = map.get("type");
         String type = typeObj != null ? typeObj.toString() : null;
-        if (!RealtimeEnvelopeTypes.isEphemeral(type)) {
+        boolean guestText = "text".equals(type);
+        if (!RealtimeEnvelopeTypes.isEphemeral(type) && !guestText) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "device send only allows signaling envelopes");
         }
         String toDeviceId = map.get("toDeviceId") != null ? map.get("toDeviceId").toString() : null;

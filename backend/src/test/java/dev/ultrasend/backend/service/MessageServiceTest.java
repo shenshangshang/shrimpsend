@@ -252,6 +252,35 @@ class MessageServiceTest {
     }
 
     @Test
+    void sendFromDeviceRejectsNonSignalingNonText() {
+        Map<String, Object> envelope = new java.util.HashMap<>();
+        envelope.put("type", "file");
+        envelope.put("toDeviceId", "peer");
+        envelope.put("payload", Map.of("fileName", "a.bin"));
+
+        assertThrows(org.springframework.web.server.ResponseStatusException.class,
+                () -> messageService.sendFromDevice("dev-a", envelope));
+        verify(realtimePublisher, never()).publishToDeviceBestEffort(any(), any());
+        verify(messageRepository, never()).save(any());
+    }
+
+    @Test
+    void sendFromDevicePublishesTextWithoutPersisting() {
+        Map<String, Object> envelope = new java.util.HashMap<>();
+        envelope.put("type", "text");
+        envelope.put("toDeviceId", "peer");
+        envelope.put("payload", Map.of("text", "hi", "localId", "l1"));
+        when(devicePairingService.canSignal("dev-a", "peer")).thenReturn(true);
+        when(deviceRepository.findByDeviceId("peer")).thenReturn(Optional.empty());
+
+        messageService.sendFromDevice("dev-a", envelope);
+
+        verify(mailboxService).storeIfEphemeral(isNull(), any());
+        verify(realtimePublisher).publishToDeviceBestEffort(eq("peer"), any());
+        verify(messageRepository, never()).save(any());
+    }
+
+    @Test
     void sendFromDevicePublishesToPairedPeer() {
         Map<String, Object> envelope = new java.util.HashMap<>();
         envelope.put("type", "lan_http_probe");
