@@ -39,25 +39,25 @@
 - **对方不用安装也能收** — 文件可直接发到浏览器和临时设备，适合客户机不能装软件、访客设备或一次性分享。
 - **断网后可续传** — 原生客户端之间的大文件可从中断处继续，不必从 0% 重来。
 - **复杂网络下仍可用** — 酒店 Wi‑Fi、校园网、运营商 NAT 等场景下，可通过服务端辅助中继保持传输可用。
-- **打通单向网络** — 防火墙或 NAT 常只允许单向连通（例如同网 Windows 拦截入站，手机能推电脑但电脑推不回手机）。登录后由服务器协调两端互相探测可达路径；HTTP 直推失败时自动改为对端**反向拉取**本机文件，必要时退回 WebRTC 或 S3 中继。详见 [shared/protocol.md](../shared/protocol.md#反向拉取-reverse-pull)。
+- **打通单向网络** — 防火墙或 NAT 常只允许单向连通（例如同网 Windows 拦截入站，手机能推电脑但电脑推不回手机）。配对设备使用独立设备凭证，由服务器协调互相探测可达路径；HTTP 直推失败时自动改为对端**反向拉取**本机文件，必要时退回 WebRTC 或 S3 中继。详见 [shared/protocol.md](../shared/protocol.md#反向拉取-reverse-pull)。
 - **局域网优先，也追求速度** — 同网优先直连 / WebRTC；仅在需要时使用中继或 S3 兼容后备。
-- **实时同步** — [悟空 IM](https://github.com/WuKongIM/WuKongIM) 把消息和信令推到同一账号下所有已登录设备。
-- **可自托管** — 完整栈可在自有环境运行（[AGPL-3.0-or-later](../LICENSE)）；生产密钥放在私有 ops 模板（[SELF_HOST.md](SELF_HOST.md)）。
+- **设备独立使用** — [悟空 IM](https://github.com/WuKongIM/WuKongIM) 在配对设备间传递消息和信令；账号管理购买和设备名额，不自动同步传输历史。
+- **可自托管** — 完整栈可在自有环境运行（[AGPL-3.0-or-later](../LICENSE)）；生产配置集中在独立 `.env.production` 文件（[SELF_HOST.md](SELF_HOST.md)）。
 
 ## 五分钟跑起来
 
-用 Docker 拉起 MySQL、悟空 IM 和后端，再在宿主机启动 Web：
+用 Docker 一起启动 MySQL、悟空 IM、后端和 Web：
 
 ```bash
 git clone https://github.com/shrimpsend/shrimpsend.git
 cd shrimpsend
-./scripts/setup-local-config.sh   # 从 example 生成 .env / backend/.env
-docker compose up -d              # MySQL :3306，悟空 IM :5200/:5001，后端 :9000
-
-cd web && npm ci && npm run dev   # Web 客户端 :3000
+./scripts/deploy-docker-local.sh up
+# 独立本地配置：.env.local-deploy
 ```
 
-打开 http://localhost:3000，在你自己的实例上注册账号，再加第二台设备（或另一个浏览器）即可互发。完整选项与生产部署见 [SELF_HOST.md](SELF_HOST.md)。
+打开 http://localhost:3000/chat，通过连接码或二维码连接另一台设备即可互传，无需创建账号。购买会员和管理设备名额时再登录。见 [本地部署](LOCAL_DOCKER.md) 与 [生产部署](SELF_HOST.md)。
+
+批准的全页面方案已实现到 Flutter、Web 和官网；鸿蒙本轮暂缓。[实施与验证记录](testing/2026-09-21-redesign-implementation.md)。
 
 ## 界面预览
 
@@ -141,7 +141,7 @@ Compose 首次初始化数据卷时会创建 `ultrasend` 与 `ultrasend_overseas
 
 | 服务 | 地址 |
 |------|------|
-| MySQL | 127.0.0.1:3306（docker） |
+| MySQL | 127.0.0.1:3307（Docker 宿主机端口） |
 | 悟空 IM | ws://localhost:5200（API http://127.0.0.1:5001） |
 | 后端 API | http://localhost:9000（docker） |
 | Web | http://localhost:3000（宿主机） |
@@ -167,36 +167,25 @@ stripe listen --forward-to localhost:9000/api/membership/stripe/webhook
 
 **仅调试后端**（Docker 服务端、不启 Web）：`backend/scripts/run-dev-overseas.sh`
 
-### 生产部署（Docker 服务端）
+### 生产部署（全 Docker）
 
-需 **ops** 配置目录同步到本仓。完整说明：[SELF_HOST.md](SELF_HOST.md)。
+MySQL、悟空 IM、后端和 Web 全部由 Docker 运行。只编辑一份独立 `.env.production` 配置；服务器无需安装 Node / Java。
 
 ```bash
-git clone git@github.com:shrimpsend/shrimpsend.git shrimpsend
-cd shrimpsend
-git clone git@github.com:shrimpsend/public-ops.git ../ops   # 公开样例；生产前替换占位值
-# 维护者：git clone git@github.com:shrimpsend/ops.git ../ops
-# 可选：export ULTRASEND_OPS_DIR=/path/to/your-ops
-./scripts/deploy.sh          # 交互：拉代码、选国内/海外、构建、重启
-./scripts/deploy.sh stop
+cp .env.production.example .env.production
+chmod 600 .env.production
+# 填写域名、数据库密码、JWT 和加密密钥
+./scripts/deploy.sh check
+./scripts/deploy.sh up
 ./scripts/deploy.sh status
 ./scripts/deploy.sh logs
 ```
 
-海外非交互部署：
+海外集群在配置中设置 `SPRING_PROFILES_ACTIVE=prod-overseas`、`MYSQL_DATABASE=ultrasend_overseas`、`NEXT_PUBLIC_OPENPANEL_WEB_CLUSTER=intl` 及对应域名。配置可放仓库外，通过 `DEPLOY_ENV_FILE` 指定。Web 公开配置变化后须重建。旧实例先按 [迁移说明](SELF_HOST.md#migrate-an-existing-installation) 保留数据卷和加密密钥。
 
-```bash
-SPRING_PROFILE=prod-overseas CLUSTER_LABEL='海外 (ShrimpSend)' ./scripts/deploy.sh
-```
+当前架构和最近两天的改动、下一步优先级见 [项目梳理](PROJECT_STATUS.md)。
 
-`deploy.sh` 内可再次确认是否从 ops 同步；也可事先单独运行 `scripts/sync-to-build-machine.sh`。
-
-| 集群 | Spring profile | 实时 |
-|------|----------------|------|
-| 国内 xiachuan | `prod` | `wss://api.xiachuan.net/wkws` |
-| 海外 ShrimpSend | `prod-overseas` | `wss://api.shrimpsend.com/wkws` |
-
-### Docker Compose（服务端）
+### Docker Compose（本地开发）
 
 容器内运行 MySQL + 悟空 IM + 后端；**Web 不在 Compose 内**，需在宿主机启动。
 
@@ -259,7 +248,7 @@ OpenPanel 与客户端统计说明：[app/README.md](../app/README.md)。
 |------|------|------|
 | 本地（国内） | `setup-local-config.sh` 或 `deploy-local.sh` | `./scripts/start-dev.sh` |
 | 本地（海外） | 同上 | `./scripts/start-dev.sh --overseas` |
-| 生产 | ops 同步 + `deploy.sh` | `./scripts/deploy.sh` |
+| 生产 | `.env.production` | `./scripts/deploy.sh` |
 | Docker | `.env` | `docker compose up -d` |
 
 完整指南：[SELF_HOST.md](SELF_HOST.md) · 运维配置：[ops/README.md](../ops/README.md)
@@ -298,7 +287,7 @@ shrimpsend/
 - 发送文件时可选「全部设备 (S3)」或「指定设备 (局域网)」；指定设备时尝试 WebSocket 直连
 - 浏览器接收，对方无需安装 App
 - 大文件断网续传（原生客户端之间）
-- 跨 NAT、校园网、运营商 NAT 的服务端辅助路径（需登录）
+- 跨 NAT、校园网、运营商 NAT 的服务端辅助路径（需设备配对；受设备额度与存储配置约束）
 - 设置页：S3 配置、设备列表与改名
 
 ## 文档索引
@@ -336,4 +325,4 @@ ShrimpSend / 虾传（本仓库 `shrimpsend`）以 [GNU Affero General Public Li
 
 - 仓库首页默认展示英文 [README.md](../README.md)；本文为中文完整说明。
 - 局域网文件传输协议见 [shared/protocol.md](../shared/protocol.md)。
-- 本地开发密钥由 `setup-local-config.sh` 生成；生产环境使用私有 ops 仓，公开仓库仅含 `*.example` 模板。
+- 本地开发密钥由 `setup-local-config.sh` 生成；生产环境使用独立 `.env.production`，公开仓库仅含配置示例。

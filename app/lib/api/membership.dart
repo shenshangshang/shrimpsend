@@ -23,14 +23,14 @@ class MembershipTier {
   });
 
   factory MembershipTier.fromJson(Map<String, dynamic> j) => MembershipTier(
-        code: (j['code'] ?? '').toString(),
-        name: (j['name'] ?? '').toString(),
-        deviceLimit: (j['deviceLimit'] as num?)?.toInt() ?? 0,
-        priceCent: (j['priceCent'] as num?)?.toInt() ?? 0,
-        productType: (j['productType'] ?? 'TIER').toString(),
-        billingPeriod: j['billingPeriod']?.toString(),
-        currency: j['currency']?.toString(),
-      );
+    code: (j['code'] ?? '').toString(),
+    name: (j['name'] ?? '').toString(),
+    deviceLimit: (j['deviceLimit'] as num?)?.toInt() ?? 0,
+    priceCent: (j['priceCent'] as num?)?.toInt() ?? 0,
+    productType: (j['productType'] ?? 'TIER').toString(),
+    billingPeriod: j['billingPeriod']?.toString(),
+    currency: j['currency']?.toString(),
+  );
 
   bool get isAddon => productType == 'ADDON';
 }
@@ -90,14 +90,16 @@ class MembershipMe {
       canAddWebDav: j['canAddWebDav'] == true,
       canBuyAddon: j['canBuyAddon'] == true,
       subscriptionExpiresAtMs: (j['subscriptionExpiresAtMs'] as num?)?.toInt(),
-      subscriptionCancelAtPeriodEnd: j['subscriptionCancelAtPeriodEnd'] as bool?,
+      subscriptionCancelAtPeriodEnd:
+          j['subscriptionCancelAtPeriodEnd'] as bool?,
       stripeSubscriptionPresent: j['stripeSubscriptionPresent'] as bool?,
       hostedUploadQuotaBytes: (j['hostedUploadQuotaBytes'] as num?)?.toInt(),
       hostedUploadUsedBytes: (j['hostedUploadUsedBytes'] as num?)?.toInt(),
       currency: j['currency']?.toString(),
       paymentChannel: channel == null || channel.isEmpty ? 'FREE' : channel,
       canSwitchChannel:
-          j['canSwitchChannel'] as bool? ?? (channel == null || channel.isEmpty || channel == 'FREE'),
+          j['canSwitchChannel'] as bool? ??
+          (channel == null || channel.isEmpty || channel == 'FREE'),
     );
   }
 }
@@ -121,7 +123,8 @@ class CrossPlatformHint {
     this.messageKey,
   });
 
-  factory CrossPlatformHint.fromJson(Map<String, dynamic> j) => CrossPlatformHint(
+  factory CrossPlatformHint.fromJson(Map<String, dynamic> j) =>
+      CrossPlatformHint(
         paymentChannel: (j['paymentChannel'] ?? 'FREE').toString(),
         manageTarget: (j['manageTarget'] ?? 'WEB').toString(),
         manageUrl: j['manageUrl'] as String?,
@@ -140,6 +143,7 @@ class MembershipOrder {
   final String currency;
   final String channel;
   final String status;
+  final int? createdAt;
 
   MembershipOrder({
     required this.orderNo,
@@ -149,17 +153,19 @@ class MembershipOrder {
     required this.currency,
     required this.channel,
     required this.status,
+    this.createdAt,
   });
 
   factory MembershipOrder.fromJson(Map<String, dynamic> j) => MembershipOrder(
-        orderNo: (j['orderNo'] ?? '').toString(),
-        fromTier: (j['fromTier'] ?? '').toString(),
-        toTier: (j['toTier'] ?? '').toString(),
-        payableAmountCent: (j['payableAmountCent'] as num?)?.toInt() ?? 0,
-        currency: (j['currency'] ?? 'CNY').toString(),
-        channel: (j['channel'] ?? '').toString(),
-        status: (j['status'] ?? '').toString(),
-      );
+    orderNo: (j['orderNo'] ?? '').toString(),
+    fromTier: (j['fromTier'] ?? '').toString(),
+    toTier: (j['toTier'] ?? '').toString(),
+    payableAmountCent: (j['payableAmountCent'] as num?)?.toInt() ?? 0,
+    currency: (j['currency'] ?? 'CNY').toString(),
+    channel: (j['channel'] ?? '').toString(),
+    status: (j['status'] ?? '').toString(),
+    createdAt: (j['createdAt'] as num?)?.toInt(),
+  );
 }
 
 class MembershipCreateOrderResponse {
@@ -191,17 +197,13 @@ class MembershipCreateOrderResponse {
 }
 
 Future<List<MembershipTier>> listMembershipTiers() async {
-  return withAuthRetry(() async {
-    final r = await http.get(
-      Uri.parse('$apiBaseUrl/api/membership/tiers'),
-      headers: apiHeaders,
-    );
-    checkAuthResponse(r, fallback: '获取会员档位失败');
-    final list = (jsonDecode(r.body) as List)
-        .map((e) => MembershipTier.fromJson(e as Map<String, dynamic>))
-        .toList();
-    return list;
-  });
+  final r = await http
+      .get(Uri.parse('$apiBaseUrl/api/membership/tiers'))
+      .timeout(const Duration(seconds: 15));
+  if (r.statusCode != 200) throw Exception('获取会员档位失败');
+  return (jsonDecode(r.body) as List)
+      .map((e) => MembershipTier.fromJson(e as Map<String, dynamic>))
+      .toList();
 }
 
 Future<MembershipMe> fetchMyMembership() async {
@@ -236,7 +238,9 @@ Future<MembershipCreateOrderResponse> createMembershipOrder({
 Future<MembershipOrder> getMembershipOrder(String orderNo) async {
   return withAuthRetry(() async {
     final r = await http.get(
-      Uri.parse('$apiBaseUrl/api/membership/orders/${Uri.encodeComponent(orderNo)}'),
+      Uri.parse(
+        '$apiBaseUrl/api/membership/orders/${Uri.encodeComponent(orderNo)}',
+      ),
       headers: apiHeaders,
     );
     checkAuthResponse(r, fallback: '查询订单失败');
@@ -324,7 +328,9 @@ Future<String> createStripeCheckoutSession({
   required String priceId,
   String platform = 'desktop',
 }) async {
-  logApi.info('createStripeCheckoutSession priceId=$priceId platform=$platform');
+  logApi.info(
+    'createStripeCheckoutSession priceId=$priceId platform=$platform',
+  );
   return withAuthRetry(() async {
     final r = await http.post(
       Uri.parse('$apiBaseUrl/api/membership/stripe/create-checkout-session'),
@@ -374,3 +380,14 @@ Future<CrossPlatformHint> fetchCrossPlatformHint() async {
     );
   });
 }
+
+Future<List<MembershipOrder>> listMembershipOrders() => withAuthRetry(() async {
+  final response = await http.get(
+    Uri.parse('$apiBaseUrl/api/membership/orders'),
+    headers: apiHeaders,
+  );
+  checkAuthResponse(response, fallback: '无法读取订单记录');
+  return (jsonDecode(response.body) as List)
+      .map((item) => MembershipOrder.fromJson(item as Map<String, dynamic>))
+      .toList();
+});

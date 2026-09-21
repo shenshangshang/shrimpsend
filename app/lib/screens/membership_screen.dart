@@ -1,3 +1,6 @@
+import '../widgets/membership_order_history.dart';
+import 'device_authorization_screen.dart';
+import '../ui/product_scaffold.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -9,6 +12,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../api/api.dart';
 import '../config/env.dart';
+import '../providers/auth_provider.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../preferences/service_region.dart';
 import '../services/membership_channel_guard.dart';
@@ -27,7 +31,9 @@ String _subscriptionScheduleLine(BuildContext context, MembershipMe me) {
   final l10n = AppLocalizations.of(context);
   final ms = me.subscriptionExpiresAtMs!;
   final locale = Localizations.localeOf(context).toString();
-  final dateStr = DateFormat.yMMMd(locale).add_jm().format(DateTime.fromMillisecondsSinceEpoch(ms));
+  final dateStr = DateFormat.yMMMd(
+    locale,
+  ).add_jm().format(DateTime.fromMillisecondsSinceEpoch(ms));
   if (me.subscriptionCancelAtPeriodEnd == true) {
     return l10n.membershipSubscriptionEndsAfterCancel(dateStr);
   }
@@ -46,6 +52,8 @@ class MembershipScreen extends ConsumerStatefulWidget {
 
 class _MembershipScreenState extends ConsumerState<MembershipScreen> {
   bool _loading = true;
+  String? _loadError;
+  int _membershipTab = 0;
   List<MembershipTier> _tiers = const [];
   MembershipMe? _me;
   String? _pendingOrderNo;
@@ -61,7 +69,6 @@ class _MembershipScreenState extends ConsumerState<MembershipScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      if (!ensureLoggedInForRoute(context, ref)) return;
       _load();
     });
   }
@@ -73,12 +80,21 @@ class _MembershipScreenState extends ConsumerState<MembershipScreen> {
   }
 
   Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _loadError = null;
+    });
     try {
-      final results = await Future.wait([listMembershipTiers(), fetchMyMembership()]);
+      final results = await Future.wait([
+        listMembershipTiers(),
+        ref.read(authProvider).isLoggedIn
+            ? fetchMyMembership()
+            : Future<MembershipMe?>.value(null),
+      ]);
       if (!mounted) return;
       setState(() {
         _tiers = results[0] as List<MembershipTier>;
-        _me = results[1] as MembershipMe;
+        _me = results[1] as MembershipMe?;
         _loading = false;
       });
       Analytics.track(AnalyticsEvents.membershipScreenView, {
@@ -86,7 +102,10 @@ class _MembershipScreenState extends ConsumerState<MembershipScreen> {
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() => _loading = false);
+      setState(() {
+        _loading = false;
+        _loadError = AppLocalizations.of(context).membershipLoadFailed('$e');
+      });
       AppToast.show(
         context,
         message: AppLocalizations.of(context).membershipLoadFailed('$e'),
@@ -95,6 +114,7 @@ class _MembershipScreenState extends ConsumerState<MembershipScreen> {
   }
 
   Future<void> _buy(MembershipTier tier) async {
+    if (!ensureLoggedInForRoute(context, ref)) return;
     final l10n = AppLocalizations.of(context);
     final overseasCtx = isOverseasAppContext(_tiers);
 
@@ -118,8 +138,11 @@ class _MembershipScreenState extends ConsumerState<MembershipScreen> {
     // specific channel (Stripe / Apple / Google), route them there instead of letting
     // a second channel double-charge.
     final surface = _resolvePurchaseSurface(tier);
-    final decision =
-        decideMembershipPurchase(me: _me, surface: surface, isAddon: tier.isAddon);
+    final decision = decideMembershipPurchase(
+      me: _me,
+      surface: surface,
+      isAddon: tier.isAddon,
+    );
     if (!decision.canPurchase) {
       await _handleChannelLocked(decision);
       return;
@@ -151,10 +174,14 @@ class _MembershipScreenState extends ConsumerState<MembershipScreen> {
       }
     }
 
-    final overseasStore = Env.prodServiceRegion == ServiceRegion.international &&
+    final overseasStore =
+        Env.prodServiceRegion == ServiceRegion.international &&
         RevenueCatService.instance.canUseOverseasStorePurchase &&
         tier.productType == 'SUBSCRIPTION';
-    final useApple = Platform.isIOS && RevenueCatService.instance.canUseApplePurchase && !overseasStore;
+    final useApple =
+        Platform.isIOS &&
+        RevenueCatService.instance.canUseApplePurchase &&
+        !overseasStore;
     if (overseasStore && tier.productType == 'SUBSCRIPTION') {
       try {
         setState(() => _purchasingApple = true);
@@ -178,10 +205,7 @@ class _MembershipScreenState extends ConsumerState<MembershipScreen> {
       } catch (e) {
         if (!mounted) return;
         setState(() => _purchasingApple = false);
-        AppToast.show(
-          context,
-          message: l10n.membershipPurchaseFailed('$e'),
-        );
+        AppToast.show(context, message: l10n.membershipPurchaseFailed('$e'));
         Analytics.track(AnalyticsEvents.membershipPurchaseOutcome, {
           'tier_code': tier.code,
           'channel': 'revenuecat',
@@ -213,10 +237,7 @@ class _MembershipScreenState extends ConsumerState<MembershipScreen> {
       } catch (e) {
         if (!mounted) return;
         setState(() => _purchasingApple = false);
-        AppToast.show(
-          context,
-          message: l10n.membershipPurchaseFailed('$e'),
-        );
+        AppToast.show(context, message: l10n.membershipPurchaseFailed('$e'));
         Analytics.track(AnalyticsEvents.membershipPurchaseOutcome, {
           'tier_code': tier.code,
           'channel': 'revenuecat',
@@ -239,7 +260,10 @@ class _MembershipScreenState extends ConsumerState<MembershipScreen> {
       return;
     }
     try {
-      final resp = await createMembershipOrder(targetTier: tier.code, channel: 'ALIPAY');
+      final resp = await createMembershipOrder(
+        targetTier: tier.code,
+        channel: 'ALIPAY',
+      );
       setState(() => _pendingOrderNo = resp.order.orderNo);
       _startPolling(resp.order.orderNo);
       final orderStr = resp.alipayOrderString;
@@ -277,12 +301,12 @@ class _MembershipScreenState extends ConsumerState<MembershipScreen> {
         });
       } else if (Platform.isAndroid || Platform.isIOS) {
         if (!mounted) return;
-        AppToast.show(
-          context,
-          message: l10n.membershipAlipayAppNotConfigured,
-        );
+        AppToast.show(context, message: l10n.membershipAlipayAppNotConfigured);
       } else if (resp.alipayPayUrl != null && resp.alipayPayUrl!.isNotEmpty) {
-        await launchUrl(Uri.parse(resp.alipayPayUrl!), mode: LaunchMode.externalApplication);
+        await launchUrl(
+          Uri.parse(resp.alipayPayUrl!),
+          mode: LaunchMode.externalApplication,
+        );
         if (!mounted) return;
         AppToast.show(context, message: l10n.membershipOrderCreatedAlipay);
       } else {
@@ -320,7 +344,12 @@ class _MembershipScreenState extends ConsumerState<MembershipScreen> {
           await _load();
           if (!mounted) return;
           setState(() => _pendingOrderNo = null);
-          AppToast.show(context, message: AppLocalizations.of(context).membershipPurchaseSuccessActive);
+          AppToast.show(
+            context,
+            message: AppLocalizations.of(
+              context,
+            ).membershipPurchaseSuccessActive,
+          );
         }
       } catch (_) {}
     });
@@ -346,8 +375,7 @@ class _MembershipScreenState extends ConsumerState<MembershipScreen> {
           return;
         }
         final me = await fetchMyMembership();
-        final reached =
-            me.tierCode.toUpperCase() == normalizedExpected;
+        final reached = me.tierCode.toUpperCase() == normalizedExpected;
         if (reached) {
           _pollTimer?.cancel();
           if (!mounted) return;
@@ -358,7 +386,9 @@ class _MembershipScreenState extends ConsumerState<MembershipScreen> {
           });
           AppToast.show(
             context,
-            message: AppLocalizations.of(context).membershipPurchaseSuccessActive,
+            message: AppLocalizations.of(
+              context,
+            ).membershipPurchaseSuccessActive,
           );
         }
       } catch (_) {}
@@ -457,7 +487,10 @@ class _MembershipScreenState extends ConsumerState<MembershipScreen> {
             message: l10n.membershipChannelLockedOtherPlatform,
           );
         } else {
-          AppToast.show(context, message: l10n.membershipChannelLockedPlayStore);
+          AppToast.show(
+            context,
+            message: l10n.membershipChannelLockedPlayStore,
+          );
           try {
             await launchUrl(
               Uri.parse('https://play.google.com/store/account/subscriptions'),
@@ -488,7 +521,10 @@ class _MembershipScreenState extends ConsumerState<MembershipScreen> {
     }
   }
 
-  Future<void> _buyOverseasStripe(MembershipTier tier, {required bool isUpgrade}) async {
+  Future<void> _buyOverseasStripe(
+    MembershipTier tier, {
+    required bool isUpgrade,
+  }) async {
     final l10n = AppLocalizations.of(context);
     final priceId = Env.stripePriceIdForTierCode(tier.code);
     if (priceId.isEmpty) {
@@ -550,12 +586,15 @@ class _MembershipScreenState extends ConsumerState<MembershipScreen> {
   Future<void> _buyMainlandAlipayDesktop(MembershipTier tier) async {
     final l10n = AppLocalizations.of(context);
     try {
-      final resp =
-          await createMembershipOrder(targetTier: tier.code, channel: 'ALIPAY');
+      final resp = await createMembershipOrder(
+        targetTier: tier.code,
+        channel: 'ALIPAY',
+      );
       setState(() => _pendingOrderNo = resp.order.orderNo);
       _startPolling(resp.order.orderNo);
       // Prefer the PC PagePay URL on desktop; fall back to the WAP URL for legacy backends.
-      final url = (resp.alipayPcPayUrl != null && resp.alipayPcPayUrl!.isNotEmpty)
+      final url =
+          (resp.alipayPcPayUrl != null && resp.alipayPcPayUrl!.isNotEmpty)
           ? resp.alipayPcPayUrl!
           : (resp.alipayPayUrl ?? '');
       if (url.isEmpty) {
@@ -589,11 +628,14 @@ class _MembershipScreenState extends ConsumerState<MembershipScreen> {
     AppLocalizations l10n,
   ) {
     final maxPct = maxYearlySavingsPercentAcrossPlans(_tiers);
-    final overseasSubscription = Env.prodServiceRegion == ServiceRegion.international &&
+    final overseasSubscription =
+        Env.prodServiceRegion == ServiceRegion.international &&
         _tiers.any((t) => t.productType == 'SUBSCRIPTION');
     final useStoreRc =
-        overseasSubscription && RevenueCatService.instance.canUseOverseasStorePurchase;
-    final useApple = Platform.isIOS &&
+        overseasSubscription &&
+        RevenueCatService.instance.canUseOverseasStorePurchase;
+    final useApple =
+        Platform.isIOS &&
         RevenueCatService.instance.canUseApplePurchase &&
         !useStoreRc;
 
@@ -622,9 +664,14 @@ class _MembershipScreenState extends ConsumerState<MembershipScreen> {
                         if (maxPct != null) ...[
                           const SizedBox(width: 6),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
                             decoration: BoxDecoration(
-                              color: theme.colorScheme.primary.withValues(alpha: 0.15),
+                              color: theme.colorScheme.primary.withValues(
+                                alpha: 0.15,
+                              ),
                               borderRadius: AppRadius.small,
                             ),
                             child: Text(
@@ -650,11 +697,15 @@ class _MembershipScreenState extends ConsumerState<MembershipScreen> {
                 height: 44,
                 child: Padding(
                   padding: const EdgeInsets.only(top: AppSpacing.xs),
-                  child: _overseasBilling == OverseasBilling.yearly && maxPct != null
+                  child:
+                      _overseasBilling == OverseasBilling.yearly &&
+                          maxPct != null
                       ? Text(
                           l10n.membershipSavingsVsMonthlyYear(maxPct),
                           textAlign: TextAlign.center,
-                          style: theme.textTheme.bodySmall?.copyWith(color: colors.textSecondary),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: colors.textSecondary,
+                          ),
                         )
                       : const SizedBox.shrink(),
                 ),
@@ -664,7 +715,9 @@ class _MembershipScreenState extends ConsumerState<MembershipScreen> {
                     ? l10n.membershipOverseasSubscribeHintIos
                     : l10n.membershipOverseasSubscribeHint,
                 textAlign: TextAlign.center,
-                style: theme.textTheme.bodySmall?.copyWith(color: colors.textTertiary),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colors.textTertiary,
+                ),
               ),
             ],
           ),
@@ -673,8 +726,16 @@ class _MembershipScreenState extends ConsumerState<MembershipScreen> {
       const SizedBox(height: AppSpacing.md),
       ...kOverseasPlanOrder.map((planId) {
         final tier = tierForPlanAndBilling(_tiers, planId, _overseasBilling);
-        final monthly = tierForPlanAndBilling(_tiers, planId, OverseasBilling.monthly);
-        final yearly = tierForPlanAndBilling(_tiers, planId, OverseasBilling.yearly);
+        final monthly = tierForPlanAndBilling(
+          _tiers,
+          planId,
+          OverseasBilling.monthly,
+        );
+        final yearly = tierForPlanAndBilling(
+          _tiers,
+          planId,
+          OverseasBilling.yearly,
+        );
         final planSavings = monthly != null && yearly != null
             ? yearlySavingsPercent(monthly.priceCent, yearly.priceCent)
             : 0;
@@ -690,7 +751,9 @@ class _MembershipScreenState extends ConsumerState<MembershipScreen> {
                 child: Center(
                   child: Text(
                     '—',
-                    style: theme.textTheme.bodyMedium?.copyWith(color: colors.textTertiary),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: colors.textTertiary,
+                    ),
                   ),
                 ),
               ),
@@ -704,10 +767,15 @@ class _MembershipScreenState extends ConsumerState<MembershipScreen> {
           pendingOrder: _pendingOrderNo != null,
           purchasing: _purchasingApple || _openingStripe || _restoringPurchases,
         );
-        final rcConfigured = RevenueCatService.instance.canUseOverseasStorePurchase;
+        final rcConfigured =
+            RevenueCatService.instance.canUseOverseasStorePurchase;
         // On desktop we replace RC with Stripe-via-browser; don't require RC config.
         final purchaseBlocked =
-            disabled || (useStoreRc && !rcConfigured && !RuntimePlatform.isDesktop && !RuntimePlatform.isOhos);
+            disabled ||
+            (useStoreRc &&
+                !rcConfigured &&
+                !RuntimePlatform.isDesktop &&
+                !RuntimePlatform.isOhos);
 
         return Padding(
           padding: const EdgeInsets.only(bottom: AppSpacing.sm),
@@ -716,7 +784,10 @@ class _MembershipScreenState extends ConsumerState<MembershipScreen> {
             shape: RoundedRectangleBorder(
               borderRadius: AppRadius.medium,
               side: isPro
-                  ? BorderSide(color: theme.colorScheme.primary.withValues(alpha: 0.45), width: 2)
+                  ? BorderSide(
+                      color: theme.colorScheme.primary.withValues(alpha: 0.45),
+                      width: 2,
+                    )
                   : BorderSide(color: colors.border),
             ),
             child: Padding(
@@ -736,29 +807,40 @@ class _MembershipScreenState extends ConsumerState<MembershipScreen> {
                               spacing: AppSpacing.xs,
                               runSpacing: 6,
                               children: [
-                                Text(tier.name, style: theme.textTheme.titleMedium),
+                                Text(
+                                  tier.name,
+                                  style: theme.textTheme.titleMedium,
+                                ),
                                 if (isPro)
                                   Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
                                     decoration: BoxDecoration(
                                       color: theme.colorScheme.primary,
                                       borderRadius: BorderRadius.circular(20),
                                     ),
                                     child: Text(
                                       l10n.membershipPlanPopular,
-                                      style: theme.textTheme.labelSmall?.copyWith(
-                                        color: theme.colorScheme.onPrimary,
-                                        fontWeight: FontWeight.w600,
-                                      ),
+                                      style: theme.textTheme.labelSmall
+                                          ?.copyWith(
+                                            color: theme.colorScheme.onPrimary,
+                                            fontWeight: FontWeight.w600,
+                                          ),
                                     ),
                                   ),
                               ],
                             ),
-                            if (_overseasBilling == OverseasBilling.yearly && planSavings > 0)
+                            if (_overseasBilling == OverseasBilling.yearly &&
+                                planSavings > 0)
                               Padding(
                                 padding: const EdgeInsets.only(top: 4),
                                 child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 2,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: colors.surfaceMuted,
                                     borderRadius: AppRadius.small,
@@ -795,8 +877,12 @@ class _MembershipScreenState extends ConsumerState<MembershipScreen> {
                   const SizedBox(height: AppSpacing.sm),
                   Text(
                     _overseasBilling == OverseasBilling.yearly
-                        ? l10n.membershipPricePerYear(formatUsdPrice(tier.priceCent))
-                        : l10n.membershipPricePerMonth(formatUsdPrice(tier.priceCent)),
+                        ? l10n.membershipPricePerYear(
+                            formatUsdPrice(tier.priceCent),
+                          )
+                        : l10n.membershipPricePerMonth(
+                            formatUsdPrice(tier.priceCent),
+                          ),
                     style: theme.textTheme.headlineSmall,
                   ),
                   if (_overseasBilling == OverseasBilling.yearly) ...[
@@ -805,13 +891,17 @@ class _MembershipScreenState extends ConsumerState<MembershipScreen> {
                       l10n.membershipPricePerMonthEquiv(
                         formatUsdPrice((tier.priceCent / 12).round()),
                       ),
-                      style: theme.textTheme.bodySmall?.copyWith(color: colors.textSecondary),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colors.textSecondary,
+                      ),
                     ),
                   ],
                   const SizedBox(height: AppSpacing.sm),
                   Text(
                     l10n.membershipTierSubtitleSubscription,
-                    style: theme.textTheme.bodySmall?.copyWith(color: colors.textSecondary),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colors.textSecondary,
+                    ),
                   ),
                   const SizedBox(height: AppSpacing.sm),
                   _bulletLine(
@@ -824,28 +914,29 @@ class _MembershipScreenState extends ConsumerState<MembershipScreen> {
                     colors,
                     l10n.membershipFeatureUploadHosted(uploadGib),
                   ),
-                  _bulletLine(
-                    theme,
-                    colors,
-                    l10n.membershipFeatureWebDav,
-                  ),
+                  _bulletLine(theme, colors, l10n.membershipFeatureAuthorizedSignaling),
                   const SizedBox(height: AppSpacing.md),
-                  if (disabled && !(_pendingOrderNo != null || _purchasingApple))
+                  if (disabled &&
+                      !(_pendingOrderNo != null || _purchasingApple))
                     Padding(
                       padding: const EdgeInsets.only(bottom: AppSpacing.sm),
                       child: Text(
                         l10n.membershipCannotBuyLowerTier,
-                        style: theme.textTheme.bodySmall?.copyWith(color: colors.textSecondary),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colors.textSecondary,
+                        ),
                       ),
                     ),
                   FilledButton(
                     onPressed: purchaseBlocked ? null : () => _buy(tier),
-                    child: Text(_overseasPaywallButtonLabel(
-                      l10n: l10n,
-                      tier: tier,
-                      useStoreRc: useStoreRc,
-                      useApple: useApple,
-                    )),
+                    child: Text(
+                      _overseasPaywallButtonLabel(
+                        l10n: l10n,
+                        tier: tier,
+                        useStoreRc: useStoreRc,
+                        useApple: useApple,
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -853,7 +944,8 @@ class _MembershipScreenState extends ConsumerState<MembershipScreen> {
           ),
         );
       }),
-      if (useStoreRc || useApple) ..._buildRestorePurchasesButton(context, theme, colors, l10n),
+      if (useStoreRc || useApple)
+        ..._buildRestorePurchasesButton(context, theme, colors, l10n),
     ];
   }
 
@@ -920,9 +1012,12 @@ class _MembershipScreenState extends ConsumerState<MembershipScreen> {
 
     // Skip the banner entirely on the channel that natively owns the subscription
     // (e.g. show nothing on iOS APPLE_RC — that's the home channel, no warning needed).
-    if (channel == PaymentChannel.appleRc && RuntimePlatform.isIos) return const [];
-    if (channel == PaymentChannel.googleRc && RuntimePlatform.isAndroid) return const [];
-    if (channel == PaymentChannel.alipayLifetime && !isOverseasAppContext(_tiers)) {
+    if (channel == PaymentChannel.appleRc && RuntimePlatform.isIos)
+      return const [];
+    if (channel == PaymentChannel.googleRc && RuntimePlatform.isAndroid)
+      return const [];
+    if (channel == PaymentChannel.alipayLifetime &&
+        !isOverseasAppContext(_tiers)) {
       // Mainland lifetime user on mainland UI: no warning, this is the home surface.
       return const [];
     }
@@ -940,9 +1035,9 @@ class _MembershipScreenState extends ConsumerState<MembershipScreen> {
         message = l10n.membershipChannelLockedAppStore;
         actionLabel = l10n.membershipOpenAppStoreSubs;
         action = () => launchUrl(
-              Uri.parse('https://apps.apple.com/account/subscriptions'),
-              mode: LaunchMode.externalApplication,
-            );
+          Uri.parse('https://apps.apple.com/account/subscriptions'),
+          mode: LaunchMode.externalApplication,
+        );
         break;
       case PaymentChannel.googleRc:
         if (Platform.isIOS) {
@@ -951,9 +1046,9 @@ class _MembershipScreenState extends ConsumerState<MembershipScreen> {
           message = l10n.membershipChannelLockedPlayStore;
           actionLabel = l10n.membershipOpenPlayStoreSubs;
           action = () => launchUrl(
-                Uri.parse('https://play.google.com/store/account/subscriptions'),
-                mode: LaunchMode.externalApplication,
-              );
+            Uri.parse('https://play.google.com/store/account/subscriptions'),
+            mode: LaunchMode.externalApplication,
+          );
         }
         break;
       case PaymentChannel.alipayLifetime:
@@ -969,7 +1064,9 @@ class _MembershipScreenState extends ConsumerState<MembershipScreen> {
         color: theme.colorScheme.primary.withValues(alpha: 0.06),
         shape: RoundedRectangleBorder(
           borderRadius: AppRadius.medium,
-          side: BorderSide(color: theme.colorScheme.primary.withValues(alpha: 0.3)),
+          side: BorderSide(
+            color: theme.colorScheme.primary.withValues(alpha: 0.3),
+          ),
         ),
         child: Padding(
           padding: const EdgeInsets.all(AppSpacing.md),
@@ -1003,11 +1100,7 @@ class _MembershipScreenState extends ConsumerState<MembershipScreen> {
     ];
   }
 
-  Widget _bulletLine(
-    ThemeData theme,
-    AppThemeColors colors,
-    String text,
-  ) {
+  Widget _bulletLine(ThemeData theme, AppThemeColors colors, String text) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Row(
@@ -1018,7 +1111,9 @@ class _MembershipScreenState extends ConsumerState<MembershipScreen> {
           Expanded(
             child: Text(
               text,
-              style: theme.textTheme.bodySmall?.copyWith(color: colors.textSecondary),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colors.textSecondary,
+              ),
             ),
           ),
         ],
@@ -1036,59 +1131,189 @@ class _MembershipScreenState extends ConsumerState<MembershipScreen> {
     final overseasApp = isOverseasAppContext(_tiers);
     final showOverseasPaywall = showOverseasSubscriptionPaywall(_tiers);
 
-    return Scaffold(
-      appBar: AppBar(title: Text(l10n.membershipCenterTitle)),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : Align(
-              alignment: Alignment.topCenter,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: AppSize.contentMaxWidth),
-                child: ListView(
-                  padding: const EdgeInsets.all(AppSpacing.md),
-                  children: [
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(AppSpacing.md),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(l10n.membershipCurrentTier, style: theme.textTheme.titleMedium),
-                            const SizedBox(height: AppSpacing.xs),
-                            Text(
-                              l10n.membershipTierSummary(
-                                _me?.tierName ?? 'Free',
-                                _me?.deviceLimit ?? 0,
-                              ),
-                              style: theme.textTheme.bodyMedium,
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              l10n.membershipBoundDevices(_me?.currentDeviceCount ?? 0),
-                              style: theme.textTheme.bodySmall?.copyWith(color: colors.textSecondary),
-                            ),
-                            if ((_me?.addonPacks ?? 0) > 0)
-                              Text(
-                                l10n.membershipAddonLine(
-                                  _me!.addonPacks,
-                                  _me!.addonPacks * 5,
-                                ),
-                                style: theme.textTheme.bodySmall?.copyWith(color: colors.textSecondary),
-                              ),
-                            if ((_me?.tierCode ?? 'FREE').toUpperCase() != 'FREE' &&
-                                _me?.subscriptionExpiresAtMs != null) ...[
-                              const SizedBox(height: 6),
-                              Text(
-                                _subscriptionScheduleLine(context, _me!),
-                                style: theme.textTheme.bodySmall?.copyWith(color: colors.textSecondary),
-                              ),
-                            ],
-                          ],
+    return ProductScaffold(
+      settingsLocation: '/settings/membership',
+      appBar: AppBar(
+        title: Text(
+          Localizations.localeOf(context).languageCode == 'zh'
+              ? '会员与名额'
+              : 'Membership & slots',
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(52),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 28),
+            child: Row(
+              children: [
+                for (final (tab, title) in [
+                  (
+                    0,
+                    Localizations.localeOf(context).languageCode == 'zh'
+                        ? '会员套餐'
+                        : 'Plans',
+                  ),
+                  (
+                    1,
+                    Localizations.localeOf(context).languageCode == 'zh'
+                        ? '设备名额'
+                        : 'Device slots',
+                  ),
+                  (
+                    2,
+                    Localizations.localeOf(context).languageCode == 'zh'
+                        ? '订单记录'
+                        : 'Orders',
+                  ),
+                ])
+                  Padding(
+                    padding: const EdgeInsets.only(right: 20),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        border: Border(
+                          bottom: BorderSide(
+                            color: _membershipTab == tab
+                                ? theme.colorScheme.primary
+                                : Colors.transparent,
+                            width: 2,
+                          ),
+                        ),
+                      ),
+                      child: TextButton(
+                        onPressed: () => setState(() => _membershipTab = tab),
+                        child: Text(
+                          title,
+                          style: TextStyle(
+                            color: _membershipTab == tab
+                                ? theme.colorScheme.primary
+                                : colors.textSecondary,
+                          ),
                         ),
                       ),
                     ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+      body: _membershipTab != 0 && !ref.watch(authProvider).isLoggedIn
+          ? Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    Localizations.localeOf(context).languageCode == 'zh'
+                        ? '登录购买账号，管理设备名额与订单'
+                        : 'Sign in to manage device slots and orders',
+                  ),
+                  const SizedBox(height: 20),
+                  FilledButton(
+                    onPressed: () => ensureLoggedInForRoute(context, ref),
+                    child: Text(
+                      Localizations.localeOf(context).languageCode == 'zh'
+                          ? '登录账号'
+                          : 'Sign in',
+                    ),
+                  ),
+                ],
+              ),
+            )
+          : _membershipTab == 2
+          ? const MembershipOrderHistory()
+          : _membershipTab == 1
+          ? const DeviceAuthorizationScreen(ownerOnly: true, embedded: true)
+          : _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _loadError != null
+          ? Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(_loadError!),
+                  const SizedBox(height: 16),
+                  OutlinedButton(
+                    onPressed: _load,
+                    child: Text(
+                      Localizations.localeOf(context).languageCode == 'zh'
+                          ? '重试'
+                          : 'Retry',
+                    ),
+                  ),
+                ],
+              ),
+            )
+          : Align(
+              alignment: Alignment.topLeft,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 900),
+                child: ListView(
+                  padding: const EdgeInsets.all(AppSpacing.md),
+                  children: [
+                    if (_me == null)
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(
+                          Localizations.localeOf(context).languageCode == 'zh'
+                              ? '购买一次，按设备分配。其他设备只需授权，无需登录账号。'
+                              : 'Purchase once and authorize your devices. They do not need to sign in.',
+                        ),
+                      ),
+                    if (_me != null)
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(AppSpacing.md),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                l10n.membershipCurrentTier,
+                                style: theme.textTheme.titleMedium,
+                              ),
+                              const SizedBox(height: AppSpacing.xs),
+                              Text(
+                                l10n.membershipTierSummary(
+                                  _me?.tierName ?? 'Free',
+                                  _me?.deviceLimit ?? 0,
+                                ),
+                                style: theme.textTheme.bodyMedium,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                l10n.membershipBoundDevices(
+                                  _me?.currentDeviceCount ?? 0,
+                                ),
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: colors.textSecondary,
+                                ),
+                              ),
+                              if ((_me?.addonPacks ?? 0) > 0)
+                                Text(
+                                  l10n.membershipAddonLine(
+                                    _me!.addonPacks,
+                                    _me!.addonPacks * 5,
+                                  ),
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: colors.textSecondary,
+                                  ),
+                                ),
+                              if ((_me?.tierCode ?? 'FREE').toUpperCase() !=
+                                      'FREE' &&
+                                  _me?.subscriptionExpiresAtMs != null) ...[
+                                const SizedBox(height: 6),
+                                Text(
+                                  _subscriptionScheduleLine(context, _me!),
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: colors.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
                     ..._buildChannelLockBanner(context, theme, colors, l10n),
-                    if (!overseasApp && (_me?.tierCode ?? 'FREE').toUpperCase() == 'FREE') ...[
+                    if (!overseasApp &&
+                        (_me?.tierCode ?? 'FREE').toUpperCase() == 'FREE') ...[
                       const SizedBox(height: AppSpacing.sm),
                       Card(
                         child: InkWell(
@@ -1096,7 +1321,8 @@ class _MembershipScreenState extends ConsumerState<MembershipScreen> {
                             final result = await Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (context) => const MembershipMigrationScreen(),
+                                builder: (context) =>
+                                    const MembershipMigrationScreen(),
                               ),
                             );
                             if (result == true) {
@@ -1115,7 +1341,8 @@ class _MembershipScreenState extends ConsumerState<MembershipScreen> {
                                 const SizedBox(width: AppSpacing.sm),
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Text(
                                         l10n.membershipMigrationCardTitle,
@@ -1124,9 +1351,10 @@ class _MembershipScreenState extends ConsumerState<MembershipScreen> {
                                       const SizedBox(height: 2),
                                       Text(
                                         l10n.membershipMigrationCardSubtitle,
-                                        style: theme.textTheme.bodySmall?.copyWith(
-                                          color: colors.textSecondary,
-                                        ),
+                                        style: theme.textTheme.bodySmall
+                                            ?.copyWith(
+                                              color: colors.textSecondary,
+                                            ),
                                       ),
                                     ],
                                   ),
@@ -1142,150 +1370,190 @@ class _MembershipScreenState extends ConsumerState<MembershipScreen> {
                       ),
                     ],
                     if (showOverseasPaywall) ...[
-                      ..._buildOverseasSubscriptionPaywall(context, theme, colors, l10n),
+                      ..._buildOverseasSubscriptionPaywall(
+                        context,
+                        theme,
+                        colors,
+                        l10n,
+                      ),
                     ] else ...[
                       const SizedBox(height: AppSpacing.md),
                       ..._tiers
-                          .where((tier) =>
-                              overseasApp ||
-                              shouldShowMainlandTier(tier, tierCode))
+                          .where(
+                            (tier) =>
+                                overseasApp ||
+                                shouldShowMainlandTier(tier, tierCode),
+                          )
                           .map((tier) {
-                        final overseasSubscription = Env.prodServiceRegion ==
-                                ServiceRegion.international &&
-                            tier.productType == 'SUBSCRIPTION';
-                        final useStoreRc = overseasSubscription &&
-                            RevenueCatService.instance.canUseOverseasStorePurchase;
-                        final useApple = Platform.isIOS &&
-                            RevenueCatService.instance.canUseApplePurchase &&
-                            !useStoreRc;
-                        final isAddon = tier.isAddon;
-                        final canBuyAddon = _me?.canBuyAddon ?? false;
-                        final isUsdSub =
-                            tier.currency == 'USD' && tier.productType == 'SUBSCRIPTION';
-                        final disabled = isAddon
-                            ? isMainlandTierPurchaseDisabled(
-                                tier,
-                                _me,
-                                pendingOrder: _pendingOrderNo != null,
-                                purchasing: _purchasingApple ||
-                                    _openingStripe ||
-                                    _restoringPurchases,
-                              )
-                            : (isUsdSub
-                                  ? overseasSubscriptionPurchaseDisabled(
-                                      me: _me,
-                                      tier: tier,
-                                      pendingOrder: _pendingOrderNo != null,
-                                      purchasing: _purchasingApple ||
-                                          _openingStripe ||
-                                          _restoringPurchases,
-                                    )
-                                  : isMainlandTierPurchaseDisabled(
-                                      tier,
-                                      _me,
-                                      pendingOrder: _pendingOrderNo != null,
-                                      purchasing: _purchasingApple ||
-                                          _openingStripe ||
-                                          _restoringPurchases,
-                                    ));
-                        final displayPriceCent = isUsdSub
-                            ? tier.priceCent
-                            : mainlandTierDisplayPriceCent(tier);
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                          child: Card(
-                            child: Padding(
-                              padding: const EdgeInsets.all(AppSpacing.md),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            final overseasSubscription =
+                                Env.prodServiceRegion ==
+                                    ServiceRegion.international &&
+                                tier.productType == 'SUBSCRIPTION';
+                            final useStoreRc =
+                                overseasSubscription &&
+                                RevenueCatService
+                                    .instance
+                                    .canUseOverseasStorePurchase;
+                            final useApple =
+                                Platform.isIOS &&
+                                RevenueCatService
+                                    .instance
+                                    .canUseApplePurchase &&
+                                !useStoreRc;
+                            final isAddon = tier.isAddon;
+                            final canBuyAddon = _me?.canBuyAddon ?? false;
+                            final isUsdSub =
+                                tier.currency == 'USD' &&
+                                tier.productType == 'SUBSCRIPTION';
+                            final disabled = isAddon
+                                ? isMainlandTierPurchaseDisabled(
+                                    tier,
+                                    _me,
+                                    pendingOrder: _pendingOrderNo != null,
+                                    purchasing:
+                                        _purchasingApple ||
+                                        _openingStripe ||
+                                        _restoringPurchases,
+                                  )
+                                : (isUsdSub
+                                      ? overseasSubscriptionPurchaseDisabled(
+                                          me: _me,
+                                          tier: tier,
+                                          pendingOrder: _pendingOrderNo != null,
+                                          purchasing:
+                                              _purchasingApple ||
+                                              _openingStripe ||
+                                              _restoringPurchases,
+                                        )
+                                      : isMainlandTierPurchaseDisabled(
+                                          tier,
+                                          _me,
+                                          pendingOrder: _pendingOrderNo != null,
+                                          purchasing:
+                                              _purchasingApple ||
+                                              _openingStripe ||
+                                              _restoringPurchases,
+                                        ));
+                            final displayPriceCent = isUsdSub
+                                ? tier.priceCent
+                                : mainlandTierDisplayPriceCent(tier);
+                            return Padding(
+                              padding: const EdgeInsets.only(
+                                bottom: AppSpacing.sm,
+                              ),
+                              child: Card(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(AppSpacing.md),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
-                                      Text(tier.name, style: theme.textTheme.titleMedium),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: AppSpacing.xs,
-                                          vertical: 2,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: colors.surfaceMuted,
-                                          borderRadius: AppRadius.small,
-                                        ),
-                                        child: Text(
-                                          isAddon
-                                              ? l10n.membershipDeviceBadgeAddon(
-                                                  tier.deviceLimit,
-                                                )
-                                              : l10n.membershipDeviceBadgeDevices(
-                                                  tier.deviceLimit,
-                                                ),
-                                          style: theme.textTheme.labelSmall?.copyWith(
-                                            color: colors.textSecondary,
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Text(
+                                            tier.name,
+                                            style: theme.textTheme.titleMedium,
                                           ),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: AppSpacing.xs,
+                                              vertical: 2,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: colors.surfaceMuted,
+                                              borderRadius: AppRadius.small,
+                                            ),
+                                            child: Text(
+                                              isAddon
+                                                  ? l10n.membershipDeviceBadgeAddon(
+                                                      tier.deviceLimit,
+                                                    )
+                                                  : l10n.membershipDeviceBadgeDevices(
+                                                      tier.deviceLimit,
+                                                    ),
+                                              style: theme.textTheme.labelSmall
+                                                  ?.copyWith(
+                                                    color: colors.textSecondary,
+                                                  ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: AppSpacing.xs),
+                                      Text(
+                                        tier.currency == 'USD'
+                                            ? formatUsdPrice(tier.priceCent)
+                                            : '¥${(displayPriceCent / 100).toStringAsFixed(0)}',
+                                        style: theme.textTheme.headlineSmall,
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        isAddon
+                                            ? l10n.membershipTierSubtitleAddon
+                                            : (isUsdSub
+                                                  ? l10n.membershipTierSubtitleSubscription
+                                                  : l10n.membershipTierSubtitleBuyout),
+                                        style: theme.textTheme.bodySmall
+                                            ?.copyWith(
+                                              color: colors.textSecondary,
+                                            ),
+                                      ),
+                                      if (!isAddon) ...[
+                                        const SizedBox(height: AppSpacing.xs),
+                                        Text(
+                                          l10n.membershipFeatureAuthorizedSignaling,
+                                          style: theme.textTheme.bodySmall
+                                              ?.copyWith(
+                                                color: colors.textSecondary,
+                                              ),
+                                        ),
+                                      ],
+                                      const SizedBox(height: AppSpacing.sm),
+                                      if (isAddon && !canBuyAddon) ...[
+                                        Text(
+                                          l10n.membershipNeedMiniProFirst,
+                                          style: theme.textTheme.bodySmall
+                                              ?.copyWith(
+                                                color: colors.textSecondary,
+                                              ),
+                                        ),
+                                        const SizedBox(height: AppSpacing.sm),
+                                      ],
+                                      const SizedBox(height: AppSpacing.sm),
+                                      FilledButton(
+                                        onPressed: disabled
+                                            ? null
+                                            : () => _buy(tier),
+                                        child: Text(
+                                          _purchasingApple
+                                              ? l10n.membershipPurchasing
+                                              : _pendingOrderNo != null
+                                              ? l10n.membershipWaitingPayment
+                                              : isAddon && !canBuyAddon
+                                              ? l10n.membershipPleaseSubscribeFirst
+                                              : useStoreRc
+                                              ? l10n.membershipSubscribeInApp
+                                              : useApple
+                                              ? l10n.membershipBuyApple
+                                              : l10n.membershipBuyAlipay,
                                         ),
                                       ),
                                     ],
                                   ),
-                                  const SizedBox(height: AppSpacing.xs),
-                                  Text(
-                                    tier.currency == 'USD'
-                                        ? formatUsdPrice(tier.priceCent)
-                                        : '¥${(displayPriceCent / 100).toStringAsFixed(0)}',
-                                    style: theme.textTheme.headlineSmall,
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    isAddon
-                                        ? l10n.membershipTierSubtitleAddon
-                                        : (isUsdSub
-                                            ? l10n.membershipTierSubtitleSubscription
-                                            : l10n.membershipTierSubtitleBuyout),
-                                    style: theme.textTheme.bodySmall?.copyWith(color: colors.textSecondary),
-                                  ),
-                                  if (!isAddon) ...[
-                                    const SizedBox(height: AppSpacing.xs),
-                                    Text(
-                                      l10n.membershipFeatureWebDav,
-                                      style: theme.textTheme.bodySmall?.copyWith(
-                                        color: colors.textSecondary,
-                                      ),
-                                    ),
-                                  ],
-                                  const SizedBox(height: AppSpacing.sm),
-                                  if (isAddon && !canBuyAddon) ...[
-                                    Text(
-                                      l10n.membershipNeedMiniProFirst,
-                                      style: theme.textTheme.bodySmall?.copyWith(color: colors.textSecondary),
-                                    ),
-                                    const SizedBox(height: AppSpacing.sm),
-                                  ],
-                                  const SizedBox(height: AppSpacing.sm),
-                                  FilledButton(
-                                    onPressed: disabled ? null : () => _buy(tier),
-                                    child: Text(
-                                      _purchasingApple
-                                          ? l10n.membershipPurchasing
-                                          : _pendingOrderNo != null
-                                              ? l10n.membershipWaitingPayment
-                                              : isAddon && !canBuyAddon
-                                                  ? l10n.membershipPleaseSubscribeFirst
-                                                  : useStoreRc
-                                                      ? l10n.membershipSubscribeInApp
-                                                      : useApple
-                                                          ? l10n.membershipBuyApple
-                                                          : l10n.membershipBuyAlipay,
-                                    ),
-                                  ),
-                                ],
+                                ),
                               ),
-                            ),
-                          ),
-                        );
-                      }),
+                            );
+                          }),
                       if (Platform.isIOS &&
                           RevenueCatService.instance.canUseApplePurchase)
-                        ..._buildRestorePurchasesButton(context, theme, colors, l10n),
+                        ..._buildRestorePurchasesButton(
+                          context,
+                          theme,
+                          colors,
+                          l10n,
+                        ),
                     ],
                   ],
                 ),

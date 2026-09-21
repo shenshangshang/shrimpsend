@@ -14,6 +14,7 @@ import { useWukongim, type WukongimLifecycle } from '@/hooks/useWukongim';
 import { getMailboxPending, type MessageEnvelope } from '@/lib/api';
 import { getOrCreateDeviceId, getOrCreatePresenceSessionId } from '@/lib/deviceId';
 import { logger } from '@/lib/logger';
+import { getDeviceAccessToken } from '@/lib/api/client';
 
 const TAG = 'Realtime';
 
@@ -60,6 +61,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const pollMailbox = useCallback(async () => {
+    if (!getDeviceAccessToken()) return;
     try {
       const items = await getMailboxPending(getOrCreateDeviceId(), afterIdRef.current);
       for (const item of items) {

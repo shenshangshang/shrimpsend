@@ -1,3 +1,4 @@
+import '../ui/product_scaffold.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -264,7 +265,8 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
     final myDevicesAsync = ref.watch(myDevicesAsyncProvider);
 
     if (isOffline) {
-      return Scaffold(
+      return ProductScaffold(
+      section: ProductSection.transfer,
         appBar: AppBar(
           title: Text(l10n.devicesTitle),
           leading: IconButton(
@@ -294,7 +296,8 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
       );
     }
 
-    return Scaffold(
+    return ProductScaffold(
+      section: ProductSection.transfer,
       appBar: AppBar(
         title: myDevicesAsync.when(
           data: (list) => Column(

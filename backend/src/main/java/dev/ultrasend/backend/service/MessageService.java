@@ -54,6 +54,7 @@ public class MessageService {
             if (t != null) type = t.toString();
         }
 
+        validateExternalRecipient(uid, data);
         boolean ephemeral = RealtimeEnvelopeTypes.isEphemeral(type);
         if (!ephemeral) {
             String json;
@@ -80,6 +81,22 @@ public class MessageService {
         publishDirectedToExternalDeviceIfNeeded(uid, data);
     }
 
+    private void validateExternalRecipient(long userId, Object data) {
+        if (!(data instanceof Map<?, ?> map)) return;
+        String to = Objects.toString(map.get("toDeviceId"), "");
+        if (to.isBlank()) return;
+        Device recipient = deviceRepository.findByDeviceId(to).orElse(null);
+        if (recipient != null && recipient.getUser() != null
+                && Objects.equals(recipient.getUser().getId(), userId)) return;
+        String from = Objects.toString(map.get("fromDeviceId"), "");
+        Device sender = deviceRepository.findByDeviceId(from).orElse(null);
+        if (sender == null || sender.getUser() == null
+                || !Objects.equals(sender.getUser().getId(), userId)
+                || !devicePairingService.canSignal(from, to)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "devices are not paired or sender is not owned");
+        }
+    }
+
     /**
      * Guest / device-authenticated delivery. Never persists to account chat
      * history. Signaling envelopes and unsigned-in {@code text} are allowed
@@ -95,7 +112,7 @@ public class MessageService {
         Object typeObj = map.get("type");
         String type = typeObj != null ? typeObj.toString() : null;
         boolean guestText = "text".equals(type);
-        if (!RealtimeEnvelopeTypes.isEphemeral(type) && !guestText) {
+        if (!RealtimeEnvelopeTypes.isEphemeral(type) && !guestText && !"file".equals(type) && !"control".equals(type)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "device send only allows signaling envelopes");
         }
         String toDeviceId = map.get("toDeviceId") != null ? map.get("toDeviceId").toString() : null;
@@ -117,9 +134,7 @@ public class MessageService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "devices are not paired");
         }
         map.put("fromDeviceId", fromDeviceId);
-        Device boundTo = deviceRepository.findByDeviceId(toDeviceId).orElse(null);
-        Long mailboxUserId = (boundTo != null && boundTo.getUser() != null) ? boundTo.getUser().getId() : null;
-        mailboxService.storeIfEphemeral(mailboxUserId, map);
+        mailboxService.storeIfEphemeral(null, map);
         realtimePublisher.publishToDeviceBestEffort(toDeviceId, map);
         log.debug("device send type={} from={} to={}", type, fromDeviceId, toDeviceId);
     }

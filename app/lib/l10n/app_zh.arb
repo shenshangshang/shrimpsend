@@ -73,12 +73,12 @@
   "settingsNavPersonalAccount": "个人账号",
   "settingsNavAccountSubtitle": "查看和管理你的账号",
   "settingsMembershipCenter": "会员中心",
-  "settingsMembershipSubtitleUpgrade": "买断会员，提升可绑定设备数",
+  "settingsMembershipSubtitleUpgrade": "购买名额，设备免登录授权",
   "settingsMembershipTierName": "{tierName} 会员",
   "settingsMembershipDevices": "{current}/{limit} 台设备",
-  "settingsNavMyDevices": "我的设备",
+  "settingsNavMyDevices": "账号登录会话",
   "settingsNavMyDevicesSubtitleOffline": "登录后管理已绑定设备",
-  "settingsNavMyDevicesSubtitleOnline": "已绑定的设备",
+  "settingsNavMyDevicesSubtitleOnline": "管理此账号的登录会话",
   "settingsNavS3": "S3",
   "settingsNavS3Subtitle": "广域网文件传输",
   "settingsNavWebDav": "WebDAV",
@@ -151,9 +151,15 @@
   "settingsSavePathFallbackDialogBody": "部分车机或定制系统不允许在外部存储创建文件夹，已改为应用缓存保存。\n\n预期路径：{intendedPath}\n当前路径：{currentPath}\n原因：{reason}",
   "@settingsSavePathFallbackDialogBody": {
     "placeholders": {
-      "intendedPath": { "type": "String" },
-      "currentPath": { "type": "String" },
-      "reason": { "type": "String" }
+      "intendedPath": {
+        "type": "String"
+      },
+      "currentPath": {
+        "type": "String"
+      },
+      "reason": {
+        "type": "String"
+      }
     }
   },
   "settingsChooseFolder": "选择文件夹",
@@ -225,7 +231,7 @@
   "settingsSavePathFailedToast": "设置保存路径失败",
   "settingsSavePathRestoredToast": "已恢复默认保存路径",
   "settingsSavePathRestoreFailedToast": "恢复默认路径失败",
-  "settingsSavePathSafSyncHint": "接收完成后自动保存到此文件夹",
+  "settingsSavePathSafSyncHint": "接收的文件将保存到此文件夹",
   "settingsSavePathSafMirrorLabel": "保存文件夹",
   "settingsSavePathCacheHint": "应用缓存目录（临时副本，可安全清理）",
   "settingsSavePathAppReceiveLabel": "应用内接收目录",
@@ -594,25 +600,31 @@
   "membershipOrderCreatedAlipay": "订单已创建，请在支付宝完成支付",
   "membershipPurchaseSuccessActive": "支付成功，会员权益已生效",
   "membershipCurrentTier": "当前会员",
-  "membershipTierSummary": "{tier} · 可绑定 {limit} 台设备",
-  "membershipBoundDevices": "当前已绑定 {count} 台",
+  "membershipTierSummary": "{tier} · 可授权 {limit} 台设备",
+  "membershipBoundDevices": "当前已授权 {count} 台",
   "membershipAddonLine": "已增购 {packs} 包（+{devices} 台）",
   "membershipSubscriptionRenewsAt": "下次续费时间：{date}",
   "@membershipSubscriptionRenewsAt": {
     "placeholders": {
-      "date": {"type": "String"}
+      "date": {
+        "type": "String"
+      }
     }
   },
   "membershipSubscriptionEndsAfterCancel": "已关闭自动续费，会员权益至 {date} 结束",
   "@membershipSubscriptionEndsAfterCancel": {
     "placeholders": {
-      "date": {"type": "String"}
+      "date": {
+        "type": "String"
+      }
     }
   },
   "membershipSubscriptionValidUntil": "当前订阅周期至 {date}",
   "@membershipSubscriptionValidUntil": {
     "placeholders": {
-      "date": {"type": "String"}
+      "date": {
+        "type": "String"
+      }
     }
   },
   "membershipMigrationCardTitle": "闪电藤会员迁移",
@@ -671,7 +683,7 @@
       }
     }
   },
-  "membershipFeatureDevices": "最高 {count} 台设备绑定",
+  "membershipFeatureDevices": "{count} 个设备授权名额",
   "@membershipFeatureDevices": {
     "placeholders": {
       "count": {
@@ -687,6 +699,7 @@
       }
     }
   },
+  "membershipFeatureAuthorizedSignaling": "授权设备正常使用不限信令次数",
   "membershipFeatureWebDav": "WebDAV 远程存储（不限连接数）",
   "membershipPlanPopular": "推荐",
   "membershipOverseasNoAlipay": "海外版不支持支付宝，请使用应用内订阅完成支付。",
@@ -756,7 +769,9 @@
   "chatReceivedExportingToast": "已接收 {name}，正在保存到文件夹…",
   "@chatReceivedExportingToast": {
     "placeholders": {
-      "name": {"type": "String"}
+      "name": {
+        "type": "String"
+      }
     }
   },
   "mobileHomeTabSettings": "设置",
@@ -785,7 +800,7 @@
       }
     }
   },
-  "fileSendS3Intro": "通过 S3 云端中转发送到所有已登录设备，适用于跨网络传输。",
+  "fileSendS3Intro": "通过 S3 中转发送到选中的已配对设备，适用于跨网络传输。",
   "fileSendS3ConfigurePrompt": "请先配置 S3 以使用云端发送。",
   "fileSendResumeSupported": "支持断点续传",
   "fileSendResumeNotSupported": "不支持断点续传",
@@ -1082,7 +1097,7 @@
   "chatScreenDeleteThisDeviceTitle": "删除本设备",
   "chatScreenDeleteThisDeviceBody": "将从账号下移除本设备并退出登录。移除后需重新登录才可继续使用云端功能。",
   "chatScreenRemovePeerTitle": "移除设备",
-  "chatScreenRemovePeerBody": "移除后，该设备上的账号将退出登录；若正在使用会立即失效，若未启动则下次打开应用时需重新登录。",
+  "chatScreenRemovePeerBody": "解除与这台设备的配对。本地文件和会员授权会保留。",
   "chatScreenConfirmRemoveLabel": "移除",
   "chatScreenConfirmDeleteLabel": "删除",
   "chatScreenToastDeletedThisDevice": "已删除本设备",
@@ -1115,7 +1130,7 @@
   "chatScreenTileRemoveThisDevice": "删除本设备",
   "chatScreenTileRemovePeer": "移除设备",
   "chatScreenSubtitleRemoveThisDevice": "从账号移除本机并退出登录",
-  "chatScreenSubtitleRemovePeer": "从账号移除当前会话中的设备",
+  "chatScreenSubtitleRemovePeer": "解除设备配对",
   "chatScreenPendingFilesMissing": "部分待发文件已不存在，已自动移除",
   "chatScreenConnNotLoggedInHttp": "当前未登录，仅支持 HTTP 传输",
   "chatScreenConnOffline": "无法连接服务器，当前为离线模式",
@@ -1147,45 +1162,73 @@
       }
     }
   },
-  "deviceSendQuotaHint": "未登录发送有频率限制",
+  "deviceSendQuotaHint": "本机免费额度",
   "deviceSendQuotaMessage": "消息 {used}/{limit}",
   "@deviceSendQuotaMessage": {
     "placeholders": {
-      "used": { "type": "int" },
-      "limit": { "type": "int" }
+      "used": {
+        "type": "int"
+      },
+      "limit": {
+        "type": "int"
+      }
     }
   },
   "deviceSendQuotaSignaling": "信令 {used}/{limit}",
   "@deviceSendQuotaSignaling": {
     "placeholders": {
-      "used": { "type": "int" },
-      "limit": { "type": "int" }
+      "used": {
+        "type": "int"
+      },
+      "limit": {
+        "type": "int"
+      }
     }
   },
   "deviceSendQuotaTitle": "发送过于频繁",
   "deviceSendQuotaMessageBody": "本分钟文字额度已用完（{used}/{limit}）。请 {seconds} 秒后再试。",
   "@deviceSendQuotaMessageBody": {
     "placeholders": {
-      "used": { "type": "int" },
-      "limit": { "type": "int" },
-      "seconds": { "type": "int" }
+      "used": {
+        "type": "int"
+      },
+      "limit": {
+        "type": "int"
+      },
+      "seconds": {
+        "type": "int"
+      }
     }
   },
   "deviceSendQuotaSignalingBody": "本分钟传输信令额度已用完（{used}/{limit}）。请 {seconds} 秒后再试，或稍后再发文件。",
   "@deviceSendQuotaSignalingBody": {
     "placeholders": {
-      "used": { "type": "int" },
-      "limit": { "type": "int" },
-      "seconds": { "type": "int" }
+      "used": {
+        "type": "int"
+      },
+      "limit": {
+        "type": "int"
+      },
+      "seconds": {
+        "type": "int"
+      }
     }
   },
-  "deviceSendQuotaInfoBody": "未登录发送需防刷限制。当前消息 {messageUsed}/{messageLimit}，信令 {signalingUsed}/{signalingLimit}。登录后不受此限制。",
+  "deviceSendQuotaInfoBody": "当前消息 {messageUsed}/{messageLimit}，新建连接 {signalingUsed}/{signalingLimit}。授权本机后，正常使用不扣商业额度。",
   "@deviceSendQuotaInfoBody": {
     "placeholders": {
-      "messageUsed": { "type": "int" },
-      "messageLimit": { "type": "int" },
-      "signalingUsed": { "type": "int" },
-      "signalingLimit": { "type": "int" }
+      "messageUsed": {
+        "type": "int"
+      },
+      "messageLimit": {
+        "type": "int"
+      },
+      "signalingUsed": {
+        "type": "int"
+      },
+      "signalingLimit": {
+        "type": "int"
+      }
     }
   },
   "deviceSendQuotaGotIt": "知道了",
@@ -1384,7 +1427,9 @@
   "qrScannerPairFailed": "无法配对该设备: {error}",
   "@qrScannerPairFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "qrScannerLoginRequiresAccount": "扫码登录需要先在本机登录账号",
@@ -1459,7 +1504,9 @@
   "webdavDiagnoseUploadFailed": "诊断失败：{error}",
   "@webdavDiagnoseUploadFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "webdavCstCloudReadOnlyToast": "数据胶囊 WebDAV 不支持上传，仅可浏览和下载已有文件。如需上传，请使用 设置 → S3。",
@@ -1468,14 +1515,18 @@
   "webdavTestFailed": "连接测试失败：{error}",
   "@webdavTestFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "webdavSavedToast": "已保存",
   "webdavSaveFailed": "保存失败：{error}",
   "@webdavSaveFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "webdavBrowserEmpty": "此文件夹为空",
@@ -1490,7 +1541,9 @@
   "webdavDeleteConfirmBody": "将删除 {count} 个项目，此操作不可撤销。",
   "@webdavDeleteConfirmBody": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "webdavDeleteConnection": "删除连接",
@@ -1498,14 +1551,18 @@
   "webdavDeleteConnectionBody": "将删除「{name}」及其保存的凭证。",
   "@webdavDeleteConnectionBody": {
     "placeholders": {
-      "name": { "type": "String" }
+      "name": {
+        "type": "String"
+      }
     }
   },
   "webdavDeletedToast": "已删除",
   "webdavDeleteFailed": "删除失败：{error}",
   "@webdavDeleteFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "webdavRenameTitle": "重命名",
@@ -1513,7 +1570,9 @@
   "webdavRenameFailed": "重命名失败：{error}",
   "@webdavRenameFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "webdavNewFolderTitle": "新建文件夹",
@@ -1521,27 +1580,35 @@
   "webdavCreateFolderFailed": "创建失败：{error}",
   "@webdavCreateFolderFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "webdavUploadDone": "上传完成",
   "webdavUploadFailed": "上传失败：{error}",
   "@webdavUploadFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "webdavDownloadDone": "已准备好分享/保存",
   "webdavDownloadFailed": "下载失败：{error}",
   "@webdavDownloadFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "webdavSelectedCount": "已选 {count} 项",
   "@webdavSelectedCount": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "webdavTabFiles": "文件",
@@ -1560,50 +1627,68 @@
   "webdavTransferQueued": "已加入传输队列（{count}）",
   "@webdavTransferQueued": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "webdavBulkUploadPreparing": "正在准备上传 {count} 个文件…",
   "@webdavBulkUploadPreparing": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "webdavTransferProgressTitle": "上传 {done}/{total}",
   "@webdavTransferProgressTitle": {
     "placeholders": {
-      "done": { "type": "int" },
-      "total": { "type": "int" }
+      "done": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
     }
   },
   "webdavTransferProgressActive": "传输中 {count}",
   "@webdavTransferProgressActive": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "webdavTransferProgressQueued": "等待 {count}",
   "@webdavTransferProgressQueued": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "webdavTransferProgressSucceeded": "已完成 {count}",
   "@webdavTransferProgressSucceeded": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "webdavTransferProgressFailed": "失败 {count}",
   "@webdavTransferProgressFailed": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "webdavTransferProgressDownloading": "下载中 {count}",
   "@webdavTransferProgressDownloading": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "webdavTransferProgressComplete": "上传完成",
@@ -1615,7 +1700,9 @@
   "webdavOutboxUploadTarget": "上传至 {path}",
   "@webdavOutboxUploadTarget": {
     "placeholders": {
-      "path": { "type": "String" }
+      "path": {
+        "type": "String"
+      }
     }
   },
   "webdavOutboxAddFiles": "添加文件",
@@ -1639,7 +1726,9 @@
   "webdavUploadConcurrencyValue": "{count} 个",
   "@webdavUploadConcurrencyValue": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "webdavViewList": "列表视图",
@@ -1653,15 +1742,35 @@
   "webdavCopyFailed": "复制失败：{error}",
   "@webdavCopyFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "webdavMoveFailed": "移动失败：{error}",
   "@webdavMoveFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "webdavShareNeedDownload": "请先下载文件后再分享",
-  "webdavLocalDownloaded": "已下载"
+  "webdavLocalDownloaded": "已下载",
+  "transferWelcomeTitle": "让文件自由来往",
+  "transferWelcomeDescription": "不必登录，连接另一台设备就能发送文件、照片或文字。",
+  "transferWelcomeConnect": "连接你的第一台设备",
+  "transferWelcomeFooter": "优先设备直传 · 中断后可继续",
+  "conversationAvailable": "可传输",
+  "conversationConnect": "连接",
+  "conversationConnectDevice": "连接设备",
+  "conversationComposer": "输入文字，或把文件拖到这里",
+  "conversationNewline": "Shift + 回车换行",
+  "conversationWelcomeTitle": "选一台设备，开始互传",
+  "conversationWelcomeHint": "文件和文字，都在一个会话里。",
+  "conversationSaved": "已保存到接收文件夹",
+  "conversationSent": "已发送",
+  "conversationSearch": "搜索消息",
+  "conversationFiles": "文件管理",
+  "conversationFile": "文件"
 }

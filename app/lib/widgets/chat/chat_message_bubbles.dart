@@ -35,10 +35,10 @@ class PlainTextBubble extends StatelessWidget {
       color: colors.onBubble(isSentByMe),
     );
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         color: bubbleColor,
-        borderRadius: AppRadius.medium,
+        borderRadius: AppRadius.small,
       ),
       child: LinkableMessageText(
         text: message.text,
@@ -71,10 +71,10 @@ class FailedTextBubble extends StatelessWidget {
       color: colors.onBubbleSent,
     );
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         color: colors.bubbleSent,
-        borderRadius: AppRadius.medium,
+        borderRadius: AppRadius.small,
         border: Border.all(
           color: colors.danger.withValues(alpha: 0.4),
           width: 1,
@@ -171,48 +171,34 @@ class TransferProgressBubble extends StatelessWidget {
   }
 
   String _buildSubLine(AppLocalizations l10n) {
-    final parts = <String>[];
-    if (statusText != null && statusText!.isNotEmpty) {
-      parts.add(statusText!);
-    } else {
-      parts.add(
-        transferPhaseStatus(
-          l10n,
-          phase: transferPhase,
-          transferType: transferType,
-          isUploading: isUploading,
-        ),
-      );
-    }
-    final showSizeHere = !(progress != null &&
-        fileSize != null &&
-        fileSize! > 0);
-    final sizeStr = formatFileSize(fileSize);
-    if (showSizeHere && sizeStr.isNotEmpty) parts.add(sizeStr);
-    return parts.join(' · ');
+    final status = progress == null
+        ? l10n.chatDeviceChecking
+        : isUploading
+        ? l10n.chatTransferProgressSending
+        : l10n.chatTransferProgressReceiving;
+    return '$status · ${formatFileSize(fileSize)}';
   }
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final pct = progress != null ? (progress! * 100).round() : null;
-    final accent = isUploading ? colors.upload : colors.download;
-    final accentOnBubble = colors.bubbleAccent(isSentByMe, accent);
+    final accent = Theme.of(context).colorScheme.primary;
+    final accentOnBubble = accent;
     final subLine = _buildSubLine(l10n);
     final theme = Theme.of(context);
-    final showByteRow =
-        progress != null && fileSize != null && fileSize! > 0;
-    final doneBytes =
-        showByteRow ? (fileSize! * progress!).round() : null;
+    final showByteRow = progress != null && fileSize != null && fileSize! > 0;
+    final doneBytes = showByteRow ? (fileSize! * progress!).round() : null;
     final eta = _formatEta(l10n);
-    final muted = colors.bubbleMuted(isSentByMe);
+    final muted = context.appColors.textSecondary;
 
     final category = getFileCategory(fileName);
     return Container(
-      constraints: const BoxConstraints(maxWidth: 280),
+      constraints: const BoxConstraints(maxWidth: 440),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: isSentByMe ? colors.bubbleSent : colors.bubbleReceived,
+        color: colors.surface,
+        border: Border.all(color: context.appColors.border),
         borderRadius: AppRadius.small,
       ),
       child: Row(
@@ -233,22 +219,12 @@ class TransferProgressBubble extends StatelessWidget {
                         fileName,
                         style: theme.textTheme.bodyMedium?.copyWith(
                           fontWeight: FontWeight.w600,
-                          color: colors.onBubble(isSentByMe),
+                          color: colors.onSurface,
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    if (transferTypeLabel(transferType).isNotEmpty) ...[
-                      const SizedBox(width: 6),
-                      TransferTypeMark(
-                        transferType: transferType,
-                        color: colors.bubbleAccent(
-                          isSentByMe,
-                          AppColorTheme.protocolColor(transferType),
-                        ),
-                      ),
-                    ],
-                    if (!showByteRow && pct != null) ...[
+                    if (pct != null) ...[
                       const SizedBox(width: 6),
                       Text(
                         '$pct%',
@@ -284,10 +260,7 @@ class TransferProgressBubble extends StatelessWidget {
                     Expanded(
                       child: Text(
                         subLine,
-                        style: TextStyle(
-                          color: muted,
-                          fontSize: 11,
-                        ),
+                        style: TextStyle(color: muted, fontSize: 11),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -314,10 +287,7 @@ class TransferProgressBubble extends StatelessWidget {
                         child: showByteRow && doneBytes != null
                             ? Text(
                                 '${formatFileSize(doneBytes)} / ${formatFileSize(fileSize)}',
-                                style: TextStyle(
-                                  color: muted,
-                                  fontSize: 11,
-                                ),
+                                style: TextStyle(color: muted, fontSize: 11),
                                 overflow: TextOverflow.ellipsis,
                               )
                             : const SizedBox.shrink(),
@@ -329,10 +299,7 @@ class TransferProgressBubble extends StatelessWidget {
                             if (eta != null) eta,
                           ].join(' '),
                           textAlign: TextAlign.right,
-                          style: TextStyle(
-                            color: muted,
-                            fontSize: 11,
-                          ),
+                          style: TextStyle(color: muted, fontSize: 11),
                         ),
                     ],
                   ),
@@ -377,7 +344,8 @@ class TransferStatusBubble extends StatelessWidget {
       constraints: const BoxConstraints(maxWidth: 260),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: isSentByMe ? colors.bubbleSent : colors.bubbleReceived,
+        color: colors.surface,
+        border: Border.all(color: context.appColors.border),
         borderRadius: AppRadius.small,
       ),
       child: Row(
@@ -397,19 +365,11 @@ class TransferStatusBubble extends StatelessWidget {
                     Expanded(
                       child: Text(
                         text,
-                        style: theme.textTheme.bodyMedium?.copyWith(color: color),
-                      ),
-                    ),
-                    if (transferTypeLabel(transferType).isNotEmpty) ...[
-                      const SizedBox(width: 6),
-                      TransferTypeMark(
-                        transferType: transferType,
-                        color: colors.bubbleAccent(
-                          isSentByMe,
-                          AppColorTheme.protocolColor(transferType),
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: color,
                         ),
                       ),
-                    ],
+                    ),
                   ],
                 ),
                 if (subtitle != null) ...[

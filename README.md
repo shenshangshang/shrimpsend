@@ -39,25 +39,25 @@ This repository (**`shrimpsend`**) is the open-source codebase for **ShrimpSend*
 - **No install for recipients** — send directly to browsers and temporary devices when the other side cannot install software.
 - **Resume after disconnects** — large native client ↔ client transfers continue from the interrupted position instead of restarting from 0%.
 - **Works on restrictive networks** — server-assisted relay when hotel Wi‑Fi, campus networks, or carrier NAT block direct reachability.
-- **Breaks through one-way networks** — firewalls and NAT often allow traffic in only one direction (e.g. phone → PC works, PC → phone does not). After sign-in, the server coordinates reachability probes between your devices; if direct HTTP push fails, ShrimpSend automatically **reverse-pulls** the file from the reachable side, or falls back to WebRTC / S3 relay. See [shared/protocol.en.md](shared/protocol.en.md#reverse-pull).
+- **Breaks through one-way networks** — firewalls and NAT often allow traffic in only one direction (e.g. phone → PC works, PC → phone does not). Paired devices use device credentials to coordinate reachability probes; if direct HTTP push fails, ShrimpSend automatically **reverse-pulls** the file from the reachable side, or falls back to WebRTC / S3 relay. See [shared/protocol.en.md](shared/protocol.en.md#reverse-pull).
 - **LAN-first, still built for speed** — prefer direct LAN / WebRTC on the same network; use relay or S3-compatible fallback only when needed.
-- **Real-time sync** — [WuKongIM](https://github.com/WuKongIM/WuKongIM) delivers messages and signaling to every signed-in device of the same account.
+- **Independent devices** — [WuKongIM](https://github.com/WuKongIM/WuKongIM) carries messages and signaling between paired devices. An account manages purchases and device authorization, without synchronizing private transfer history.
 - **Self-host friendly** — run the full stack on your infrastructure under [AGPL-3.0-or-later](LICENSE); production secrets stay in private ops templates ([docs/SELF_HOST.md](docs/SELF_HOST.md)).
 
 ## Try it in 5 minutes
 
-Bring up MySQL, WuKongIM, and the backend with Docker, then run the web client:
+Bring up MySQL, WuKongIM, the backend and the web client with Docker:
 
 ```bash
 git clone https://github.com/shrimpsend/shrimpsend.git
 cd shrimpsend
-./scripts/setup-local-config.sh   # writes .env from examples
-docker compose up -d              # MySQL :3306, WuKongIM :5200/:5001, backend :9000
-
-cd web && npm ci && npm run dev   # web client on :3000
+./scripts/deploy-docker-local.sh up
+# Local configuration: .env.local-deploy
 ```
 
-Open http://localhost:3000, create an account on your own instance, and add a second device (or a second browser) to send your first message. Full options, troubleshooting, and production paths: [docs/SELF_HOST.md](docs/SELF_HOST.md).
+Open http://localhost:3000/chat and connect a second device (or another browser) with a pairing code or QR code. No account is required for device transfers. Sign in when purchasing membership or managing device authorization. See [local deployment](docs/LOCAL_DOCKER.md) and [production deployment](docs/SELF_HOST.md).
+
+The approved full-page redesign is implemented for Flutter, Web and the public site. [Implementation and validation](docs/testing/2026-09-21-redesign-implementation.md). HarmonyOS is deferred for this iteration.
 
 ## Screenshots
 
@@ -140,7 +140,7 @@ Compose creates `ultrasend` and `ultrasend_overseas` on first MySQL volume init.
 
 | Service | URL |
 |---------|-----|
-| MySQL | 127.0.0.1:3306 (docker) |
+| MySQL | 127.0.0.1:3307 (Docker host port) |
 | WuKongIM | ws://localhost:5200 (API http://127.0.0.1:5001) |
 | Backend API | http://localhost:9000 (docker) |
 | Web UI | http://localhost:3000 (host) |
@@ -166,29 +166,25 @@ stripe listen --forward-to localhost:9000/api/membership/stripe/webhook
 
 Backend-only debugging (no Web): `backend/scripts/run-dev-overseas.sh`
 
-### Production (Docker server stack)
+### Production (all Docker)
 
-Requires an **ops** config directory synced into this repo. Full steps: [docs/SELF_HOST.md](docs/SELF_HOST.md#production-deployment).
+MySQL, WuKongIM, backend and Web run in containers. Edit one external `.env.production` file; the server does not need host Node or Java.
 
 ```bash
-git clone git@github.com:shrimpsend/shrimpsend.git shrimpsend
-cd shrimpsend
-git clone git@github.com:shrimpsend/public-ops.git ../ops   # samples; replace placeholders for production
-# Maintainers: git clone git@github.com:shrimpsend/ops.git ../ops
-# Optional: export ULTRASEND_OPS_DIR=/path/to/your-ops
-./scripts/deploy.sh          # interactive: git pull, cn vs overseas, build, restart
-./scripts/deploy.sh stop     # stop Docker server stack + host Web
+cp .env.production.example .env.production
+chmod 600 .env.production
+# Fill public URLs, database passwords, JWT and encryption keys.
+./scripts/deploy.sh check
+./scripts/deploy.sh up
 ./scripts/deploy.sh status
 ./scripts/deploy.sh logs
 ```
 
-Non-interactive overseas deploy:
+For overseas deployments, set `SPRING_PROFILES_ACTIVE=prod-overseas`, `MYSQL_DATABASE=ultrasend_overseas`, `NEXT_PUBLIC_OPENPANEL_WEB_CLUSTER=intl` and your public URLs in that file. Use `DEPLOY_ENV_FILE` for a file outside the repo. Follow the [migration guide](docs/SELF_HOST.md#migrate-an-existing-installation) before switching an existing stack.
 
-```bash
-SPRING_PROFILE=prod-overseas CLUSTER_LABEL='Overseas (ShrimpSend)' ./scripts/deploy.sh
-```
+Current architecture, recent changes and next priorities: [project status](docs/PROJECT_STATUS.md) (Chinese).
 
-### Docker
+### Docker (local development)
 
 MySQL + WuKongIM + backend in containers; Web still runs on the host (`npm run dev` or Next standalone).
 
@@ -219,7 +215,7 @@ OpenPanel secrets and analytics: [app/README.md](app/README.md).
 |----------|--------|-------|
 | Local (China) | `setup-local-config.sh` or `deploy-local.sh` | `./scripts/start-dev.sh` |
 | Local (Overseas) | same | `./scripts/start-dev.sh --overseas` |
-| Production | `ops/` sync via `deploy.sh` | `./scripts/deploy.sh` |
+| Production | `.env.production` | `./scripts/deploy.sh` |
 | Docker | `.env` | `docker compose up -d` |
 
 Full guide: [docs/SELF_HOST.md](docs/SELF_HOST.md) · Chinese setup: [docs/README.zh-CN.md](docs/README.zh-CN.md)

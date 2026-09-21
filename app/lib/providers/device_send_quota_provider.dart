@@ -4,7 +4,6 @@ import 'package:http/http.dart' as http;
 import '../api/client.dart';
 import '../api/device_send_quota.dart';
 import '../logger.dart';
-import 'auth_provider.dart';
 
 class DeviceSendQuotaNotifier extends Notifier<DeviceSendQuota?> {
   int _hitSeq = 0;
@@ -27,11 +26,13 @@ class DeviceSendQuotaNotifier extends Notifier<DeviceSendQuota?> {
   }
 
   Future<void> refresh() async {
-    if (!hasDeviceAccessToken || ref.read(authProvider).isLoggedIn) return;
+    if (!hasDeviceAccessToken) return;
     try {
-      final r = await http.get(
-        Uri.parse('$apiBaseUrl/api/messages/device-quota'),
-        headers: deviceApiHeaders,
+      final r = await withDeviceAuthRetry(
+        () => http.get(
+          Uri.parse('$apiBaseUrl/api/messages/device-quota'),
+          headers: deviceApiHeaders,
+        ),
       );
       if (r.statusCode != 200) return;
       final quota = parseDeviceSendQuota(headers: r.headers, body: r.body);

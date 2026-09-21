@@ -1,8 +1,11 @@
+import '../ui/device_name_dialog.dart';
+import '../api/device_identity.dart';
+import '../providers/device_alias_provider.dart';
+import '../services/transfer_activity.dart';
+import '../services/text_delivery.dart';
+import '../ui/product_scaffold.dart';
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
-import 'dart:math' as math;
-import 'package:http/http.dart' as http;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -10,7 +13,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:flutter_chat_core/flutter_chat_core.dart' hide ChatColors;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -55,8 +57,6 @@ import '../widgets/chat/chat_theme_helpers.dart';
 import '../widgets/chat/device_send_quota_bar.dart';
 import '../widgets/chat/delete_file_message_dialog.dart';
 import '../widgets/layout/main_layout.dart';
-import '../widgets/pending_files_bar.dart';
-import '../widgets/pending_outbox_badge_button.dart';
 import '../network/connection_diagnostic.dart';
 import '../network/connection_resolution.dart';
 import '../network/probe_priority.dart';
@@ -99,11 +99,9 @@ import '../services/transfer_state_manager.dart';
 import '../services/transfer_keep_alive.dart';
 import '../services/file_export_service.dart';
 import '../ui/app_ui.dart';
-import '../ui/platform_performance.dart';
 import '../webrtc/webrtc_manager.dart';
 import '../webrtc/signaling_channel.dart';
 import 'qr_scanner_screen.dart';
-import '../services/native_tab_bar_service.dart';
 
 /// Number of messages per page for pagination. Adjust for debugging.
 const int kChatPageSize = 20;
@@ -120,40 +118,10 @@ String? senderLocalIdFromRecvMessageId(String messageId) {
   return null;
 }
 
-enum _SessionSettingsAction { rename, clearMessages, remove }
+enum _SessionSettingsAction { search, files, rename, clearMessages, remove }
 
 /// Same breakpoint as [MainLayout] — mobile vs tablet/desktop split.
 const double kChatNarrowLayoutBreakpoint = 768;
-
-/// Insets for the floating mobile [GlassBottomBar] (content draws full-bleed underneath).
-const double _kMobileFloatingBarEdge = 14;
-const double _kMobileFloatingBarBottomGap = 12;
-
-/// Compact pill width; total outer width = [GlassBottomBar] horizontal padding ×2 + this × tab count.
-const double _kMobileGlassBarTabWidth = 76;
-const int _kMobileGlassBarTabCount = 3;
-const double _kMobileGlassBarHPadding = 14;
-
-/// Matches [GlassBottomBar.spacing] / [GlassBottomBarExtraButton.size].
-const double _kMobileGlassBarExtraSpacing = 8;
-const double _kMobileGlassBarExtraSize = 64;
-const double _kMobileGlassBarOuterWidth =
-    _kMobileGlassBarHPadding * 2 +
-    _kMobileGlassBarTabWidth * _kMobileGlassBarTabCount +
-    _kMobileGlassBarExtraSpacing +
-    _kMobileGlassBarExtraSize;
-
-class _PlatformGlassBackdrop extends StatelessWidget {
-  final Widget child;
-
-  const _PlatformGlassBackdrop({required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    if (AppPlatformPerformance.preferPlainNarrowNavigation) return child;
-    return GlassBackdropScope(child: child);
-  }
-}
 
 class _FileMeta {
   final String fileName;
@@ -439,8 +407,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   /// Low-frequency safety net. Normal device updates flow through Centrifugo
   /// roster patches and LAN discovery events.
   Timer? _presenceRefreshTimer;
-  static const Duration _rosterFallbackRefreshInterval = Duration(minutes: 10);
+  static const Duration _rosterFallbackRefreshInterval = Duration(seconds: 15);
+  bool _presenceTickBusy = false;
+  bool _heartbeatBusy = false;
+  int _presenceTick = 0;
+  StreamSubscription<String>? _deviceNameSub;
   bool _presencePausedByLifecycle = false;
+  bool _disposing = false;
+  bool _hasPublishedPresence = false;
 
   /// Tracks foreground/background so auto-copy can defer clipboard writes on
   /// mobile (Android 10+/iOS block clipboard access from background).
@@ -490,14 +464,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   /// Current user id for local message cache; set on first _loadHistory.
   String? _userId;
   Future<String?> _getCurrentUserId() async {
-    // 未登录 / 离线模式必须以离线用户写入 SQLite，不能沿用缓存里可能残留的登录 userId。
-    if (_isOffline) {
-      final oid = await getOrCreateOfflineUserId();
-      _userId = oid;
-      return oid;
-    }
-    if (_userId != null) return _userId;
-    _userId = await getStoredUserId();
+    _userId = await getOrCreateOfflineUserId();
     return _userId;
   }
 
@@ -507,7 +474,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   Future<List<String>> _getQueryUserIds() async {
     final offlineId = await getOrCreateOfflineUserId();
     if (_isOffline) return [offlineId];
-    final userId = await _getCurrentUserId();
+    final userId = await getStoredUserId();
     if (userId == null || userId.isEmpty) return [offlineId];
     if (userId == offlineId) return [offlineId];
     return [userId, offlineId];
@@ -658,44 +625,39 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   ProviderSubscription? _authSub;
   ProviderSubscription? _selectedDeviceSub;
   StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
-  String get _presenceSessionId =>
-      ref.read(realtimeHubProvider).presenceSessionId;
+  String _lastPresenceSessionId = '';
+  String get _presenceSessionId {
+    if (!_disposing) {
+      _lastPresenceSessionId = ref.read(realtimeHubProvider).presenceSessionId;
+    }
+    return _lastPresenceSessionId;
+  }
+
   String? _lastNetworkSignature;
   bool _lanRepairInProgress = false;
-  bool _isIOS26OrLater = false;
+  int _lanStartRequest = 0;
 
   @override
   void initState() {
     super.initState();
-    if (Platform.isIOS) {
-      final version = Platform.operatingSystemVersion;
-      final match = RegExp(r'Version (\d+)').firstMatch(version);
-      if (match != null) {
-        final major = int.tryParse(match.group(1)!);
-        _isIOS26OrLater = major != null && major >= 26;
+    _deviceNameSub = deviceNameChanges.stream.listen((name) {
+      if (!mounted) return;
+      setState(() => _deviceName = name);
+      _lanReceiver?.updateDeviceName(name);
+      unawaited(
+        _lanDiscovery?.rename(name, _lanReceiver?.lanHttpUrl) ?? Future.value(),
+      );
+      if (_connected) {
+        unawaited(
+          syncDeviceName().catchError((Object error) {
+            logChat.warning('device name sync deferred: $error');
+          }),
+        );
       }
-    }
-    if (_isIOS26OrLater) {
-      NativeTabBarService.instance.init();
-      NativeTabBarService.instance.onSelectTab = (index) {
-        if (mounted) {
-          setState(() {
-            _mobileMainTabIndex = index;
-            if (index == 1) {
-              _embeddedFileTabActivation++;
-            }
-          });
-          _syncNativeTabBarState();
-        }
-      };
-      NativeTabBarService.instance.onOpenPendingFiles = () {
-        if (mounted) {
-          showPendingOutboxSheet(context);
-        }
-      };
-    }
+    });
     _loadDevicePanelState();
     _chatController = InMemoryChatController();
+    TransferActivity.read = _readTransferActivity;
     _webrtcManager = WebRTCManager();
     _webrtcManager.onProgress = _onWebRTCProgress;
     _webrtcManager.onFileReceived = _onWebRTCFileReceived;
@@ -760,7 +722,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       nearbyDevicesProvider,
       (_, next) {
         for (final d in next) {
-          unawaited(pairDevice(d.deviceId));
+          unawaited(pairDeviceBestEffort(d.deviceId));
         }
         _scheduleDiffProbeNewPeers();
         _checkSelectedPeerReachabilitySignal();
@@ -888,6 +850,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     for (final id in ids.difference(newOnes)) {
       final prev = _lastPresenceByPeer[id];
       final next = presenceById[id];
+      if (prev != 'offline' && next == 'offline') {
+        final existing = ref.read(deviceReachabilityProvider)[id];
+        reach.setDetail(
+          id,
+          DeviceReachDetail(directHttp: existing?.directHttp ?? false),
+        );
+        _enqueueDirtyProbe(id);
+      }
       if (prev == 'offline' && next != 'offline' && next != null) {
         if (selectedId == id) {
           unawaited(_probeSingleDevice(id, force: true));
@@ -1053,31 +1023,38 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   }
 
   Future<void> _markPresenceOnline(String reason) async {
-    if (!mounted || _deviceId.isEmpty || _effectiveOffline) return;
+    if (!mounted || _disposing || _deviceId.isEmpty || !_connected) return;
+    if (_heartbeatBusy) return;
+    _heartbeatBusy = true;
     try {
-      final dto = await updateDevicePresence(
-        _deviceId,
+      final dto = await publishDevicePresence(
         sessionId: _presenceSessionId,
         status: 'online',
         platform: RuntimePlatform.osName,
+        lanHttpUrl: _lanReceiver?.lanHttpUrl,
       );
+      _hasPublishedPresence = true;
+      if (!mounted || _disposing) return;
       ref.read(cloudDeviceRosterProvider.notifier).applyUpsert(dto);
       logChat.fine('presence online reason=$reason');
     } catch (e) {
       logChat.warning('presence online failed reason=$reason: $e');
+    } finally {
+      _heartbeatBusy = false;
     }
   }
 
   Future<void> _markPresenceOffline(String reason) async {
-    if (_deviceId.isEmpty || _isOffline) return;
+    if (_deviceId.isEmpty || !_hasPublishedPresence) return;
     try {
-      final dto = await updateDevicePresence(
-        _deviceId,
+      final dto = await publishDevicePresence(
         sessionId: _presenceSessionId,
         status: 'offline',
         platform: RuntimePlatform.osName,
+        lanHttpUrl: _lanReceiver?.lanHttpUrl,
       );
-      if (mounted) {
+      _hasPublishedPresence = false;
+      if (mounted && !_disposing) {
         ref.read(cloudDeviceRosterProvider.notifier).applyUpsert(dto);
       }
       logChat.fine('presence offline reason=$reason');
@@ -1095,10 +1072,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     _cancelPresenceRefreshTimer();
     if (!mounted) return;
     if (_presencePausedByLifecycle) return;
-    _presenceRefreshTimer = Timer.periodic(
-      _rosterFallbackRefreshInterval,
-      (_) => unawaited(_onPresenceRefreshTick()),
-    );
+    _presenceRefreshTimer = Timer.periodic(_rosterFallbackRefreshInterval, (_) {
+      unawaited(_markPresenceOnline('heartbeat'));
+      unawaited(_onPresenceRefreshTick());
+    });
   }
 
   /// Low-frequency fallback for missed realtime roster/discovery events.
@@ -1106,21 +1083,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     if (!mounted) return;
     if (_presencePausedByLifecycle) return;
 
-    final probing = ref.read(devicesProbingProvider);
-    final loggedIn = ref.read(authProvider).isLoggedIn;
-    final cloudActive = ref.read(isCloudSessionActiveProvider);
-    final shouldRefreshCloud = loggedIn && cloudActive;
-
-    if (shouldRefreshCloud) {
-      await _refreshCloudDeviceRosterSnapshot();
+    if (_presenceTickBusy) return;
+    _presenceTickBusy = true;
+    try {
+      if (!mounted) return;
+      _presenceTick++;
+      if (_connected && _presenceTick.isEven)
+        await _refreshCloudDeviceRosterSnapshot();
+      if (!mounted || ref.read(devicesProbingProvider)) return;
+      await _probeAllDevices();
+    } finally {
+      _presenceTickBusy = false;
     }
-
-    if (probing) {
-      logChat.fine('roster.fallback skip probe (already probing)');
-      return;
-    }
-
-    await _probeAllDevices();
   }
 
   @override
@@ -1153,7 +1127,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         // realtime connection, so the device stays online in the background;
         // do not proactively mark it offline. iOS is background-restricted and
         // keeps the original behavior.
-        if (Platform.isAndroid) break;
+        if (Platform.isAndroid ||
+            Platform.isMacOS ||
+            Platform.isWindows ||
+            Platform.isLinux)
+          break;
         _presencePausedByLifecycle = true;
         _cancelPresenceRefreshTimer();
         unawaited(_markPresenceOffline('app_${state.name}'));
@@ -1163,9 +1141,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
 
   Future<void> _refreshRosterAndProbeSelected(String reason) async {
     if (!mounted) return;
-    final loggedIn = ref.read(authProvider).isLoggedIn;
-    final cloudActive = ref.read(isCloudSessionActiveProvider);
-    if (loggedIn && cloudActive) {
+    if (_connected) {
       logChat.fine('roster snapshot refresh reason=$reason');
       await _refreshCloudDeviceRosterSnapshot();
     }
@@ -1297,6 +1273,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
           try {
             directHttp = await probeHttp(
               device.lanHttpUrl!,
+              expectedDeviceId: device.deviceId,
               timeout: const Duration(seconds: 3),
             );
           } catch (_) {}
@@ -1362,7 +1339,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   void _applyProbeLanHttpUrl(String deviceId, String? lanHttpUrl) {
     final url = lanHttpUrl?.trim();
     if (url == null || url.isEmpty) return;
-    unawaited(pairDevice(deviceId));
+    unawaited(pairDeviceBestEffort(deviceId));
     final device = _findKnownDeviceById(deviceId);
     _lanDiscovery?.addManualDevice(
       DeviceDto(
@@ -1657,11 +1634,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
             try {
               directHttp = await probeHttp(
                 lanUrl,
+                expectedDeviceId: peerId,
                 timeout: _probeQuickDirectHttp,
               );
             } catch (_) {}
             if (directHttp) {
-              unawaited(pairDevice(peerId));
+              unawaited(pairDeviceBestEffort(peerId));
               reporter.finishSuccess(
                 stepId,
                 reason: l10n.connectionDiagReasonHttpDirectOk,
@@ -1805,7 +1783,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       await ref.read(authProvider.notifier).clearAuth();
       if (!mounted) return;
       AppToast.show(context, message: _l10n.chatScreenToastDeletedThisDevice);
-      Navigator.of(context).pushNamedAndRemoveUntil('/login', (_) => false);
+      Navigator.of(
+        context,
+        rootNavigator: true,
+      ).pushNamedAndRemoveUntil('/login', (_) => false);
     } catch (e) {
       logChat.warning('deleteThisDevice failed: $e');
       if (mounted) {
@@ -1828,7 +1809,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     );
     if (!ok || !mounted) return;
     try {
-      await deleteDevice(peerDeviceId);
+      await unpairDevice(peerDeviceId);
+      ref.read(pairedPeersProvider.notifier).remove(peerDeviceId);
       if (!mounted) return;
       ref.read(cloudDeviceRosterProvider.notifier).applyRemove(peerDeviceId);
       ref.read(selectedDeviceIdProvider.notifier).select(null);
@@ -1892,6 +1874,25 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                 ),
                 ListTile(
                   leading: Icon(
+                    LucideIcons.search,
+                    size: 22,
+                    color: colors.textSecondary,
+                  ),
+                  title: Text(sheetL10n.conversationSearch),
+                  onTap: () =>
+                      Navigator.pop(ctx, _SessionSettingsAction.search),
+                ),
+                ListTile(
+                  leading: Icon(
+                    LucideIcons.folder,
+                    size: 22,
+                    color: colors.textSecondary,
+                  ),
+                  title: Text(sheetL10n.conversationFiles),
+                  onTap: () => Navigator.pop(ctx, _SessionSettingsAction.files),
+                ),
+                ListTile(
+                  leading: Icon(
                     LucideIcons.pencil,
                     size: 22,
                     color: colors.textSecondary,
@@ -1950,6 +1951,23 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
 
     if (!mounted || action == null) return;
     switch (action) {
+      case _SessionSettingsAction.search:
+        await Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const MessageSearchScreen()),
+        );
+      case _SessionSettingsAction.files:
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => FileManagerScreen(
+              onAddToPending: (files) async {
+                if (!mounted) return false;
+                return _addPendingPlatformFiles(files);
+              },
+            ),
+          ),
+        );
       case _SessionSettingsAction.rename:
         await _renameSessionDevice(selectedId, currentId);
       case _SessionSettingsAction.clearMessages:
@@ -1967,80 +1985,25 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     String deviceId,
     String currentDeviceId,
   ) async {
-    final device = _findKnownDeviceById(deviceId);
-    final theme = Theme.of(context);
-    final colors = context.appColors;
-    final nameController = TextEditingController(text: device?.name ?? '');
+    final self = deviceId == currentDeviceId;
     final result = await showDialog<String>(
       context: context,
-      builder: (ctx) {
-        final loc = AppLocalizations.of(ctx);
-        return AlertDialog(
-          backgroundColor: colors.surface,
-          shape: RoundedRectangleBorder(borderRadius: AppRadius.large),
-          titlePadding: AppDialog.titlePadding,
-          contentPadding: AppDialog.confirmContentPadding,
-          actionsPadding: AppDialog.actionsPadding,
-          title: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  loc.devicesRenameTitle,
-                  style: theme.textTheme.titleMedium,
-                ),
-              ),
-              IconButton(
-                icon: const Icon(LucideIcons.x),
-                onPressed: () => Navigator.pop(ctx),
-                style: IconButton.styleFrom(
-                  foregroundColor: colors.textTertiary,
-                  visualDensity: VisualDensity.compact,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-              ),
-            ],
-          ),
-          content: TextField(
-            controller: nameController,
-            autofocus: true,
-            decoration: InputDecoration(hintText: loc.devicesNameHint),
-            onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
-          ),
-          actions: [
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    style: OutlinedButton.styleFrom(
-                      minimumSize: const Size.fromHeight(44),
-                    ),
-                    child: Text(loc.cancel),
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.xs),
-                Expanded(
-                  child: FilledButton(
-                    onPressed: () =>
-                        Navigator.pop(ctx, nameController.text.trim()),
-                    style: FilledButton.styleFrom(
-                      minimumSize: const Size.fromHeight(44),
-                    ),
-                    child: Text(loc.commonSave),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        );
-      },
+      builder: (_) => DeviceNameDialog(
+        initialName: self
+            ? _deviceName
+            : ref.read(deviceAliasesProvider)[deviceId] ?? '',
+        localNickname: !self,
+      ),
     );
-    if (result == null || result.isEmpty || !mounted) return;
+    if (result == null || (self && result.isEmpty) || !mounted) return;
     try {
-      await updateDevice(deviceId, name: result);
-      if (deviceId == currentDeviceId) await setDeviceName(result);
+      if (self) {
+        await setDeviceName(result);
+        ref.invalidate(deviceInfoProvider);
+      } else {
+        await ref.read(deviceAliasesProvider.notifier).rename(deviceId, result);
+      }
       if (!mounted) return;
-      await ref.read(cloudDeviceRosterProvider.notifier).refreshSnapshot();
       AppToast.show(
         context,
         message: AppLocalizations.of(context).devicesSavedToast,
@@ -2142,7 +2105,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         userIds: queryUserIds,
         threadKey: threadKey,
       );
-      if (!_isOffline) {
+      if (!_isOffline && !threadKey.startsWith('device|')) {
         await deleteThreadMessages(threadKey);
       }
       await _clearChatTimeline();
@@ -2215,6 +2178,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       try {
         directHttp = await probeHttp(
           device.lanHttpUrl!,
+          expectedDeviceId: device.deviceId,
           timeout: _probeQuickDirectHttp,
         );
       } catch (_) {}
@@ -2223,7 +2187,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     if (!isCurrent()) return;
 
     if (directHttp) {
-      unawaited(pairDevice(device.deviceId));
+      unawaited(pairDeviceBestEffort(device.deviceId));
       if (!mounted || !isCurrent()) return;
       ref
           .read(deviceReachabilityProvider.notifier)
@@ -2328,7 +2292,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       reach.setAllChecking(toProbe.map((d) => d.deviceId).toList());
     } else {
       if (toProbe.isNotEmpty) {
-        reach.setAllChecking(toProbe.map((d) => d.deviceId).toList());
+        final known = ref.read(deviceReachabilityProvider);
+        reach.setAllChecking(
+          toProbe
+              .where((d) => !known.containsKey(d.deviceId))
+              .map((d) => d.deviceId)
+              .toList(),
+        );
       }
       for (final d in partition.lazy) {
         reach.setDetail(d.deviceId, DeviceReachDetail.offlineDetail);
@@ -2432,9 +2402,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       final lanUrl = _lanReceiver?.lanHttpUrl;
       if (!_effectiveOffline && lanUrl != null && lanUrl.isNotEmpty) {
         try {
-          await updateDevice(_deviceId, lanHttpUrl: lanUrl);
+          await _markPresenceOnline('lan_repaired');
         } catch (e) {
-          logChat.warning('_repairLanReceiver updateDevice failed: $e');
+          logChat.warning('_repairLanReceiver presence failed: $e');
         }
       }
       if (mounted) setState(() {});
@@ -2446,14 +2416,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   Future<String?> _ensureHealthyLanHttpUrl() async {
     String? lanUrl = _lanReceiver?.lanHttpUrl;
     if (lanUrl != null && lanUrl.isNotEmpty) {
-      final ok = await probeHttp(lanUrl, timeout: const Duration(seconds: 2));
+      final ok = await probeHttp(
+        lanUrl,
+        expectedDeviceId: _deviceId,
+        timeout: const Duration(seconds: 2),
+      );
       if (ok) return lanUrl;
     }
 
     await _repairLanReceiver('lan_http_probe');
     lanUrl = _lanReceiver?.lanHttpUrl;
     if (lanUrl != null && lanUrl.isNotEmpty) {
-      final ok = await probeHttp(lanUrl, timeout: const Duration(seconds: 2));
+      final ok = await probeHttp(
+        lanUrl,
+        expectedDeviceId: _deviceId,
+        timeout: const Duration(seconds: 2),
+      );
       if (ok) return lanUrl;
     }
     return null;
@@ -2635,6 +2613,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   }
 
   Future<String> _accountPartForThreadKey() async {
+    if (ref.read(selectedDeviceIdProvider) != s3VirtualDeviceId)
+      return 'device';
     if (_isOffline) {
       return accountPartOffline(await getOrCreateOfflineUserId());
     }
@@ -2857,7 +2837,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       }
 
       List<MessageEnvelope> serverList = [];
-      if (!_effectiveOffline) {
+      if (!_effectiveOffline && !threadKey.startsWith('device|')) {
         try {
           serverList = await getMessageHistory(
             limit: kChatPageSize,
@@ -2877,7 +2857,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       }
       for (final envelope in serverList) {
         if (_shouldSkipInTimeline(envelope.type)) continue;
-        final id = '${envelope.ts}_${envelope.fromDeviceId}';
+        final id = chatEnvelopeId(envelope);
         if (envelope.id != null) {
           _serverIdByMessageId[id] = envelope.id!;
         }
@@ -3038,7 +3018,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         limit: kChatPageSize,
         beforeTs: oldestTs,
       );
-      final serverFuture = !_effectiveOffline && _oldestServerMessageId != null
+      final serverFuture =
+          !_effectiveOffline &&
+              !threadKey.startsWith('device|') &&
+              _oldestServerMessageId != null
           ? getMessageHistory(
               limit: kChatPageSize,
               before: _oldestServerMessageId,
@@ -3088,7 +3071,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
 
       for (final envelope in serverList) {
         if (_shouldSkipInTimeline(envelope.type)) continue;
-        final id = '${envelope.ts}_${envelope.fromDeviceId}';
+        final id = chatEnvelopeId(envelope);
         if (envelope.id != null) {
           _serverIdByMessageId[id] = envelope.id!;
         }
@@ -3341,7 +3324,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   Future<void> _startLanReceiver({int? initGeneration}) async {
     if (_deviceId.isEmpty) return;
     final generation = initGeneration;
-    bool stillCurrent() => generation == null || _initStillCurrent(generation);
+    final request = ++_lanStartRequest;
+    bool stillCurrent() =>
+        mounted &&
+        request == _lanStartRequest &&
+        (generation == null || _initStillCurrent(generation));
+    final previous = _lanReceiver;
+    _lanReceiver = null;
+    await previous?.stop();
+    if (!stillCurrent()) return;
     try {
       final receiver = LanReceiver(
         deviceId: _deviceId,
@@ -3546,12 +3537,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
           if (!mounted || !stillCurrent()) return;
           if (!_effectiveOffline) {
             try {
-              await updateDevice(
-                _deviceId,
+              await publishDevicePresence(
+                sessionId: _presenceSessionId,
+                status: 'online',
+                platform: RuntimePlatform.osName,
                 lanHttpUrl: url,
-              ).timeout(const Duration(seconds: 8));
+              );
             } catch (e) {
-              logChat.warning('_startLanReceiver updateDevice failed: $e');
+              logChat.warning('_startLanReceiver presence failed: $e');
             }
           }
         },
@@ -3646,7 +3639,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       List<DeviceDto> cloudDevices = [];
       if (!_effectiveOffline) {
         try {
-          cloudDevices = await listDevices();
+          cloudDevices = await listPairedDevices();
         } catch (_) {}
       }
       final devices = _mergeLanAndCloudDevices(
@@ -3817,50 +3810,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     }
   }
 
-  void _handleDeviceRosterPatch(Map<String, dynamic> map) {
-    final action = map['action']?.toString();
-    final deviceId = map['deviceId']?.toString();
-    final roster = ref.read(cloudDeviceRosterProvider.notifier);
-    if (action == 'remove') {
-      if (deviceId == null || deviceId.isEmpty) return;
-      roster.applyRemove(deviceId);
-      ref
-          .read(deviceReachabilityProvider.notifier)
-          .setDetail(deviceId, DeviceReachDetail.offlineDetail);
-      return;
-    }
-
-    if (action != 'upsert') return;
-    final rawDevice = map['device'];
-    if (rawDevice is! Map) return;
-    final device = DeviceDto.fromJson(Map<String, dynamic>.from(rawDevice));
-    roster.applyUpsert(device);
-    if (device.deviceId != _deviceId) {
-      if (device.presenceStatus == 'offline') {
-        ref
-            .read(deviceReachabilityProvider.notifier)
-            .setDetail(device.deviceId, DeviceReachDetail.offlineDetail);
-        return;
-      }
-      ref
-          .read(deviceReachabilityProvider.notifier)
-          .setDetail(device.deviceId, DeviceReachDetail.offlineDetail);
-      _enqueueDirtyProbe(device.deviceId);
-      final selectedId = ref.read(selectedDeviceIdProvider);
-      if (selectedId == device.deviceId) {
-        _seedSelectedPeerReachabilitySnapshot(device.deviceId);
-        unawaited(_probeSingleDevice(device.deviceId, force: true));
-      }
-    }
-  }
-
   void _handleDevicePairHello(MessageEnvelope msg) {
     final payload = msg.payload is Map
         ? Map<String, dynamic>.from(msg.payload as Map)
         : <String, dynamic>{};
     final peerId = (payload['deviceId']?.toString() ?? msg.fromDeviceId).trim();
     if (peerId.isEmpty || peerId == _deviceId) return;
-    unawaited(pairDevice(peerId));
+    unawaited(pairDeviceBestEffort(peerId));
     ref
         .read(pairedPeersProvider.notifier)
         .upsert(
@@ -3906,8 +3862,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   Future<void> _handleRealtimePublication(Map<String, dynamic> map) async {
     try {
       final msg = MessageEnvelope.fromJson(map);
+      if (msg.type == 'peer_device_patch' && mounted) {
+        final raw = map['device'];
+        if (raw is Map)
+          ref
+              .read(cloudDeviceRosterProvider.notifier)
+              .applyUpsert(DeviceDto.fromJson(Map<String, dynamic>.from(raw)));
+        return;
+      }
       if (msg.type == 'device_roster_patch') {
-        _handleDeviceRosterPatch(map);
+        // Billing roster changes never create transfer peers.
         return;
       }
       if (msg.type == 'device_pair_hello') {
@@ -4091,7 +4055,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       if (incomingLocalId != null &&
           (_localMessageStatus.containsKey(incomingLocalId) ||
               hasLocalTextBubble)) {
-        final serverId = '${msg.ts}_${msg.fromDeviceId}';
+        final serverId = chatEnvelopeId(msg);
         if (msg.type == 'text' && incomingLocalMessageId != null) {
           final serverMessage = envelopeToMessage(msg, overrideId: serverId);
           _upgradeLocalBubbleToServerMessage(
@@ -4214,8 +4178,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       }
       final userId = await _getCurrentUserId();
       if (userId != null) {
-        final daoId =
-            receiveBubbleOverrideId ?? upgradeFromMsgId ?? message.id;
+        final daoId = receiveBubbleOverrideId ?? upgradeFromMsgId ?? message.id;
         await ChatMessageDao.instance.insertMessage(
           userId: userId,
           id: daoId,
@@ -4242,8 +4205,26 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     }
   }
 
-  void _onLanMessageReceived(String text, String fromDeviceId, String? _) {
+  void _onLanMessageReceived(
+    String text,
+    String fromDeviceId,
+    String? _, {
+    String? localId,
+    int? ts,
+  }) {
     if (!mounted) return;
+    if (localId != null && localId.isNotEmpty) {
+      unawaited(
+        _handleRealtimePublication({
+          'type': 'text',
+          'payload': {'text': text, 'localId': localId, 'textId': localId},
+          'fromDeviceId': fromDeviceId,
+          'toDeviceId': _deviceId,
+          'ts': ts ?? DateTime.now().millisecondsSinceEpoch,
+        }),
+      );
+      return;
+    }
     unawaited(_persistLanTextMessage(text, fromDeviceId));
   }
 
@@ -4402,7 +4383,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     if (trimmed.isEmpty) return;
     final localId = const Uuid().v4();
     final ts = DateTime.now().millisecondsSinceEpoch;
-    final convDeviceId = ref.read(selectedDeviceIdProvider);
     final outbound = await _outboundThreadKeyForSelection();
     final threadKeyForRow = outbound.threadKey;
     final toDeviceIdArg = outbound.toDeviceId;
@@ -4432,164 +4412,76 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       );
     }
     if (mounted) setState(() => _localMessageStatus[localId] = 'sending');
-    logChat.info(
-      'chat_screen sendText fromDeviceId=$_deviceId offline=$_isOffline',
+    await _deliverText(
+      trimmed,
+      localId,
+      ts: ts,
+      toDeviceId: toDeviceIdArg,
+      threadKey: threadKeyForRow,
     );
-    var selectedTargets = ref.read(effectiveSelectedTargetsProvider);
-    // In 1:1 conversation mode, always restrict to the conversation device only,
-    // ignoring any stale multi-select state from effectiveSelectedTargets.
-    if (convDeviceId != null &&
-        convDeviceId != s3VirtualDeviceId &&
-        convDeviceId != _deviceId) {
-      selectedTargets = {convDeviceId};
-    }
-    final peerIsRegistered =
-        convDeviceId != null &&
-        ref.read(myDevicesProvider).any((d) => d.deviceId == convDeviceId);
-    final isExternalPeer =
-        convDeviceId != null &&
-        convDeviceId != s3VirtualDeviceId &&
-        convDeviceId != _deviceId &&
-        !peerIsRegistered;
-    final isGuest = !ref.read(authProvider).isLoggedIn;
-    final useLan = !isGuest && isExternalPeer;
-    if (useLan) {
-      if (selectedTargets.isEmpty) {
-        _activeComposer?.expandDevicePanel();
-        if (mounted) {
-          AppToast.show(context, message: _l10n.chatScreenSelectTargetFirst);
-          setState(() => _setMessageStatus(localId, 'failed'));
-        }
-        Analytics.track(AnalyticsEvents.chatTextSend, {
-          'result': 'failed',
-          'offline': _effectiveOffline,
-          'channel': 'lan',
-          'length_bucket': Analytics.lengthBucket(trimmed.length),
-          'reason': 'no_targets',
-        });
-        return;
-      }
-      await _sendTextViaLan(
-        trimmed,
-        localId,
-        selectedTargets,
-        offline: _effectiveOffline,
-      );
-    } else {
-      if (toDeviceIdArg == null || toDeviceIdArg.isEmpty) {
-        _activeComposer?.expandDevicePanel();
-        if (mounted) {
-          AppToast.show(context, message: _l10n.chatScreenSelectTargetFirst);
-          setState(() => _setMessageStatus(localId, 'failed'));
-        }
-        Analytics.track(AnalyticsEvents.chatTextSend, {
-          'result': 'failed',
-          'offline': isGuest,
-          'channel': 'api',
-          'length_bucket': Analytics.lengthBucket(trimmed.length),
-          'reason': 'no_targets',
-        });
-        return;
-      }
-      try {
-        if (isGuest) {
-          await ensureDeviceAccessToken();
-        }
-        await sendMessage({
-          'type': 'text',
-          'payload': {'text': trimmed, 'localId': localId},
-          'fromDeviceId': _deviceId,
-          'toDeviceId': toDeviceIdArg,
-          'threadKey': threadKeyForRow,
-          'ts': ts,
-        });
-        logChat.fine('chat_screen sendText ok');
-        if (userId != null) {
-          await ChatMessageDao.instance.markSynced('local_$localId');
-        }
-        if (mounted) setState(() => _setMessageStatus(localId, 'sent'));
-        Analytics.track(AnalyticsEvents.chatTextSend, {
-          'result': 'sent',
-          'offline': isGuest,
-          'channel': 'api',
-          'length_bucket': Analytics.lengthBucket(trimmed.length),
-        });
-      } catch (e) {
-        logChat.warning('chat_screen sendText failed: $e');
-        if (mounted) setState(() => _setMessageStatus(localId, 'failed'));
-        Analytics.track(AnalyticsEvents.chatTextSend, {
-          'result': 'failed',
-          'offline': isGuest,
-          'channel': 'api',
-          'length_bucket': Analytics.lengthBucket(trimmed.length),
-        });
-      }
-    }
   }
 
-  Future<void> _sendTextViaLan(
+  Future<void> _deliverText(
     String text,
-    String localId,
-    Set<String> targetIds, {
+    String localId, {
+    required int ts,
+    required String? toDeviceId,
+    required String threadKey,
     bool forRetry = false,
-    bool offline = true,
   }) async {
-    final allDevices = _lanDiscovery?.currentDiscovered ?? [];
-    final devices = allDevices
-        .where((d) => targetIds.contains(d.deviceId))
-        .toList();
-    if (devices.isEmpty) {
-      if (mounted) setState(() => _setMessageStatus(localId, 'failed'));
-      Analytics.track(
-        forRetry ? AnalyticsEvents.chatTextRetry : AnalyticsEvents.chatTextSend,
-        {
-          'result': 'failed',
-          'offline': offline,
-          'channel': 'lan',
-          'length_bucket': Analytics.lengthBucket(text.length),
-          'reason': 'no_lan_devices',
+    var channel = 'auto';
+    var status = 'failed';
+    try {
+      if (toDeviceId == null || toDeviceId.isEmpty) {
+        _activeComposer?.expandDevicePanel();
+        if (mounted) {
+          AppToast.show(context, message: _l10n.chatScreenSelectTargetFirst);
+        }
+        return;
+      }
+      // Use nearby and remembered addresses even without an account or server.
+      // Discovery comes first because a saved address may have changed.
+      final candidates = [
+        ...?_lanDiscovery?.currentDiscovered,
+        ...?ref.read(lanDevicesProvider).valueOrNull,
+        ...ref.read(pairedPeersProvider),
+        ...?ref.read(cloudDevicesProvider).valueOrNull,
+      ];
+      final result = await TextDelivery.send(
+        envelope: {
+          'type': 'text',
+          'payload': {'text': text, 'localId': localId, 'textId': localId},
+          'fromDeviceId': _deviceId,
+          'toDeviceId': toDeviceId,
+          'threadKey': threadKey,
+          'ts': ts,
+        },
+        fromDeviceName: _deviceName,
+        lanUrls: candidates
+            .where((d) => d.deviceId == toDeviceId)
+            .map((d) => d.lanHttpUrl ?? ''),
+        sendToServer: (envelope) async {
+          await ensureDeviceAccessToken();
+          await sendMessage(envelope);
         },
       );
-      return;
-    }
-    int sentCount = 0;
-    for (final d in devices) {
-      if (d.lanHttpUrl == null || d.lanHttpUrl!.isEmpty) continue;
-      try {
-        final uri = Uri.parse('${d.lanHttpUrl!}/message');
-        final response = await http
-            .post(
-              uri,
-              headers: {'Content-Type': 'application/json'},
-              body: jsonEncode({
-                'text': text,
-                'fromDeviceId': _deviceId,
-                'fromDeviceName': _deviceName,
-                'toDeviceId': d.deviceId,
-              }),
-            )
-            .timeout(const Duration(seconds: 5));
-        if (response.statusCode >= 200 && response.statusCode < 300) {
-          sentCount++;
-        } else {
-          logChat.warning(
-            '_sendTextViaLan HTTP ${response.statusCode} to ${d.deviceId}',
-          );
-        }
-      } catch (e) {
-        logChat.warning('_sendTextViaLan to ${d.deviceId} failed: $e');
+      channel = result.name;
+      status = 'sent';
+      if (result == TextDeliveryChannel.server) {
+        await ChatMessageDao.instance.markSynced('local_$localId');
       }
-    }
-    if (mounted) {
-      setState(
-        () => _setMessageStatus(localId, sentCount > 0 ? 'sent' : 'failed'),
-      );
+      logChat.info('text delivery success channel=$channel retry=$forRetry');
+    } catch (e) {
+      logChat.warning('text delivery failed retry=$forRetry: $e');
+    } finally {
+      await ChatMessageDao.instance.updateStatus('local_$localId', status);
+      if (mounted) setState(() => _localMessageStatus[localId] = status);
       Analytics.track(
         forRetry ? AnalyticsEvents.chatTextRetry : AnalyticsEvents.chatTextSend,
         {
-          'result': sentCount > 0 ? 'sent' : 'failed',
-          'offline': offline,
-          'channel': 'lan',
+          'result': status,
+          'offline': _effectiveOffline,
+          'channel': channel,
           'length_bucket': Analytics.lengthBucket(text.length),
         },
       );
@@ -4597,103 +4489,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   }
 
   Future<void> _retryTextSend(String localId) async {
+    if (_localMessageStatus[localId] == 'sending') return;
     final msgId = 'local_$localId';
     final existing = _findMessageById(msgId);
-    if (existing == null) return;
-    final textContent = (existing is TextMessage) ? existing.text : null;
-    if (textContent == null || textContent.isEmpty) return;
+    if (existing is! TextMessage || existing.text.isEmpty) return;
     if (mounted) setState(() => _setMessageStatus(localId, 'sending'));
-    var selectedTargets = ref.read(effectiveSelectedTargetsProvider);
-    final convDeviceId = ref.read(selectedDeviceIdProvider);
-    if (convDeviceId != null &&
-        convDeviceId != s3VirtualDeviceId &&
-        convDeviceId != _deviceId) {
-      selectedTargets = {convDeviceId};
-    }
-    final peerIsRegistered =
-        convDeviceId != null &&
-        ref.read(myDevicesProvider).any((d) => d.deviceId == convDeviceId);
-    final isExternalPeer =
-        convDeviceId != null &&
-        convDeviceId != s3VirtualDeviceId &&
-        convDeviceId != _deviceId &&
-        !peerIsRegistered;
-    final isGuest = !ref.read(authProvider).isLoggedIn;
-    final useLan = !isGuest && isExternalPeer;
-    if (useLan) {
-      if (selectedTargets.isEmpty) {
-        _activeComposer?.expandDevicePanel();
-        if (mounted) {
-          AppToast.show(context, message: _l10n.chatScreenSelectTargetFirst);
-          setState(() => _setMessageStatus(localId, 'failed'));
-        }
-        Analytics.track(AnalyticsEvents.chatTextRetry, {
-          'result': 'failed',
-          'offline': _effectiveOffline,
-          'channel': 'lan',
-          'reason': 'no_targets',
-        });
-        return;
-      }
-      await _sendTextViaLan(
-        textContent,
-        localId,
-        selectedTargets,
-        forRetry: true,
-        offline: _effectiveOffline,
-      );
-      return;
-    }
-    final ts = DateTime.now().millisecondsSinceEpoch;
     final outbound = await _outboundThreadKeyForSelection();
-    final toDeviceId = outbound.toDeviceId;
-    if (toDeviceId == null || toDeviceId.isEmpty) {
-      _activeComposer?.expandDevicePanel();
-      if (mounted) {
-        AppToast.show(context, message: _l10n.chatScreenSelectTargetFirst);
-        setState(() => _setMessageStatus(localId, 'failed'));
-      }
-      Analytics.track(AnalyticsEvents.chatTextRetry, {
-        'result': 'failed',
-        'offline': isGuest,
-        'channel': 'api',
-        'reason': 'no_targets',
-      });
-      return;
-    }
-    try {
-      if (isGuest) {
-        await ensureDeviceAccessToken();
-      }
-      await sendMessage({
-        'type': 'text',
-        'payload': {'text': textContent, 'localId': localId},
-        'fromDeviceId': _deviceId,
-        'threadKey': outbound.threadKey,
-        'toDeviceId': toDeviceId,
-        'ts': ts,
-      });
-      final userId = await _getCurrentUserId();
-      if (userId != null) {
-        await ChatMessageDao.instance.markSynced(msgId);
-      }
-      if (mounted) setState(() => _setMessageStatus(localId, 'sent'));
-      Analytics.track(AnalyticsEvents.chatTextRetry, {
-        'result': 'sent',
-        'offline': isGuest,
-        'channel': 'api',
-        'length_bucket': Analytics.lengthBucket(textContent.length),
-      });
-    } catch (e) {
-      logChat.warning('chat_screen retryTextSend failed: $e');
-      if (mounted) setState(() => _setMessageStatus(localId, 'failed'));
-      Analytics.track(AnalyticsEvents.chatTextRetry, {
-        'result': 'failed',
-        'offline': isGuest,
-        'channel': 'api',
-        'length_bucket': Analytics.lengthBucket(textContent.length),
-      });
-    }
+    await _deliverText(
+      existing.text,
+      localId,
+      ts:
+          existing.createdAt?.millisecondsSinceEpoch ??
+          DateTime.now().millisecondsSinceEpoch,
+      toDeviceId: outbound.toDeviceId,
+      threadKey: outbound.threadKey,
+      forRetry: true,
+    );
   }
 
   Future<void> _handleAttachmentChoice(AttachmentPickerChoice choice) async {
@@ -5394,7 +5205,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         icon: LucideIcons.cloud,
       );
       if (goConfig && mounted) {
-        Navigator.pushNamed(context, '/settings/s3');
+        openProductRoute(context, '/settings/s3');
       }
       return;
     }
@@ -5408,7 +5219,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         icon: LucideIcons.cloud,
       );
       if (goConfig && mounted) {
-        Navigator.pushNamed(context, '/settings/s3');
+        openProductRoute(context, '/settings/s3');
       }
       return;
     }
@@ -5467,9 +5278,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     );
 
     var selectedTargets = ref.read(effectiveSelectedTargetsProvider);
-    if (!isS3Virtual &&
-        convDeviceId != null &&
-        convDeviceId != _deviceId) {
+    if (!isS3Virtual && convDeviceId != null && convDeviceId != _deviceId) {
       selectedTargets = {convDeviceId};
     }
 
@@ -5535,7 +5344,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       );
       if (goConfig && mounted) {
         _activeComposer?.unfocus();
-        Navigator.pushNamed(context, '/settings/s3');
+        openProductRoute(context, '/settings/s3');
       }
       return false;
     }
@@ -5550,7 +5359,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       );
       if (goConfig && mounted) {
         _activeComposer?.unfocus();
-        Navigator.pushNamed(context, '/settings/s3');
+        openProductRoute(context, '/settings/s3');
       }
       return false;
     }
@@ -5562,7 +5371,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     List<DeviceDto> cloudDevices = [];
     if (!_effectiveOffline) {
       try {
-        cloudDevices = await listDevices();
+        cloudDevices = await listPairedDevices();
       } catch (_) {}
     }
     if (!mounted) return [];
@@ -5612,9 +5421,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     for (final id in selectedTargets) {
       if (targets.any((d) => d.deviceId == id)) continue;
       final known = _findKnownDeviceById(id);
-      targets.add(
-        known ?? DeviceDto(deviceId: id, name: id),
-      );
+      targets.add(known ?? DeviceDto(deviceId: id, name: id));
     }
 
     var sent = false;
@@ -5902,28 +5709,28 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       bool anyFallbackAttempted = false;
       if (!rateLimited && tryLanFallback) {
         for (final fileWithMeta in filesWithMeta) {
-        final fileId = fileWithMeta.meta.fileId;
-        final localId = fileLocalIds[fileId];
-        if (localId == null) continue;
-        final fileName = fileWithMeta.meta.fileName;
-        final fileSize = fileWithMeta.meta.fileSize;
-        final mtimeMs = fileWithMeta.meta.lastModifiedMs;
-        final pulled = await _tryWebRTCToLanReversePullFallback(
-          fileId: fileId,
-          localId: localId,
-          fileName: fileName,
-          fileSize: fileSize,
-          filePath: fileWithMeta.filePath,
-          lastModifiedMs: mtimeMs,
-          targetDeviceId: targetDeviceId,
-        );
-        anyFallbackAttempted = true;
-        if (pulled) {
-          anyFallbackSucceeded = true;
-          // Maps are cleared by _onWebRTCFileSent — remove from fileLocalIds
-          // so the failure loop below skips this entry.
-          fileLocalIds.remove(fileId);
-        }
+          final fileId = fileWithMeta.meta.fileId;
+          final localId = fileLocalIds[fileId];
+          if (localId == null) continue;
+          final fileName = fileWithMeta.meta.fileName;
+          final fileSize = fileWithMeta.meta.fileSize;
+          final mtimeMs = fileWithMeta.meta.lastModifiedMs;
+          final pulled = await _tryWebRTCToLanReversePullFallback(
+            fileId: fileId,
+            localId: localId,
+            fileName: fileName,
+            fileSize: fileSize,
+            filePath: fileWithMeta.filePath,
+            lastModifiedMs: mtimeMs,
+            targetDeviceId: targetDeviceId,
+          );
+          anyFallbackAttempted = true;
+          if (pulled) {
+            anyFallbackSucceeded = true;
+            // Maps are cleared by _onWebRTCFileSent — remove from fileLocalIds
+            // so the failure loop below skips this entry.
+            fileLocalIds.remove(fileId);
+          }
         }
       }
       // Only show the "WebRTC failed" toast if at least one file truly failed
@@ -5995,7 +5802,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     }
     if (_effectiveOffline) return null;
     try {
-      final cloudDevices = await listDevices();
+      final cloudDevices = await listPairedDevices();
       for (final d in cloudDevices) {
         if (d.deviceId == deviceId &&
             d.lanHttpUrl != null &&
@@ -6140,6 +5947,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         if (d.lanHttpUrl != null && d.lanHttpUrl!.isNotEmpty) {
           final alive = await probeHttp(
             d.lanHttpUrl!,
+            expectedDeviceId: d.deviceId,
             timeout: const Duration(seconds: 3),
           );
           if (alive) {
@@ -6221,7 +6029,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
             },
             'fromDeviceId': _deviceId,
             'toDeviceId': targetId,
-            if (threadKey != null && threadKey.isNotEmpty) 'threadKey': threadKey,
+            if (threadKey != null && threadKey.isNotEmpty)
+              'threadKey': threadKey,
             'ts': DateTime.now().millisecondsSinceEpoch,
           });
           publishedAny = true;
@@ -6472,7 +6281,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         // upload — receiver-side suppression will drop the offer immediately
         // and a long wait would just stall the UI. Full 60s timeout for
         // never-connected pushes so a slow remote still has a chance.
-        final pullWait = pullTimeout ??
+        final pullWait =
+            pullTimeout ??
             (anyPushConnected
                 ? const Duration(seconds: 10)
                 : const Duration(seconds: 60));
@@ -6880,6 +6690,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   ) async {
     final success = await probeHttp(
       probeUrl,
+      expectedDeviceId: fromDeviceId,
       timeout: const Duration(seconds: 3),
     );
     logChat.info('_handlePullProbe probeId=$probeId success=$success');
@@ -6958,6 +6769,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     if (senderLanHttpUrl != null && senderLanHttpUrl.isNotEmpty) {
       senderReachable = await probeHttp(
         senderLanHttpUrl,
+        expectedDeviceId: fromDeviceId,
         timeout: const Duration(seconds: 3),
       );
     }
@@ -7961,7 +7773,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       paths.add(lp);
     }
     final cp = rec?.cachePath;
-    if (cp != null && cp.isNotEmpty && !cp.startsWith('content://')) {
+    if (cp != null &&
+        cp.isNotEmpty &&
+        !cp.startsWith('content://') &&
+        FileStore.isPathUnderDirectory(cp, cacheRoot)) {
       paths.add(cp);
     }
     final dir = Directory(p.join(cacheRoot, messageId));
@@ -8834,37 +8649,103 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     }
   }
 
-  void _syncNativeTabBarState() {
-    if (!_isIOS26OrLater || !mounted) return;
-
-    final selectedDeviceId = ref.read(selectedDeviceIdProvider);
-    final mobileHomeFloatingBar =
-        selectedDeviceId == null &&
-        MediaQuery.sizeOf(context).width < kChatNarrowLayoutBreakpoint;
-
-    final theme = Theme.of(context);
-    final isDarkMode = theme.brightness == Brightness.dark;
-    final hexColor =
-        '#${theme.colorScheme.primary.value.toRadixString(16).substring(2)}';
-    final l10n = AppLocalizations.of(context);
-
-    unawaited(
-      NativeTabBarService.instance.updateState(
-        visible: mobileHomeFloatingBar,
-        selectedIndex: _mobileMainTabIndex,
-        badgeCount: ref.watch(pendingFilesProvider).length,
-        primaryColorHex: hexColor,
-        connectLabel: l10n.mobileHomeTabConnect,
-        filesLabel: l10n.mobileHomeTabFiles,
-        settingsLabel: l10n.mobileHomeTabSettings,
-        isDarkMode: isDarkMode,
+  List<TransferActivityItem> _readTransferActivity() {
+    final messages = <String, (Message, String?)>{};
+    for (final session in _chatTimelineCache.entries) {
+      for (final message in session.value.messages) {
+        messages[message.id] = (message, session.key);
+      }
+    }
+    final selected = ref.read(selectedDeviceIdProvider);
+    for (final message in _chatController.messages) {
+      messages[message.id] = (message, selected);
+    }
+    final items = <TransferActivityItem>[];
+    for (final (message, session) in messages.values) {
+      if (message is! TextMessage) continue;
+      final meta = _fileMetaByMessageId[message.id];
+      if (meta == null) continue;
+      final progress = _matchProgress(message.text);
+      final waiting = _matchWaiting(message.text);
+      final cancelled = _isCancelledTransferLine(message.text);
+      final failed = _isFailedTransferLine(message.text);
+      final localId = message.id.startsWith('local_')
+          ? message.id.substring(6)
+          : null;
+      final isReceive = _activeLanReceives.containsKey(message.id);
+      final isDownload = _activeDownloads.containsKey(message.id);
+      final isSend =
+          localId != null &&
+          (_activeTransfers.containsKey(localId) ||
+              _webrtcLocalIdToFileIdMap.containsKey(localId));
+      final complete =
+          progress == null &&
+          waiting == null &&
+          !cancelled &&
+          !failed &&
+          (meta.localPath != null ||
+              (localId != null && _localMessageStatus[localId] == 'sent'));
+      if (!complete &&
+          progress == null &&
+          waiting == null &&
+          !cancelled &&
+          !failed)
+        continue;
+      final status = cancelled
+          ? TransferActivityStatus.paused
+          : failed
+          ? TransferActivityStatus.failed
+          : complete
+          ? TransferActivityStatus.completed
+          : TransferActivityStatus.active;
+      items.add(
+        TransferActivityItem(
+          id: message.id,
+          name: meta.fileName,
+          size: meta.size,
+          status: status,
+          createdAt: message.createdAt,
+          channel: meta.transferType,
+          localPath: complete ? meta.localPath : null,
+          progress: progress == null
+              ? null
+              : int.parse(progress.group(3)!) / 100.0,
+          speed: _speedTrackers[message.id]?.formatted,
+          pause: isReceive
+              ? () => _cancelLanReceive(message.id, meta.fileName)
+              : isDownload
+              ? () => _cancelDownload(message.id, meta.fileName)
+              : isSend
+              ? () => _cancelTransfer(localId)
+              : null,
+          resume:
+              localId != null &&
+                  _retryInfoByLocalId.containsKey(localId) &&
+                  (cancelled || failed)
+              ? () => _retryFileSend(localId)
+              : null,
+          openConversation: session == null
+              ? null
+              : () {
+                  ref.read(selectedDeviceIdProvider.notifier).select(session);
+                  Navigator.of(context).popUntil((route) => route.isFirst);
+                },
+        ),
+      );
+    }
+    items.sort(
+      (a, b) => (b.createdAt ?? DateTime(1970)).compareTo(
+        a.createdAt ?? DateTime(1970),
       ),
     );
+    return items;
   }
 
   @override
   void dispose() {
+    _deviceNameSub?.cancel();
     _initGeneration++;
+    _disposing = true;
     unawaited(_markPresenceOffline('dispose'));
     WidgetsBinding.instance.removeObserver(this);
     _cancelPresenceRefreshTimer();
@@ -8897,6 +8778,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     _selectedDeviceSub?.close();
     _realtimePublicationSub?.cancel();
     _realtimeConnectedSub?.cancel();
+    if (TransferActivity.read == _readTransferActivity)
+      TransferActivity.read = null;
     _chatController.dispose();
     _disposeSessionUiResources();
     if (_isDesktopPlatform) {
@@ -8944,17 +8827,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       onRefresh: _manualRefreshDevices,
       onShowSettings: () async {
         _activeComposer?.unfocus();
-        if (mobileHomeTabs) {
+        if (ProductWorkspaceScope.maybeOf(context) != null) {
+          await openProductRoute(context, '/settings');
+        } else if (mobileHomeTabs) {
           setState(() => _mobileMainTabIndex = 2);
         } else {
-          await Navigator.pushNamed(context, '/settings');
+          await openProductRoute(context, '/settings');
         }
         await _refreshReceiveDir();
         _checkS3Config();
       },
-      onSessionDeviceSettings: !isOffline && ref.watch(authProvider).isLoggedIn
-          ? _openSessionDeviceSettings
-          : null,
+      onSessionDeviceSettings: _openSessionDeviceSettings,
       onSearch: () {
         _activeComposer?.unfocus();
         Navigator.push(
@@ -8972,7 +8855,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       onAddWebDavTap: !isOffline ? () => _openAddWebDavConnection() : null,
       onFileManager: () {
         _activeComposer?.unfocus();
-        if (mobileHomeTabs) {
+        if (ProductWorkspaceScope.maybeOf(context) != null) {
+          openProductRoute(context, '/files');
+        } else if (mobileHomeTabs) {
           setState(() {
             _mobileMainTabIndex = 1;
             _embeddedFileTabActivation++;
@@ -8993,7 +8878,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       },
       onOpenS3Settings: () async {
         _activeComposer?.unfocus();
-        await Navigator.pushNamed(context, '/settings/s3');
+        await openProductRoute(context, '/settings/s3');
         if (mounted) await _checkS3Config();
       },
       isSelectionMode: _isSelectionMode,
@@ -9004,114 +8889,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       onDeleteSelected: _selectedMessages.isEmpty
           ? null
           : _deleteSelectedMessages,
-      chatContentBuilder: (sessionId) => _buildChatContent(
-        context,
-        sessionId,
-        colors,
-        isDark,
-      ),
-    );
-  }
-
-  Widget _buildPlainMobileBottomBar({
-    required BuildContext context,
-    required ChatColors colors,
-    required ThemeData theme,
-    required AppLocalizations l10n,
-  }) {
-    Widget tab({
-      required int index,
-      required String label,
-      required IconData icon,
-    }) {
-      final selected = _mobileMainTabIndex == index;
-      final color = selected ? theme.colorScheme.primary : colors.muted;
-      return Expanded(
-        child: Semantics(
-          button: true,
-          selected: selected,
-          label: label,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () {
-              setState(() {
-                _mobileMainTabIndex = index;
-                if (index == 1) _embeddedFileTabActivation++;
-              });
-            },
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 7),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(icon, color: color, size: 22),
-                  const SizedBox(height: 3),
-                  Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: color,
-                      fontSize: 11,
-                      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    final appColors = context.appColors;
-    return Container(
-      height: 64,
-      decoration: BoxDecoration(
-        color: Color.alphaBlend(
-          appColors.surface.withValues(alpha: 0.94),
-          colors.background,
-        ),
-        borderRadius: BorderRadius.circular(32),
-        border: Border.all(color: appColors.border.withValues(alpha: 0.9)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.12),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          const SizedBox(width: AppSpacing.xs),
-          tab(
-            index: 0,
-            label: l10n.mobileHomeTabConnect,
-            icon: LucideIcons.smartphone,
-          ),
-          tab(
-            index: 1,
-            label: l10n.mobileHomeTabFiles,
-            icon: LucideIcons.folderOpen,
-          ),
-          tab(
-            index: 2,
-            label: l10n.mobileHomeTabSettings,
-            icon: LucideIcons.settings,
-          ),
-          const SizedBox(width: _kMobileGlassBarExtraSpacing),
-          PendingOutboxBadgeButton(
-            count: ref.watch(pendingFilesProvider).length,
-            enabled: true,
-            onTap: () => showPendingOutboxSheet(context),
-            size: _kMobileGlassBarExtraSize,
-            iconColor: colors.muted,
-          ),
-          const SizedBox(width: AppSpacing.xs),
-        ],
-      ),
+      chatContentBuilder: (sessionId) =>
+          _buildChatContent(context, sessionId, colors, isDark),
     );
   }
 
@@ -9128,19 +8907,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
           notifier.dialogOpen = false;
           return;
         }
-        await showDeviceSendQuotaDialog(
-          context,
-          quota: next,
-          limited: true,
-        );
+        await showDeviceSendQuotaDialog(context, quota: next, limited: true);
         notifier.dialogOpen = false;
       });
     });
-    if (_isIOS26OrLater) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _syncNativeTabBarState();
-      });
-    }
     final isOffline = ref.watch(effectiveOfflineModeProvider);
     final isAuthOffline = ref.watch(isOfflineModeProvider);
 
@@ -9235,7 +9005,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     required bool isDark,
     required String? selectedDeviceId,
   }) {
-    final theme = Theme.of(context);
     return Stack(
       children: [
         Column(
@@ -9245,7 +9014,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                 builder: (context, constraints) {
                   final isNarrow =
                       constraints.maxWidth < kChatNarrowLayoutBreakpoint;
-                  if (!isNarrow || selectedDeviceId != null) {
+                  if (ProductWorkspaceScope.maybeOf(context) != null ||
+                      !isNarrow ||
+                      selectedDeviceId != null) {
                     return _buildMainLayout(
                       isOffline: isOffline,
                       isAuthOffline: isAuthOffline,
@@ -9256,187 +9027,33 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                   }
                   return Scaffold(
                     backgroundColor: colors.background,
-                    extendBody: true,
-                    body: _PlatformGlassBackdrop(
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        fit: StackFit.expand,
-                        children: [
-                          Positioned.fill(
-                            child: IndexedStack(
-                              index: _mobileMainTabIndex,
-                              children: [
-                                _buildMainLayout(
-                                  isOffline: isOffline,
-                                  isAuthOffline: isAuthOffline,
-                                  mobileHomeTabs: true,
-                                  colors: colors,
-                                  isDark: isDark,
-                                ),
-                                FileManagerScreen(
-                                  embedded: true,
-                                  embeddedFileTabActivation:
-                                      _embeddedFileTabActivation,
-                                  onAddToPending: (files) async {
-                                    if (!mounted) return false;
-                                    return _addPendingPlatformFiles(files);
-                                  },
-                                ),
-                                const SettingsScreen(embedded: true),
-                              ],
-                            ),
-                          ),
-                          // Floating glass bar: content scrolls underneath;
-                          // stronger glass tint + no tab glow reduces ghost pill on light BG.
-                          if (!_isIOS26OrLater)
-                            Align(
-                              alignment: Alignment.bottomCenter,
-                              child: Padding(
-                                padding: EdgeInsets.only(
-                                  left: _kMobileFloatingBarEdge,
-                                  right: _kMobileFloatingBarEdge,
-                                  bottom:
-                                      AppLayout.floatingBottomSystemInset(
-                                        context,
-                                      ) +
-                                      _kMobileFloatingBarBottomGap,
-                                ),
-                                child: LayoutBuilder(
-                                  builder: (context, constraints) {
-                                    final l10n = AppLocalizations.of(context);
-                                    final barW = math.min(
-                                      constraints.maxWidth,
-                                      _kMobileGlassBarOuterWidth,
-                                    );
-                                    return Align(
-                                      alignment: Alignment.bottomCenter,
-                                      child: SizedBox(
-                                        width: barW,
-                                        child:
-                                            AppPlatformPerformance
-                                                .preferPlainNarrowNavigation
-                                            ? _buildPlainMobileBottomBar(
-                                                context: context,
-                                                colors: colors,
-                                                theme: theme,
-                                                l10n: l10n,
-                                              )
-                                            : GlassBottomBar(
-                                                tabs: [
-                                                  GlassBottomBarTab(
-                                                    label: l10n
-                                                        .mobileHomeTabConnect,
-                                                    icon: const Icon(
-                                                      LucideIcons.smartphone,
-                                                    ),
-                                                  ),
-                                                  GlassBottomBarTab(
-                                                    label:
-                                                        l10n.mobileHomeTabFiles,
-                                                    icon: const Icon(
-                                                      LucideIcons.folderOpen,
-                                                    ),
-                                                  ),
-                                                  GlassBottomBarTab(
-                                                    label: l10n
-                                                        .mobileHomeTabSettings,
-                                                    icon: const Icon(
-                                                      LucideIcons.settings,
-                                                    ),
-                                                  ),
-                                                ],
-                                                selectedIndex:
-                                                    _mobileMainTabIndex,
-                                                onTabSelected: (i) {
-                                                  setState(() {
-                                                    _mobileMainTabIndex = i;
-                                                    if (i == 1) {
-                                                      _embeddedFileTabActivation++;
-                                                    }
-                                                  });
-                                                },
-                                                spacing:
-                                                    _kMobileGlassBarExtraSpacing,
-                                                extraButton: GlassBottomBarExtraButton(
-                                                  label: l10n
-                                                      .mobileHomePendingOutbox,
-                                                  size:
-                                                      _kMobileGlassBarExtraSize,
-                                                  iconColor: colors.muted,
-                                                  icon: PendingOutboxBadgeIcon(
-                                                    count: ref
-                                                        .watch(
-                                                          pendingFilesProvider,
-                                                        )
-                                                        .length,
-                                                    iconColor: colors.muted,
-                                                  ),
-                                                  onTap: () {
-                                                    showPendingOutboxSheet(
-                                                      context,
-                                                    );
-                                                  },
-                                                ),
-                                                selectedIconColor:
-                                                    theme.colorScheme.primary,
-                                                unselectedIconColor:
-                                                    colors.muted,
-                                                horizontalPadding:
-                                                    _kMobileGlassBarHPadding,
-                                                verticalPadding: 0,
-                                                barHeight: 64,
-                                                barBorderRadius: 45,
-                                                tabWidth:
-                                                    _kMobileGlassBarTabWidth,
-                                                iconSize: 24,
-                                                labelFontSize: 12,
-                                                iconLabelSpacing: 3,
-                                                tabPadding:
-                                                    const EdgeInsets.symmetric(
-                                                      horizontal: 4,
-                                                      vertical: 4,
-                                                    ),
-                                                blendAmount: 6,
-                                                indicatorExpansion: 14,
-                                                glowOpacity: 0,
-                                                glowBlurRadius: 0,
-                                                glowSpreadRadius: 0,
-                                                // Dynamic tab indicator + IndexedStack: prefer standard
-                                                // over default premium to avoid Impeller/texture artifacts
-                                                // after repeated tab switches (package docs).
-                                                quality: GlassQuality.standard,
-                                                interactionBehavior:
-                                                    GlassInteractionBehavior
-                                                        .none,
-                                                interactionGlowColor:
-                                                    Colors.transparent,
-                                                glassSettings: LiquidGlassSettings(
-                                                  thickness: 26,
-                                                  blur: 5,
-                                                  // Softer rim + less fringe: reads as
-                                                  // frosted float against shell bg, not a stroke.
-                                                  chromaticAberration: 0.08,
-                                                  specularSharpness:
-                                                      GlassSpecularSharpness
-                                                          .soft,
-                                                  lightIntensity: 0.58,
-                                                  refractiveIndex: 1.55,
-                                                  saturation: 0.72,
-                                                  ambientStrength: 1,
-                                                  lightAngle: 0.75 * math.pi,
-                                                  glassColor: isDark
-                                                      ? const Color(0x59000000)
-                                                      : const Color(0x72FFFFFF),
-                                                ),
-                                              ),
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
+                    body: IndexedStack(
+                      index: _mobileMainTabIndex,
+                      children: [
+                        _buildMainLayout(
+                          isOffline: isOffline,
+                          isAuthOffline: isAuthOffline,
+                          mobileHomeTabs: true,
+                          colors: colors,
+                          isDark: isDark,
+                        ),
+                        FileManagerScreen(
+                          embedded: true,
+                          embeddedFileTabActivation: _embeddedFileTabActivation,
+                          onAddToPending: (files) async {
+                            if (!mounted) return false;
+                            return _addPendingPlatformFiles(files);
+                          },
+                        ),
+                        const SettingsScreen(embedded: true),
+                      ],
+                    ),
+                    bottomNavigationBar: ProductBottomNavigation(
+                      selected: _mobileMainTabIndex,
+                      onSelected: (index) => setState(() {
+                        _mobileMainTabIndex = index;
+                        if (index == 1) _embeddedFileTabActivation++;
+                      }),
                     ),
                   );
                 },

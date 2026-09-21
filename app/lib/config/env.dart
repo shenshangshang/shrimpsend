@@ -67,16 +67,17 @@ class Env {
   }
 
   static String get _prodApiUrlResolved => switch (_prodServiceRegion) {
-        ServiceRegion.mainlandChina => _prodApiXiachuan,
-        ServiceRegion.international => _prodApiShrimpsend,
-      };
+    ServiceRegion.mainlandChina => _prodApiXiachuan,
+    ServiceRegion.international => _prodApiShrimpsend,
+  };
 
-  static String get _prodCentrifugoWsResolved =>
-      switch (_prodServiceRegion) {
-        ServiceRegion.mainlandChina =>
-          _mainlandChinaWs(_prodApiXiachuan, _prodWsXiachuan),
-        ServiceRegion.international => _prodWsShrimpsend,
-      };
+  static String get _prodCentrifugoWsResolved => switch (_prodServiceRegion) {
+    ServiceRegion.mainlandChina => _mainlandChinaWs(
+      _prodApiXiachuan,
+      _prodWsXiachuan,
+    ),
+    ServiceRegion.international => _prodWsShrimpsend,
+  };
 
   /// Same-origin WSS on the API host (nginx proxies `/wkws/` to WuKongIM).
   /// Legacy `ws.<domain>` overrides are ignored so CN clients do not depend on
@@ -99,11 +100,7 @@ class Env {
   }
 
   static String httpStreamEndpointFromHttpApi(String apiUrl) {
-    return _connectionEndpointFromHttpApi(
-      apiUrl,
-      'wkws',
-      asWebsocket: false,
-    );
+    return _connectionEndpointFromHttpApi(apiUrl, 'wkws', asWebsocket: false);
   }
 
   static String _connectionEndpointFromHttpApi(
@@ -254,7 +251,10 @@ class Env {
 
   /// Phones cannot open `ws://127.0.0.1`. If the token still points at
   /// loopback, rewrite the host to [apiUrl] and keep the WS port/path.
-  static String rewriteLoopbackRealtimeWs(String websocketUrl, {String? apiUrl}) {
+  static String rewriteLoopbackRealtimeWs(
+    String websocketUrl, {
+    String? apiUrl,
+  }) {
     final ws = Uri.tryParse(websocketUrl);
     if (ws == null || ws.host.isEmpty) return websocketUrl;
     if (ws.host != '127.0.0.1' && ws.host != 'localhost') return websocketUrl;
@@ -262,6 +262,21 @@ class Env {
     if (api == null || api.host.isEmpty) return websocketUrl;
     if (api.host == '127.0.0.1' || api.host == 'localhost') return websocketUrl;
     return ws.replace(host: api.host).toString();
+  }
+
+  /// Public authorization page for the selected deployment; configurable for self hosting.
+  static String get webUrl {
+    const override = String.fromEnvironment('WEB_URL');
+    if (override.isNotEmpty) return override.replaceFirst(RegExp(r'/+$'), '');
+    if (_current == AppEnv.dev) {
+      return Uri.parse(apiUrl)
+          .replace(port: 3000, path: '', query: '', fragment: '')
+          .toString()
+          .replaceFirst(RegExp(r'/+$'), '');
+    }
+    return _prodServiceRegion == ServiceRegion.international
+        ? 'https://shrimpsend.com'
+        : 'https://xiachuan.net';
   }
 
   static String get label => _current == AppEnv.prod ? '线上' : '测试';

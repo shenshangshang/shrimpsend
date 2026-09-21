@@ -1,5 +1,5 @@
 import { logger } from '../logger';
-import { getApiUrl, TAG, AuthError, getToken, isAuthFailure, withAuthRetry } from './client';
+import { getApiUrl, TAG, AuthError, getToken, isAuthFailure, withAuthRetry, fetchWithDeviceAuth } from './client';
 
 export type DeviceDto = {
   /** 1–999 per-user display number from server; absent for LAN-only rows. */
@@ -117,4 +117,15 @@ export async function listDevices(): Promise<DeviceDto[]> {
     logger.info(TAG, 'listDevices success count=', list.length);
     return list;
   });
+}
+
+export async function listPairedDevices(): Promise<DeviceDto[]> {
+  const res = await fetchWithDeviceAuth(`${getApiUrl()}/api/devices/paired`);
+  if (!res.ok) throw new Error('Failed to list paired devices');
+  return res.json();
+}
+
+export async function unpairDevice(peer: string): Promise<void> {
+  const res=await fetchWithDeviceAuth(`${getApiUrl()}/api/devices/paired/${encodeURIComponent(peer)}`,{method:'DELETE'});
+  if(!res.ok) throw new Error('Failed to disconnect device');
 }

@@ -10,7 +10,7 @@ void main() {
     );
     expect(
       threadKeyOneToOne(acc, 'device-a', 'device-b'),
-      'u:42|d1:device-a|d2:device-b',
+      'device|d1:device-a|d2:device-b',
     );
   });
 
@@ -44,6 +44,10 @@ void main() {
 
   test('localExplicitThreadKey ignores another account prefix', () {
     expect(localExplicitThreadKey('o:me', 'o:other|d1:a|d2:b'), isNull);
-    expect(localExplicitThreadKey('o:me', 'o:me|d1:a|d2:b'), 'o:me|d1:a|d2:b');
+    expect(localExplicitThreadKey('o:me', 'o:me|d1:a|d2:b'), isNull);
+    expect(
+      localExplicitThreadKey('u:42', 'device|d1:a|d2:b'),
+      'device|d1:a|d2:b',
+    );
   });
 }

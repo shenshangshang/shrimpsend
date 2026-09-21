@@ -60,8 +60,7 @@ class LanDiscoveryService {
     required String deviceName,
     required String platform,
   }) {
-    if (_instance == null ||
-        _instance!.deviceId != deviceId) {
+    if (_instance == null || _instance!.deviceId != deviceId) {
       _instance = LanDiscoveryService(
         deviceId: deviceId,
         deviceName: deviceName,
@@ -71,11 +70,17 @@ class LanDiscoveryService {
     return _instance!;
   }
 
+  Future<void> rename(String value, String? lanHttpUrl) async {
+    if (deviceName == value) return;
+    deviceName = value;
+    if (lanHttpUrl != null) await startBroadcast(lanHttpUrl);
+  }
+
   /// Returns the current singleton instance, or null if not yet created.
   static LanDiscoveryService? get instance => _instance;
 
   final String deviceId;
-  final String deviceName;
+  String deviceName;
   final String platform;
 
   BonsoirBroadcast? _broadcast;
@@ -90,7 +95,8 @@ class LanDiscoveryService {
   /// Fires when Bonsoir reports a peer service gone (not when [stopDiscovery] clears the map).
   Stream<String> get lostDiscoveredDeviceIds => _lostDeviceIdController.stream;
 
-  List<DeviceDto> get currentDiscovered => List.unmodifiable(_discoveredByDeviceId.values);
+  List<DeviceDto> get currentDiscovered =>
+      List.unmodifiable(_discoveredByDeviceId.values);
 
   void addManualDevice(DeviceDto device) {
     _discoveredByDeviceId[device.deviceId] = device;
@@ -149,30 +155,33 @@ class LanDiscoveryService {
     if (_discovery != null) return;
     final discovery = BonsoirDiscovery(type: kUltrasendServiceType);
     _discovery = discovery;
-    discovery.initialize().then((_) {
-      if (_discovery != discovery) return;
-      _discoverySubscription = discovery.eventStream?.listen((event) {
-        if (_discovery != discovery) return;
-        if (event is BonsoirDiscoveryServiceFoundEvent) {
-          event.service.resolve(discovery.serviceResolver).catchError((e) {
-            _log.fine('resolve failed: $e');
+    discovery
+        .initialize()
+        .then((_) {
+          if (_discovery != discovery) return;
+          _discoverySubscription = discovery.eventStream?.listen((event) {
+            if (_discovery != discovery) return;
+            if (event is BonsoirDiscoveryServiceFoundEvent) {
+              event.service.resolve(discovery.serviceResolver).catchError((e) {
+                _log.fine('resolve failed: $e');
+              });
+            } else if (event is BonsoirDiscoveryServiceResolvedEvent) {
+              _onServiceResolved(event.service);
+            } else if (event is BonsoirDiscoveryServiceUpdatedEvent) {
+              _onServiceResolved(event.service);
+            } else if (event is BonsoirDiscoveryServiceLostEvent) {
+              _onServiceLost(event.service);
+            }
           });
-        } else if (event is BonsoirDiscoveryServiceResolvedEvent) {
-          _onServiceResolved(event.service);
-        } else if (event is BonsoirDiscoveryServiceUpdatedEvent) {
-          _onServiceResolved(event.service);
-        } else if (event is BonsoirDiscoveryServiceLostEvent) {
-          _onServiceLost(event.service);
-        }
-      });
-      discovery.start();
-      _log.info('LanDiscovery discovery started');
-    }).catchError((e) {
-      _log.warning('LanDiscovery startDiscovery failed: $e');
-      if (_discovery == discovery) {
-        _discovery = null;
-      }
-    });
+          discovery.start();
+          _log.info('LanDiscovery discovery started');
+        })
+        .catchError((e) {
+          _log.warning('LanDiscovery startDiscovery failed: $e');
+          if (_discovery == discovery) {
+            _discovery = null;
+          }
+        });
   }
 
   void _onServiceResolved(BonsoirService service) {
@@ -192,7 +201,9 @@ class LanDiscoveryService {
     final name = attrs[kAttrDeviceName] ?? service.name;
     final platform = attrs[kAttrPlatform];
 
-    final trimmedHost = host.endsWith('.') ? host.substring(0, host.length - 1) : host;
+    final trimmedHost = host.endsWith('.')
+        ? host.substring(0, host.length - 1)
+        : host;
     if (trimmedHost.endsWith('.local') || trimmedHost.contains('.local.')) {
       _resolveAndAdd(trimmedHost, port, deviceId, name, platform);
     } else {
@@ -200,7 +211,13 @@ class LanDiscoveryService {
     }
   }
 
-  Future<void> _resolveAndAdd(String host, int port, String deviceId, String name, String? platform) async {
+  Future<void> _resolveAndAdd(
+    String host,
+    int port,
+    String deviceId,
+    String name,
+    String? platform,
+  ) async {
     try {
       final addresses = await InternetAddress.lookup(host);
       final ipv4 = addresses.firstWhere(
@@ -226,7 +243,13 @@ class LanDiscoveryService {
     _myLanHttpUrl = url;
   }
 
-  void _addDiscovered(String host, int port, String deviceId, String name, String? platform) {
+  void _addDiscovered(
+    String host,
+    int port,
+    String deviceId,
+    String name,
+    String? platform,
+  ) {
     var effectiveHost = host;
     var effectivePort = port;
     final existing = _discoveredByDeviceId[deviceId];
@@ -271,11 +294,13 @@ class LanDiscoveryService {
       final base = Uri.parse(peerLanHttpUrl);
       if (!_shouldRegisterPeer(base.host)) return;
       final uri = base.resolve('register-peer');
-      final body = '{"deviceId":"${_escapeJson(deviceId)}",'
+      final body =
+          '{"deviceId":"${_escapeJson(deviceId)}",'
           '"name":"${_escapeJson(deviceName)}",'
           '"lanHttpUrl":"${_escapeJson(_myLanHttpUrl!)}",'
           '"platform":"${_escapeJson(platform)}"}';
-      await http.post(uri, body: body, headers: {'Content-Type': 'application/json'})
+      await http
+          .post(uri, body: body, headers: {'Content-Type': 'application/json'})
           .timeout(const Duration(seconds: 3));
     } catch (e) {
       _log.fine('LanDiscovery registerWithPeer failed: $e');
@@ -366,7 +391,10 @@ class LanDiscoveryService {
 }
 
 /// Add a device by manual IP (and optional port). Probes /probe then fetches /device-info.
-Future<DeviceDto?> addDeviceByAddress(String address, {int defaultPort = 9080}) async {
+Future<DeviceDto?> addDeviceByAddress(
+  String address, {
+  int defaultPort = 9080,
+}) async {
   int? port = defaultPort;
   String host = address;
   if (address.contains(':')) {
@@ -381,7 +409,8 @@ Future<DeviceDto?> addDeviceByAddress(String address, {int defaultPort = 9080}) 
   final ok = await probeHttp(baseUrl, timeout: const Duration(seconds: 3));
   if (!ok) return null;
   try {
-    final r = await http.get(Uri.parse('$baseUrl/device-info'))
+    final r = await http
+        .get(Uri.parse('$baseUrl/device-info'))
         .timeout(const Duration(seconds: 3));
     if (r.statusCode != 200) return null;
     final j = r.body;

@@ -133,11 +133,42 @@ class MessageServiceTest {
         envelope.put("toDeviceId", "web-guest");
         envelope.put("ts", 1L);
         when(deviceRepository.findByDeviceId("web-guest")).thenReturn(Optional.empty());
+        when(deviceRepository.findByDeviceId("device_a")).thenReturn(Optional.of(
+                Device.builder().deviceId("device_a").user(User.builder().id(1L).build()).build()));
+        when(devicePairingService.canSignal("device_a", "web-guest")).thenReturn(true);
 
         messageService.send("1", envelope);
 
         verify(realtimePublisher).publishToUserBestEffort(eq("1"), same(envelope));
         verify(realtimePublisher).publishToDeviceBestEffort(eq("web-guest"), same(envelope));
+    }
+
+    @Test
+    void unpairedExternalSendIsRejectedBeforePersistenceOrPublication() {
+        Map<String, Object> envelope = new java.util.HashMap<>(Map.of(
+                "type", "text", "payload", Map.of("text", "hello"),
+                "fromDeviceId", "device_a", "toDeviceId", "web-guest", "ts", 1L));
+        when(deviceRepository.findByDeviceId("web-guest")).thenReturn(Optional.empty());
+        when(deviceRepository.findByDeviceId("device_a")).thenReturn(Optional.of(
+                Device.builder().deviceId("device_a").user(User.builder().id(1L).build()).build()));
+        org.junit.jupiter.api.Assertions.assertThrows(
+                org.springframework.web.server.ResponseStatusException.class,
+                () -> messageService.send("1", envelope));
+        verifyNoInteractions(messageRepository, realtimePublisher, mailboxService);
+    }
+
+    @Test
+    void spoofedExternalSenderIsRejectedBeforePublication() {
+        Map<String, Object> envelope = new java.util.HashMap<>(Map.of(
+                "type", "text", "payload", Map.of("text", "hello"),
+                "fromDeviceId", "other-account", "toDeviceId", "web-guest", "ts", 1L));
+        when(deviceRepository.findByDeviceId("web-guest")).thenReturn(Optional.empty());
+        when(deviceRepository.findByDeviceId("other-account")).thenReturn(Optional.of(
+                Device.builder().deviceId("other-account").user(User.builder().id(2L).build()).build()));
+        org.junit.jupiter.api.Assertions.assertThrows(
+                org.springframework.web.server.ResponseStatusException.class,
+                () -> messageService.send("1", envelope));
+        verifyNoInteractions(messageRepository, realtimePublisher, mailboxService);
     }
 
     @Test
@@ -307,7 +338,6 @@ class MessageServiceTest {
         envelope.put("toDeviceId", "peer");
         envelope.put("payload", Map.of("text", "hi", "localId", "l1"));
         when(devicePairingService.canSignal("dev-a", "peer")).thenReturn(true);
-        when(deviceRepository.findByDeviceId("peer")).thenReturn(Optional.empty());
 
         messageService.sendFromDevice("dev-a", envelope);
 
@@ -323,7 +353,6 @@ class MessageServiceTest {
         envelope.put("toDeviceId", "peer");
         envelope.put("payload", Map.of("probeId", "p1"));
         when(devicePairingService.canSignal("dev-a", "peer")).thenReturn(true);
-        when(deviceRepository.findByDeviceId("peer")).thenReturn(Optional.empty());
 
         messageService.sendFromDevice("dev-a", envelope);
 
@@ -339,7 +368,6 @@ class MessageServiceTest {
         envelope.put("toDeviceId", "peer");
         envelope.put("payload", Map.of("pullUrl", "http://10.0.0.2/f", "targetDeviceId", "peer"));
         when(devicePairingService.canSignal("dev-a", "peer")).thenReturn(true);
-        when(deviceRepository.findByDeviceId("peer")).thenReturn(Optional.empty());
 
         messageService.sendFromDevice("dev-a", envelope);
 

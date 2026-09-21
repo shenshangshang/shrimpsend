@@ -1,3 +1,4 @@
+import '../api/device_licenses.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -25,7 +26,8 @@ final _qrLoginSessionPattern = RegExp(
 );
 
 class QrScannerScreen extends ConsumerStatefulWidget {
-  const QrScannerScreen({super.key});
+  final bool licenseOnly;
+  const QrScannerScreen({super.key, this.licenseOnly = false});
 
   @override
   ConsumerState<QrScannerScreen> createState() => _QrScannerScreenState();
@@ -138,6 +140,18 @@ class _QrScannerScreenState extends ConsumerState<QrScannerScreen> {
 
   void _onBarcodeCapture(BarcodeCapture capture) {
     if (_processing || capture.barcodes.isEmpty) return;
+    if (widget.licenseOnly) {
+      for (final barcode in capture.barcodes) {
+        for (final value in _barcodeTextCandidates(barcode)) {
+          if (licenseQrToken(value) != null) {
+            _processing = true;
+            Navigator.pop(context, value);
+            return;
+          }
+        }
+      }
+      return;
+    }
 
     String? sessionId;
     String? pairDeviceId;
@@ -334,7 +348,7 @@ class _QrScannerScreenState extends ConsumerState<QrScannerScreen> {
     final colors = context.appColors;
     final l10n = AppLocalizations.of(context);
     return Scaffold(
-      appBar: AppBar(title: Text(l10n.qrLoginTitle)),
+      appBar: AppBar(title: Text(widget.licenseOnly ? (Localizations.localeOf(context).languageCode == 'zh' ? '扫码授权' : 'Scan authorization QR') : l10n.qrLoginTitle)),
       body: !_permissionChecked
           ? const Center(child: CircularProgressIndicator())
           : !_permissionGranted

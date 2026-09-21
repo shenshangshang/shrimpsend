@@ -25,7 +25,6 @@ export function LocaleRegionPanel({ className }: { className?: string }) {
       key: 'locale',
       value: localeTag,
     });
-    window.location.reload();
   };
 
   return (
@@ -41,15 +40,11 @@ export function LocaleRegionPanel({ className }: { className?: string }) {
           <option value="zh_CN">{t('settings.localeRegion.optionZh')}</option>
           <option value="en">{t('settings.localeRegion.optionEn')}</option>
         </select>
-        <p className="text-xs text-muted-foreground">
-          {t('settings.localeRegion.uiLanguageHintBefore')}
-          <code className="rounded bg-muted px-1">ultrasend_locale_tag</code>
-          {t('settings.localeRegion.uiLanguageHintAfter')}
-        </p>
+        <p className="text-xs text-muted-foreground">{localeTag === 'zh_CN' ? '只更改界面语言，不影响正在进行的传输。' : 'Changes the interface language without interrupting transfers.'}</p>
       </div>
 
       <Button type="button" className="w-full sm:w-auto" onClick={() => void applyChanges()}>
-        {t('settings.localeRegion.saveReload')}
+        {localeTag === 'zh_CN' ? '应用语言' : 'Apply language'}
       </Button>
     </div>
   );

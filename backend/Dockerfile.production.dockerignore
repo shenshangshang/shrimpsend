@@ -1,0 +1,10 @@
+build/
+.gradle/
+*.md
+.env
+src/test/
+
+.env*
+src/main/resources/application-prod.yml
+src/main/resources/application-prod-overseas.yml
+src/main/resources/application-dev-overseas.yml

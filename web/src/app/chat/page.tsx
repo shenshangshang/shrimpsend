@@ -2,7 +2,6 @@
 
 import { useAuth } from '@/contexts/AuthContext';
 import { useI18n } from '@/contexts/I18nContext';
-import { ChatProvider } from '@/contexts/ChatContext';
 import { MainLayout } from '@/components/layout/MainLayout';
 
 export default function ChatPage() {
@@ -22,8 +21,6 @@ export default function ChatPage() {
   }
 
   return (
-    <ChatProvider>
-      <MainLayout />
-    </ChatProvider>
+    <MainLayout />
   );
 }

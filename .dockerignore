@@ -1,0 +1,11 @@
+# Web build context: only source and public documentation.
+**
+!web/
+!web/**
+!docs/
+!docs/**
+web/node_modules
+web/.next
+web/.npm-cache
+web/.env*
+web/*.log

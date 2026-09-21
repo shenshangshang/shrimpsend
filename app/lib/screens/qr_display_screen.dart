@@ -126,56 +126,6 @@ class _QrDisplayScreenState extends ConsumerState<QrDisplayScreen> {
     });
   }
 
-  Widget _buildBackground(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    final isDark = theme.brightness == Brightness.dark;
-    final orbAlpha = isDark ? 0.12 : 0.18;
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        Positioned(
-          top: -100,
-          right: -80,
-          child: Container(
-            width: 280,
-            height: 280,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: RadialGradient(
-                colors: [
-                  scheme.primary.withValues(alpha: orbAlpha),
-                  scheme.primary.withValues(alpha: 0.04),
-                  scheme.primary.withValues(alpha: 0),
-                ],
-                stops: const [0.0, 0.5, 1.0],
-              ),
-            ),
-          ),
-        ),
-        Positioned(
-          bottom: -120,
-          left: -100,
-          child: Container(
-            width: 320,
-            height: 320,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: RadialGradient(
-                colors: [
-                  scheme.tertiary.withValues(alpha: orbAlpha * 0.85),
-                  scheme.tertiary.withValues(alpha: 0.03),
-                  scheme.tertiary.withValues(alpha: 0),
-                ],
-                stops: const [0.0, 0.45, 1.0],
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -222,11 +172,10 @@ class _QrDisplayScreenState extends ConsumerState<QrDisplayScreen> {
         ),
         title: Text(l10n.qrLoginTitle),
       ),
-      extendBodyBehindAppBar: true,
+      extendBodyBehindAppBar: false,
       body: Stack(
         fit: StackFit.expand,
         children: [
-          _buildBackground(context),
           SafeArea(
             child: Center(
               child: SingleChildScrollView(
@@ -243,8 +192,8 @@ class _QrDisplayScreenState extends ConsumerState<QrDisplayScreen> {
                         borderRadius: AppRadius.medium,
                         child: Image.asset(
                           'assets/logo.png',
-                          width: 72,
-                          height: 72,
+                          width: 44,
+                          height: 44,
                           fit: BoxFit.contain,
                         ),
                       ),

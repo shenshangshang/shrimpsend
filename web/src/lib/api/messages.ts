@@ -1,5 +1,5 @@
 import { logger } from '../logger';
-import { getApiUrl, TAG, AuthError, getToken, getDeviceAccessToken, isAuthFailure, withAuthRetry } from './client';
+import { getApiUrl, TAG, AuthError, getToken, getDeviceAccessToken, isAuthFailure, withAuthRetry, fetchWithDeviceAuth } from './client';
 import { DeviceSendRateLimitedError, publishDeviceSendQuota, readQuotaFromResponse } from './deviceSendQuota';
 
 export type MessageEnvelope = {
@@ -8,7 +8,7 @@ export type MessageEnvelope = {
     | 'webrtc_probe' | 'webrtc_probe_result'
     | 'webrtc_offer' | 'webrtc_answer' | 'webrtc_ice_candidate' | 'webrtc_transfer_cancel'
     | 'device_pair_hello'
-    | 'device_roster_patch';
+    | 'device_roster_patch' | 'peer_device_patch';
   payload: unknown;
   fromDeviceId: string;
   ts: number;
@@ -88,29 +88,12 @@ export async function deleteThreadMessages(threadKey: string): Promise<void> {
 
 export async function sendMessage(data: MessageEnvelope): Promise<void> {
   logger.info(TAG, 'sendMessage type=', data.type, 'fromDeviceId=', data.fromDeviceId);
-  const userToken = getToken();
-  if (userToken) {
-    return withAuthRetry(async () => {
-      const token = getToken();
-      if (!token) throw new Error('Not authenticated');
-      const res = await fetch(`${getApiUrl()}/api/messages/send`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ data }),
-      });
-      if (isAuthFailure(res)) throw new AuthError();
-      if (!res.ok) {
-        logger.warn(TAG, 'sendMessage failed', res.status);
-        throw new Error('Failed to send message');
-      }
-      logger.debug(TAG, 'sendMessage ok');
-    });
-  }
+  if (!data.toDeviceId && data.threadKey?.endsWith('|kind:s3_cloud')) return;
   const deviceToken = getDeviceAccessToken();
   if (!deviceToken) throw new Error('Not authenticated');
-  const res = await fetch(`${getApiUrl()}/api/messages/device-send`, {
+  const res = await fetchWithDeviceAuth(`${getApiUrl()}/api/messages/device-send`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${deviceToken}` },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ data }),
   });
   const quota = await readQuotaFromResponse(res);
@@ -129,9 +112,9 @@ export async function sendMessage(data: MessageEnvelope): Promise<void> {
 export async function pairDevice(peerDeviceId: string): Promise<void> {
   const deviceToken = getDeviceAccessToken();
   if (!peerDeviceId || !deviceToken) return;
-  const res = await fetch(`${getApiUrl()}/api/devices/pair`, {
+  const res = await fetchWithDeviceAuth(`${getApiUrl()}/api/devices/pair`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${deviceToken}` },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ peerDeviceId }),
   });
   if (!res.ok) {

@@ -75,6 +75,7 @@ export function AddPeerPanel({
           size="icon-sm"
           onClick={() => void handleCopy()}
           title={t('deviceList.copyDeviceId')}
+          aria-label={t('deviceList.copyDeviceId')}
         >
           <Copy className="size-3.5" />
         </Button>
@@ -87,6 +88,7 @@ export function AddPeerPanel({
         }}
       >
         <Input
+          aria-label={t('deviceList.pasteDeviceIdPlaceholder')}
           value={paste}
           onChange={(e) => setPaste(e.target.value)}
           placeholder={t('deviceList.pasteDeviceIdPlaceholder')}

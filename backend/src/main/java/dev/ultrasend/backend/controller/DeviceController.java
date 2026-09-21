@@ -76,6 +76,19 @@ public class DeviceController {
         return ResponseEntity.noContent().build();
     }
 
+    @DeleteMapping("/paired/{peer}")
+    public ResponseEntity<Void> unpair(Authentication auth,@PathVariable String peer) {
+        if (auth == null || !AuthRoles.isDevice(auth)) return ResponseEntity.status(401).build();
+        devicePairingService.unpair(AuthRoles.deviceId(auth),peer);
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/paired")
+    public ResponseEntity<List<DeviceDto>> paired(Authentication auth) {
+        if (auth == null || !AuthRoles.isDevice(auth)) return ResponseEntity.status(401).build();
+        return ResponseEntity.ok(devicePairingService.peers(AuthRoles.deviceId(auth)));
+    }
+
     @PostMapping("/pair")
     public ResponseEntity<Void> pair(Authentication auth, @Valid @RequestBody PairDeviceRequest req) {
         if (auth == null || !auth.isAuthenticated() || !AuthRoles.isDevice(auth)) {

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import '../services/android_receive_storage.dart';
 import 'dart:typed_data';
 
 import 'package:flutter_webrtc/flutter_webrtc.dart';
@@ -10,7 +11,8 @@ import '../logger.dart';
 import '../utils/runtime_platform.dart';
 import '../services/file_times_apply.dart';
 import '../services/mtime_util.dart';
-import '../services/receive_dir_resolver.dart';
+import '../services/file_store.dart';
+import '../utils/receive_destination.dart';
 import 'signaling_channel.dart';
 
 const _iceTimeoutMs = 15000;
@@ -83,7 +85,7 @@ class WebRTCSession {
     if (configured != null && configured.isNotEmpty) {
       return configured;
     }
-    return ReceiveDirResolver.fallbackReceiveRootPath();
+    return FileStore.getReceiveDir();
   }
 
   Future<void> _initPeerConnection() async {
@@ -406,7 +408,15 @@ class WebRTCSession {
         logChat.info('file_ack fileId=$fileId success=${msg['success']}');
         final ackCompleter = _fileAckCompleters.remove(fileId);
         if (ackCompleter != null && !ackCompleter.isCompleted) {
-          ackCompleter.complete();
+          if (msg['success'] == true) {
+            ackCompleter.complete();
+          } else {
+            ackCompleter.completeError(
+              StateError(
+                msg['error'] as String? ?? 'Receiver could not save the file',
+              ),
+            );
+          }
         }
         break;
       case 'progress':
@@ -737,11 +747,10 @@ class WebRTCSession {
       }
       onProgress?.call(meta.fileId, offset, fileSize);
 
-      _sendControlMessage({'type': 'file_end', 'fileId': meta.fileId});
-      logChat.info('file data sent, waiting for ack fileId=${meta.fileId}');
-
       final ackCompleter = Completer<void>();
       _fileAckCompleters[meta.fileId] = ackCompleter;
+      _sendControlMessage({'type': 'file_end', 'fileId': meta.fileId});
+      logChat.info('file data sent, waiting for ack fileId=${meta.fileId}');
       await ackCompleter.future.timeout(
         const Duration(seconds: 120),
         onTimeout: () {
@@ -761,8 +770,7 @@ class WebRTCSession {
       logChat.warning(
         'sendSingleFile failed fileId=${meta.fileId}: $e\n$stack',
       );
-      if (_cancelledByRemote ||
-          _locallyCancelledFiles.contains(meta.fileId)) {
+      if (_cancelledByRemote || _locallyCancelledFiles.contains(meta.fileId)) {
         _locallyCancelledFiles.remove(meta.fileId);
         onFileCancelled?.call(meta.fileId, meta.fileName);
       } else {
@@ -837,7 +845,9 @@ class WebRTCSession {
   ) async {
     try {
       final dir = await _dirForIncomingFiles();
-      final partialPath = '$dir/.webrtc_partial_$fileId';
+      final partialPath =
+          await AndroidReceiveStorage.lookup('webrtc:$fileId') ??
+          '$dir/.webrtc_partial_$fileId';
       final partialFile = File(partialPath);
 
       // Use synchronous APIs for fast check when possible, so the
@@ -877,42 +887,56 @@ class WebRTCSession {
   /// Takes a snapshot of chunks and clears the list synchronously BEFORE
   /// any async work, preventing race conditions with concurrent flushes
   /// or new incoming data.
-  Future<void> _flushPartialToDisk(String fileId, _ReceiveState state) async {
-    if (state.chunks.isEmpty || state.flushing) return;
-    state.flushing = true;
+  Future<void> _flushPartialToDisk(String fileId, _ReceiveState state) {
+    // Register the operation before the first await. Finalization must wait
+    // for this exact write, including its disk errors.
+    if (state.pendingWrite != null) return state.pendingWrite!;
+    final write = _writePartialChunks(fileId, state);
+    state.pendingWrite = write;
+    return write.whenComplete(() => state.pendingWrite = null);
+  }
+
+  Future<void> _writePartialChunks(String fileId, _ReceiveState state) async {
+    if (state.chunks.isEmpty) return;
+    final chunksToWrite = List<Uint8List>.from(state.chunks);
+    state.chunks.clear();
     try {
       final dir = await _dirForIncomingFiles();
-      final partialPath = '$dir/.webrtc_partial_$fileId';
+      final partialPath =
+          state.partialFilePath ??
+          await AndroidReceiveStorage.prepare(
+            'webrtc:$fileId',
+            state.meta.fileName,
+          ) ??
+          '$dir/.webrtc_partial_$fileId';
       state.partialFilePath = partialPath;
-      final chunksToWrite = List<Uint8List>.from(state.chunks);
-      state.chunks.clear();
       final sink = File(partialPath).openWrite(mode: FileMode.append);
       for (final chunk in chunksToWrite) {
         sink.add(chunk);
       }
       await sink.close();
     } catch (e) {
+      state.writeError = e;
       logChat.warning('_flushPartialToDisk failed: $e');
-    } finally {
-      state.flushing = false;
     }
   }
 
   Future<void> _finalizeReceivedFile(String fileId, _ReceiveState state) async {
     try {
-      final dir = await _dirForIncomingFiles();
-      // One-file-per-directory layout: <saveDir>/<messageId>/<originalName>.
-      // messageId mirrors the convention used in chat_screen.dart so the chat
-      // bubble and the file index always agree on a key.
-      final messageId = 'webrtc_recv_$fileId';
-      final perFileDir = Directory('$dir/$messageId');
-      if (!await perFileDir.exists()) {
-        await perFileDir.create(recursive: true);
+      await state.pendingWrite;
+      if (state.writeError != null) throw state.writeError!;
+      if (state.received != state.meta.fileSize) {
+        throw StateError(
+          'Incomplete WebRTC receive: ${state.received}/${state.meta.fileSize}',
+        );
       }
-      final filePath = _resolveUniqueWebRtcPath(
-        perFileDir.path,
+      final dir = await _dirForIncomingFiles();
+      final androidPath = await AndroidReceiveStorage.prepare(
+        'webrtc:$fileId',
         state.meta.fileName,
       );
+      var filePath =
+          androidPath ?? reserveReceiveDestination(dir, state.meta.fileName);
 
       if (state.partialFilePath != null) {
         // Append remaining chunks to the partial file, then rename.
@@ -924,7 +948,7 @@ class WebRTCSession {
           }
           await sink.close();
         }
-        await partialFile.rename(filePath);
+        if (partialFile.path != filePath) await partialFile.rename(filePath);
       } else {
         final outFile = File(filePath);
         final sink = outFile.openWrite();
@@ -934,16 +958,20 @@ class WebRTCSession {
         await sink.close();
       }
 
+      if (await File(filePath).length() != state.meta.fileSize) {
+        throw FileSystemException('WebRTC file size mismatch', filePath);
+      }
+
       // Clean up partial file.
       final partialCleanup = File('$dir/.webrtc_partial_$fileId');
       if (await partialCleanup.exists()) {
         await partialCleanup.delete();
       }
 
-      await applyReceivedFileTimestamps(
-        filePath,
-        state.meta.lastModifiedMs,
-      );
+      await applyReceivedFileTimestamps(filePath, state.meta.lastModifiedMs);
+      filePath =
+          await AndroidReceiveStorage.complete(filePath, state.meta.fileSize) ??
+          filePath;
 
       _sendControlMessage({
         'type': 'file_ack',
@@ -1002,24 +1030,6 @@ class PendingSend {
   PendingSend({required this.filePath, required this.meta});
 }
 
-/// Resolve `<dir>/<originalName>`, falling back to `name (1).ext` style
-/// suffixes if a file already exists. Kept local to avoid a circular import
-/// from `services/file_store.dart`.
-String _resolveUniqueWebRtcPath(String dir, String originalName) {
-  final base = originalName.isEmpty ? 'received' : originalName;
-  final candidate = '$dir/$base';
-  if (!File(candidate).existsSync()) return candidate;
-  final dotIdx = base.lastIndexOf('.');
-  final hasExt = dotIdx > 0 && dotIdx < base.length - 1;
-  final stem = hasExt ? base.substring(0, dotIdx) : base;
-  final ext = hasExt ? base.substring(dotIdx) : '';
-  for (int i = 1; i < 10000; i++) {
-    final next = '$dir/$stem ($i)$ext';
-    if (!File(next).existsSync()) return next;
-  }
-  return '$dir/$stem ${DateTime.now().millisecondsSinceEpoch}$ext';
-}
-
 class _ReceiveState {
   final WebRTCFileMeta meta;
   final List<Uint8List> chunks = [];
@@ -1028,7 +1038,8 @@ class _ReceiveState {
   String? partialFilePath;
   bool resumeRequested = false;
   bool resumeConfirmed = false;
-  bool flushing = false;
+  Future<void>? pendingWrite;
+  Object? writeError;
   _ReceiveState({required this.meta});
 }
 
@@ -1199,11 +1210,8 @@ class IceCandidateSummary {
     required this.publicIps,
   });
 
-  factory IceCandidateSummary.empty() => IceCandidateSummary(
-    hasSrflx: false,
-    hasRelay: false,
-    publicIps: {},
-  );
+  factory IceCandidateSummary.empty() =>
+      IceCandidateSummary(hasSrflx: false, hasRelay: false, publicIps: {});
 
   Map<String, dynamic> toJson() => {
     'hasSrflx': hasSrflx,
@@ -1215,10 +1223,8 @@ class IceCandidateSummary {
       IceCandidateSummary(
         hasSrflx: j['hasSrflx'] == true,
         hasRelay: j['hasRelay'] == true,
-        publicIps: (j['publicIps'] as List?)
-                ?.map((e) => e.toString())
-                .toSet() ??
-            {},
+        publicIps:
+            (j['publicIps'] as List?)?.map((e) => e.toString()).toSet() ?? {},
       );
 
   /// Analyze connectivity likelihood between two sides.

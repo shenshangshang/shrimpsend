@@ -497,7 +497,7 @@ abstract class AppLocalizations {
   /// No description provided for @settingsMembershipSubtitleUpgrade.
   ///
   /// In en, this message translates to:
-  /// **'Lifetime plans and more devices'**
+  /// **'Device slots with no sign-in required'**
   String get settingsMembershipSubtitleUpgrade;
 
   /// No description provided for @settingsMembershipTierName.
@@ -515,7 +515,7 @@ abstract class AppLocalizations {
   /// No description provided for @settingsNavMyDevices.
   ///
   /// In en, this message translates to:
-  /// **'My devices'**
+  /// **'Account sessions'**
   String get settingsNavMyDevices;
 
   /// No description provided for @settingsNavMyDevicesSubtitleOffline.
@@ -527,7 +527,7 @@ abstract class AppLocalizations {
   /// No description provided for @settingsNavMyDevicesSubtitleOnline.
   ///
   /// In en, this message translates to:
-  /// **'Bound devices'**
+  /// **'Manage sign-in sessions for this account'**
   String get settingsNavMyDevicesSubtitleOnline;
 
   /// No description provided for @settingsNavS3.
@@ -1329,7 +1329,7 @@ abstract class AppLocalizations {
   /// No description provided for @settingsSavePathSafSyncHint.
   ///
   /// In en, this message translates to:
-  /// **'Files are saved here automatically after each transfer'**
+  /// **'Received files are saved to this folder'**
   String get settingsSavePathSafSyncHint;
 
   /// No description provided for @settingsSavePathSafMirrorLabel.
@@ -3273,13 +3273,13 @@ abstract class AppLocalizations {
   /// No description provided for @membershipTierSummary.
   ///
   /// In en, this message translates to:
-  /// **'{tier} · up to {limit} devices'**
+  /// **'{tier} · {limit} device authorization slots'**
   String membershipTierSummary(String tier, int limit);
 
   /// No description provided for @membershipBoundDevices.
   ///
   /// In en, this message translates to:
-  /// **'{count} devices bound'**
+  /// **'{count} authorized devices'**
   String membershipBoundDevices(int count);
 
   /// No description provided for @membershipAddonLine.
@@ -3435,7 +3435,7 @@ abstract class AppLocalizations {
   /// No description provided for @membershipFeatureDevices.
   ///
   /// In en, this message translates to:
-  /// **'Up to {count} linked devices'**
+  /// **'{count} device authorization slots'**
   String membershipFeatureDevices(int count);
 
   /// No description provided for @membershipFeatureUploadHosted.
@@ -3443,6 +3443,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{gib} GiB / month hosted upload quota'**
   String membershipFeatureUploadHosted(int gib);
+
+  /// No description provided for @membershipFeatureAuthorizedSignaling.
+  ///
+  /// In en, this message translates to:
+  /// **'Authorized devices have unlimited signaling for normal use'**
+  String get membershipFeatureAuthorizedSignaling;
 
   /// No description provided for @membershipFeatureWebDav.
   ///
@@ -3903,7 +3909,7 @@ abstract class AppLocalizations {
   /// No description provided for @fileSendS3Intro.
   ///
   /// In en, this message translates to:
-  /// **'Send via S3 cloud relay to all signed-in devices. Works across networks.'**
+  /// **'Use S3 relay to send across networks to selected paired devices.'**
   String get fileSendS3Intro;
 
   /// No description provided for @fileSendS3ConfigurePrompt.
@@ -4881,7 +4887,7 @@ abstract class AppLocalizations {
   /// No description provided for @chatScreenRemovePeerBody.
   ///
   /// In en, this message translates to:
-  /// **'The account on that device will be signed out. If it is in use, access ends immediately; otherwise the next launch will require signing in again.'**
+  /// **'Disconnect this paired device. Local files and membership authorization are kept.'**
   String get chatScreenRemovePeerBody;
 
   /// No description provided for @chatScreenConfirmRemoveLabel.
@@ -4995,7 +5001,7 @@ abstract class AppLocalizations {
   /// No description provided for @chatScreenSubtitleRemovePeer.
   ///
   /// In en, this message translates to:
-  /// **'Remove the device in this conversation from your account'**
+  /// **'Disconnect this device pair'**
   String get chatScreenSubtitleRemovePeer;
 
   /// No description provided for @chatScreenPendingFilesMissing.
@@ -5145,7 +5151,7 @@ abstract class AppLocalizations {
   /// No description provided for @deviceSendQuotaHint.
   ///
   /// In en, this message translates to:
-  /// **'Sending without an account is rate-limited'**
+  /// **'This device’s free allowance'**
   String get deviceSendQuotaHint;
 
   /// No description provided for @deviceSendQuotaMessage.
@@ -5181,7 +5187,7 @@ abstract class AppLocalizations {
   /// No description provided for @deviceSendQuotaInfoBody.
   ///
   /// In en, this message translates to:
-  /// **'Guest sending is rate-limited. Messages {messageUsed}/{messageLimit}, signaling {signalingUsed}/{signalingLimit}. Sign in to remove this limit.'**
+  /// **'Messages {messageUsed}/{messageLimit}; new connections {signalingUsed}/{signalingLimit}. Authorize this device for unlimited normal usage.'**
   String deviceSendQuotaInfoBody(
     int messageUsed,
     int messageLimit,
@@ -6514,6 +6520,102 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Downloaded'**
   String get webdavLocalDownloaded;
+
+  /// No description provided for @transferWelcomeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'A little closer. A lot simpler.'**
+  String get transferWelcomeTitle;
+
+  /// No description provided for @transferWelcomeDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Send files, photos and text between your devices. No account needed.'**
+  String get transferWelcomeDescription;
+
+  /// No description provided for @transferWelcomeConnect.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect your first device'**
+  String get transferWelcomeConnect;
+
+  /// No description provided for @transferWelcomeFooter.
+  ///
+  /// In en, this message translates to:
+  /// **'Direct between devices · Resume interrupted transfers'**
+  String get transferWelcomeFooter;
+
+  /// No description provided for @conversationAvailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Ready to transfer'**
+  String get conversationAvailable;
+
+  /// No description provided for @conversationConnect.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect'**
+  String get conversationConnect;
+
+  /// No description provided for @conversationConnectDevice.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect a device'**
+  String get conversationConnectDevice;
+
+  /// No description provided for @conversationComposer.
+  ///
+  /// In en, this message translates to:
+  /// **'Type a message, or drop files here'**
+  String get conversationComposer;
+
+  /// No description provided for @conversationNewline.
+  ///
+  /// In en, this message translates to:
+  /// **'Shift + Enter for a new line'**
+  String get conversationNewline;
+
+  /// No description provided for @conversationWelcomeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a device to start sharing'**
+  String get conversationWelcomeTitle;
+
+  /// No description provided for @conversationWelcomeHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Files and messages, together in one conversation.'**
+  String get conversationWelcomeHint;
+
+  /// No description provided for @conversationSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved to receive folder'**
+  String get conversationSaved;
+
+  /// No description provided for @conversationSent.
+  ///
+  /// In en, this message translates to:
+  /// **'Sent'**
+  String get conversationSent;
+
+  /// No description provided for @conversationSearch.
+  ///
+  /// In en, this message translates to:
+  /// **'Search messages'**
+  String get conversationSearch;
+
+  /// No description provided for @conversationFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'Files'**
+  String get conversationFiles;
+
+  /// No description provided for @conversationFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Files'**
+  String get conversationFile;
 }
 
 class _AppLocalizationsDelegate

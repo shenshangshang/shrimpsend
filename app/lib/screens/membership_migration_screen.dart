@@ -1,3 +1,4 @@
+import '../ui/product_scaffold.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -150,7 +151,8 @@ class _MembershipMigrationScreenState extends State<MembershipMigrationScreen> {
     final colors = context.appColors;
     final l10n = AppLocalizations.of(context);
 
-    return Scaffold(
+    return ProductScaffold(
+      settingsLocation: '/settings/membership',
       appBar: AppBar(title: Text(l10n.membershipMigrationTitle)),
       body: Align(
         alignment: Alignment.topCenter,

@@ -25,6 +25,7 @@ public class DeviceRosterPublisher {
     private static final long DEBOUNCE_MS = 250L;
 
     private final RealtimePublisher realtimePublisher;
+    private final dev.ultrasend.backend.repository.DevicePairingRepository pairings;
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread t = new Thread(r, "device-roster-publisher");
         t.setDaemon(true);
@@ -40,6 +41,10 @@ public class DeviceRosterPublisher {
     public void publishRemoveAfterCommit(Long userId, String deviceId) {
         if (userId == null || deviceId == null || deviceId.isBlank()) return;
         afterCommit(() -> enqueue(new PendingPatch(userId, "remove", deviceId, null)));
+    }
+
+    public void publishPeerUpsertAfterCommit(DeviceDto device) {
+        afterCommit(() -> enqueue(new PendingPatch(null, "upsert", device.getDeviceId(), device)));
     }
 
     private void afterCommit(Runnable runnable) {
@@ -65,13 +70,21 @@ public class DeviceRosterPublisher {
         PendingPatch patch = pending.remove(key);
         if (patch == null) return;
         Map<String, Object> payload = Map.of(
-                "type", EVENT_TYPE,
+                "type", patch.userId == null ? "peer_device_patch" : EVENT_TYPE,
                 "action", patch.action,
                 "deviceId", patch.deviceId,
                 "device", patch.device == null ? Map.of() : patch.device,
                 "updatedAtMs", Instant.now().toEpochMilli());
         try {
-            realtimePublisher.publishToUser(patch.userId.toString(), payload);
+            if (patch.userId == null) {
+                // Only paired devices receive transfer identity/presence; billing ownership is irrelevant.
+                for (var pair : pairings.findByDeviceAOrDeviceB(patch.deviceId, patch.deviceId)) {
+                    String peer = patch.deviceId.equals(pair.getDeviceA()) ? pair.getDeviceB() : pair.getDeviceA();
+                    realtimePublisher.publishToDeviceBestEffort(peer, payload);
+                }
+            } else {
+                realtimePublisher.publishToUser(patch.userId.toString(), payload);
+            }
         } catch (Exception e) {
             log.warn("device roster publish failed userId={} deviceId={} action={}: {}",
                     patch.userId, patch.deviceId, patch.action, e.getMessage());

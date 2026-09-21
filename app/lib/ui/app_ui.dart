@@ -17,9 +17,9 @@ class AppSpacing {
 }
 
 class AppRadius {
-  static const double sm = 12;
-  static const double md = 16;
-  static const double lg = 20;
+  static const double sm = 8;
+  static const double md = 8;
+  static const double lg = 12;
 
   static final BorderRadius small = BorderRadius.circular(sm);
   static final BorderRadius medium = BorderRadius.circular(md);
@@ -28,9 +28,9 @@ class AppRadius {
 }
 
 class AppSize {
-  static const double controlHeight = 52;
+  static const double controlHeight = 44;
   static const double formMaxWidth = 440;
-  static const double contentMaxWidth = 640;
+  static const double contentMaxWidth = 840;
   static const double settingsIcon = 36;
   static const double settingsSwatch = 40;
   static const double appBarActionIcon = 20.0;
@@ -216,22 +216,28 @@ extension AppThemeContext on BuildContext {
 ThemeData buildAppTheme({
   required AppColorTheme colorTheme,
   required Brightness brightness,
-  double baseWght = 450,
+  double baseWght = 400,
 }) {
   final isDark = brightness == Brightness.dark;
-  final scheme = ColorScheme.fromSeed(
-    seedColor: colorTheme.accent,
-    brightness: brightness,
-  );
+  final scheme =
+      ColorScheme.fromSeed(
+        seedColor: colorTheme.accent,
+        brightness: brightness,
+      ).copyWith(
+        primary: isDark && colorTheme.id == 'emerald'
+            ? const Color(0xFF6CCDA9)
+            : colorTheme.accent,
+        onPrimary: isDark ? const Color(0xFF181D1B) : Colors.white,
+      );
   final colors = AppThemeColors(
-    background: isDark ? const Color(0xFF18181B) : const Color(0xFFE8EBF0),
-    surface: isDark ? const Color(0xFF27272A) : Colors.white,
-    surfaceMuted: isDark ? const Color(0xFF232326) : const Color(0xFFFAFAFA),
-    border: isDark ? const Color(0xFF3F3F46) : const Color(0xFFE4E4E7),
+    background: isDark ? const Color(0xFF181D1B) : const Color(0xFFFBFCFB),
+    surface: isDark ? const Color(0xFF202723) : Colors.white,
+    surfaceMuted: isDark ? const Color(0xFF252D29) : const Color(0xFFF3F4F1),
+    border: isDark ? const Color(0xFF354039) : const Color(0xFFE2E7E1),
     borderStrong: isDark ? const Color(0xFF52525B) : const Color(0xFFD4D4D8),
-    textPrimary: isDark ? Colors.white : const Color(0xFF18181B),
-    textSecondary: isDark ? const Color(0xFFA1A1AA) : const Color(0xFF71717A),
-    textTertiary: isDark ? const Color(0xFF71717A) : const Color(0xFFA1A1AA),
+    textPrimary: isDark ? const Color(0xFFECF2EE) : const Color(0xFF202823),
+    textSecondary: isDark ? const Color(0xFFA5B3AA) : const Color(0xFF738078),
+    textTertiary: isDark ? const Color(0xFF738078) : const Color(0xFFA5B3AA),
     success: isDark ? const Color(0xFF4ADE80) : const Color(0xFF16A34A),
     successSurface: isDark
         ? const Color(0xFF052E16).withValues(alpha: 0.55)
@@ -246,9 +252,7 @@ ThemeData buildAppTheme({
         : const Color(0xFFFEF2F2),
     accentSoft: Color.alphaBlend(
       colorTheme.accent.withValues(alpha: isDark ? 0.22 : 0.1),
-      isDark
-          ? const Color(0xFF27272A)
-          : const Color(0xFFE8EBF0),
+      isDark ? const Color(0xFF27272A) : const Color(0xFFFBFCFB),
     ),
   );
   final base = brightness == Brightness.dark
@@ -289,18 +293,22 @@ ThemeData buildAppTheme({
 
   return base.copyWith(
     colorScheme: scheme.copyWith(
+      primary: scheme.primary,
       surface: colors.surface,
       onSurface: colors.textPrimary,
       outline: colors.border,
       error: colors.danger,
     ),
-    scaffoldBackgroundColor: colors.background,
+    scaffoldBackgroundColor: colors.surface,
     dividerColor: colors.border,
     listTileTheme: ListTileThemeData(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      minLeadingWidth: 24,
+      horizontalTitleGap: 14,
       titleTextStyle: withAppFontNullable(
         base.textTheme.bodyLarge,
         baseWght: baseWght,
-      )?.copyWith(color: colors.textPrimary),
+      )?.copyWith(color: colors.textPrimary, fontSize: 14),
       subtitleTextStyle: withAppFontNullable(
         base.textTheme.bodyMedium,
         baseWght: baseWght,
@@ -313,6 +321,7 @@ ThemeData buildAppTheme({
       scrolledUnderElevation: 0,
       centerTitle: false,
       titleTextStyle: applyFontStyle(base.textTheme.titleMedium)?.copyWith(
+        fontSize: 22,
         color: colors.textPrimary,
         fontWeight: FontWeight.w600,
       ),
@@ -333,24 +342,24 @@ ThemeData buildAppTheme({
         fontWeight: FontWeight.w600,
       ),
       bodyLarge: themedText.bodyLarge?.copyWith(color: colors.textPrimary),
-      bodyMedium: themedText.bodyMedium?.copyWith(
-        color: colors.textPrimary,
-      ),
-      bodySmall: themedText.bodySmall?.copyWith(
-        color: colors.textSecondary,
-      ),
-      labelLarge: themedText.labelLarge?.copyWith(
-        fontWeight: FontWeight.w600,
-      ),
+      bodyMedium: themedText.bodyMedium?.copyWith(color: colors.textPrimary),
+      bodySmall: themedText.bodySmall?.copyWith(color: colors.textSecondary),
+      labelLarge: themedText.labelLarge?.copyWith(fontWeight: FontWeight.w600),
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
       fillColor: colors.surface,
-      hintStyle: withAppFont(TextStyle(color: colors.textTertiary), baseWght: baseWght),
-      labelStyle: withAppFont(TextStyle(color: colors.textSecondary), baseWght: baseWght),
+      hintStyle: withAppFont(
+        TextStyle(color: colors.textTertiary),
+        baseWght: baseWght,
+      ),
+      labelStyle: withAppFont(
+        TextStyle(color: colors.textSecondary),
+        baseWght: baseWght,
+      ),
       contentPadding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.md,
-        vertical: AppSpacing.md,
+        vertical: AppSpacing.sm,
       ),
       border: inputBorder(colors.border),
       enabledBorder: inputBorder(colors.border),
@@ -363,7 +372,7 @@ ThemeData buildAppTheme({
       style: FilledButton.styleFrom(
         backgroundColor: scheme.primary,
         foregroundColor: scheme.onPrimary,
-        minimumSize: const Size.fromHeight(AppSize.controlHeight),
+        minimumSize: const Size(0, AppSize.controlHeight),
         padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.md,
           vertical: AppSpacing.sm,
@@ -375,7 +384,7 @@ ThemeData buildAppTheme({
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
         foregroundColor: colors.textPrimary,
-        minimumSize: const Size.fromHeight(AppSize.controlHeight),
+        minimumSize: const Size(0, AppSize.controlHeight),
         padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.md,
           vertical: AppSpacing.sm,
@@ -415,15 +424,15 @@ ThemeData buildAppTheme({
     chipTheme: base.chipTheme.copyWith(
       backgroundColor: colors.surfaceMuted,
       disabledColor: colors.surfaceMuted,
-      selectedColor: scheme.primary,
-      secondarySelectedColor: scheme.primary,
+      selectedColor: colors.accentSoft,
+      secondarySelectedColor: colors.accentSoft,
       side: BorderSide(color: colors.border),
       shape: RoundedRectangleBorder(borderRadius: AppRadius.medium),
       labelStyle: base.textTheme.bodySmall?.copyWith(
         color: colors.textSecondary,
       ),
       secondaryLabelStyle: base.textTheme.bodySmall?.copyWith(
-        color: scheme.onPrimary,
+        color: scheme.primary,
       ),
     ),
     switchTheme: SwitchThemeData(
@@ -435,15 +444,15 @@ ThemeData buildAppTheme({
       }),
       thumbColor: WidgetStateProperty.resolveWith((states) {
         if (states.contains(WidgetState.selected)) {
-          return scheme.primary;
+          return Colors.white;
         }
-        return isDark ? colors.borderStrong : colors.surface;
+        return Colors.white;
       }),
       trackColor: WidgetStateProperty.resolveWith((states) {
         if (states.contains(WidgetState.selected)) {
-          return scheme.primary.withValues(alpha: 0.35);
+          return scheme.primary;
         }
-        return isDark ? const Color(0xFF3F3F46) : colors.surfaceMuted;
+        return isDark ? const Color(0xFF354039) : colors.surfaceMuted;
       }),
     ),
     progressIndicatorTheme: ProgressIndicatorThemeData(
@@ -457,6 +466,9 @@ ThemeData buildAppTheme({
       shape: RoundedRectangleBorder(borderRadius: AppRadius.large),
       constraints: AppDialog.contentConstraints,
     ),
-    extensions: [colors, AppTypographyConfig(baseWght: baseWght)],
+    extensions: [
+      colors,
+      AppTypographyConfig(baseWght: baseWght),
+    ],
   );
 }

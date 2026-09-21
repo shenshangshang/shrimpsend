@@ -43,7 +43,7 @@ public class RealtimeController {
         if (deviceId == null || deviceId.isBlank()) {
             return ResponseEntity.badRequest().build();
         }
-        if (AuthRoles.isDevice(auth)) {
+        if (!AuthRoles.isDevice(auth) || !deviceId.trim().equals(AuthRoles.deviceId(auth))) {
             return ResponseEntity.status(403).build();
         }
         String userId = (String) auth.getPrincipal();

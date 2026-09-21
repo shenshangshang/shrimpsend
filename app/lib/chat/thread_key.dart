@@ -23,7 +23,7 @@ String threadKeyOneToOne(
 ) {
   final a = deviceIdA.compareTo(deviceIdB) <= 0 ? deviceIdA : deviceIdB;
   final b = deviceIdA.compareTo(deviceIdB) <= 0 ? deviceIdB : deviceIdA;
-  return '$accountPart|d1:$a|d2:$b';
+  return 'device|d1:$a|d2:$b';
 }
 
 String threadKeyS3Cloud(String accountPart) =>
@@ -55,7 +55,10 @@ String threadKeyForPeerSelection({
 /// this device's 1:1 thread.
 String? localExplicitThreadKey(String accountPart, String? explicit) {
   if (explicit == null || explicit.isEmpty) return null;
-  if (explicit.startsWith('$accountPart|')) return explicit;
+  if (explicit.startsWith('device|d1:')) return explicit;
+  if (explicit.startsWith('$accountPart|') && !explicit.contains('|d1:')) {
+    return explicit;
+  }
   return null;
 }
 

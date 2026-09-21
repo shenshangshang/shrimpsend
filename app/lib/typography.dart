@@ -22,11 +22,11 @@ const List<FontWeightLevel> kFontWeightLevels = FontWeightLevel.values;
 double wghtForFontWeightLevel(FontWeightLevel level) {
   switch (level) {
     case FontWeightLevel.lighter:
-      return 350;
+      return 300;
     case FontWeightLevel.light:
-      return 400;
+      return 350;
     case FontWeightLevel.normal:
-      return 450;
+      return 400;
     case FontWeightLevel.medium:
       return 500;
     case FontWeightLevel.semibold:

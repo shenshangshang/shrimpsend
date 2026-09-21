@@ -1,0 +1,155 @@
+[
+  {
+    "id": "00-overview",
+    "title": "传输首页",
+    "group": "主界面",
+    "description": "设备会话、文字与文件、进度、下载位置",
+    "frames": 1,
+    "source": "exec-60d9da67-d23b-4472-9720-754b004e02d9.png",
+    "image": "images/00-overview.png"
+  },
+  {
+    "id": "01-connect",
+    "title": "连接设备",
+    "group": "主界面",
+    "description": "初次打开、连接码、扫码展示、连接确认",
+    "frames": 4,
+    "source": "exec-45ad5be4-f01b-4158-8f85-27fa8f42bb76.png",
+    "image": "images/01-connect.png"
+  },
+  {
+    "id": "02-files",
+    "title": "文件与搜索",
+    "group": "主界面",
+    "description": "文件管理、全局搜索、文件预览、选择文件",
+    "frames": 4,
+    "source": "exec-a822ccac-7bc4-4613-88e0-c2d6a6249d37.png",
+    "image": "images/02-files.png"
+  },
+  {
+    "id": "03-authorization",
+    "title": "本机授权",
+    "group": "账号与权益",
+    "description": "输入授权码、扫码核对、等待确认、授权成功",
+    "frames": 4,
+    "source": "exec-edddb68b-47d5-49d2-8bbf-5f31de6652c9.png",
+    "image": "images/03-authorization.png"
+  },
+  {
+    "id": "04-membership",
+    "title": "会员与设备名额",
+    "group": "账号与权益",
+    "description": "会员概览、生成授权码、购买端确认、购买与订单",
+    "frames": 4,
+    "source": "exec-5e6ec67d-60c9-4af8-95ae-659efe101231.png",
+    "image": "images/04-membership-v2.png"
+  },
+  {
+    "id": "05-account",
+    "title": "首次使用与账号",
+    "group": "账号与权益",
+    "description": "首次使用、登录、注册、账号管理",
+    "frames": 4,
+    "source": "exec-d4237383-b5a3-4110-9360-fe0407ba5754.png",
+    "image": "images/05-account-v2.png"
+  },
+  {
+    "id": "06-settings",
+    "title": "设置基础",
+    "group": "设置与工具",
+    "description": "通用、接收与保存、外观、语言与区域",
+    "frames": 4,
+    "source": "exec-dbbaee05-85fb-4589-b650-5723e2c45ef4.png",
+    "image": "images/06-settings.png"
+  },
+  {
+    "id": "07-preferences",
+    "title": "偏好与存储连接",
+    "group": "设置与工具",
+    "description": "字体、快捷键、S3、云端连接列表",
+    "frames": 4,
+    "source": "exec-7616b1c3-4377-4ae5-bc75-e1226dc323c0.png",
+    "image": "images/07-preferences.png"
+  },
+  {
+    "id": "08-webdav",
+    "title": "WebDAV 云端文件",
+    "group": "设置与工具",
+    "description": "添加连接、云端浏览、最近与收藏、远程详情",
+    "frames": 4,
+    "source": "exec-17c25464-3dcb-44c4-a62c-31b57ffc5b14.png",
+    "image": "images/08-webdav.png"
+  },
+  {
+    "id": "09-tools",
+    "title": "传输任务与辅助工具",
+    "group": "设置与工具",
+    "description": "任务列表、发送应用、意见反馈、运行日志",
+    "frames": 4,
+    "source": "exec-54eae367-caeb-4cfa-ad21-2944587f6a2b.png",
+    "image": "images/09-tools.png"
+  },
+  {
+    "id": "10-help",
+    "title": "帮助、更新与权益迁移",
+    "group": "设置与工具",
+    "description": "关于、版本历史、旧会员迁移、授权到期",
+    "frames": 4,
+    "source": "exec-cb1a35c2-7a33-44f6-a3bb-b6508bff9165.png",
+    "image": "images/10-help.png"
+  },
+  {
+    "id": "11-public",
+    "title": "官网、文档与法律页面",
+    "group": "官网与后台",
+    "description": "首页与下载、使用文档、隐私政策、使用条款",
+    "frames": 4,
+    "source": "exec-f0aa9d33-b34f-4d83-8277-08f4137f1d76.png",
+    "image": "images/11-public.png"
+  },
+  {
+    "id": "12-admin",
+    "title": "管理后台",
+    "group": "官网与后台",
+    "description": "后台首页、版本列表、版本编辑、发布确认",
+    "frames": 4,
+    "source": "exec-81302a00-1864-4d37-b25a-b48120ffa1fc.png",
+    "image": "images/12-admin.png"
+  },
+  {
+    "id": "13-mobile",
+    "title": "移动端核心页面",
+    "group": "跨端与状态",
+    "description": "设备列表、会话、文件、授权、设置、扫码",
+    "frames": 6,
+    "source": "exec-c5bba5ec-663b-4d85-9249-4b1c3efd3f09.png",
+    "image": "images/13-mobile.png"
+  },
+  {
+    "id": "14-states",
+    "title": "连接与接收的关键状态",
+    "group": "跨端与状态",
+    "description": "离线、断线续传、目录不可写、单向网络详情",
+    "frames": 4,
+    "source": "exec-fc84ee23-9da9-432f-98de-f445d7eca6bb.png",
+    "image": "images/14-states.png"
+  },
+  {
+    "id": "15-dark",
+    "title": "深色模式",
+    "group": "跨端与状态",
+    "description": "会话、文件、设置、会员",
+    "frames": 4,
+    "source": "exec-ce537dd2-098a-48d9-80cd-985120545e0e.png",
+    "image": "images/15-dark.png"
+  },
+  {
+    "id": "16-feedback",
+    "title": "空状态与操作反馈",
+    "group": "跨端与状态",
+    "description": "空列表与加载、授权失效、额度、重名、解除授权、移除连接",
+    "frames": 6,
+    "source": "exec-e18e8ef0-9a19-4c58-8413-0d5dca8a4b32.png",
+    "image": "images/16-feedback-v2.png"
+  }
+]

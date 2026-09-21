@@ -49,3 +49,7 @@ backend/.env
 **/.dart_tool/
 app/android/build/
 .vscode/
+
+!.env.production.example
+.local/
+app/pubspec_overrides.yaml

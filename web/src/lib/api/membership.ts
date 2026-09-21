@@ -66,17 +66,9 @@ export type MembershipCreateOrderResponse = {
 };
 
 export async function listMembershipTiers(): Promise<MembershipTier[]> {
-  logger.info(TAG, 'listMembershipTiers');
-  return withAuthRetry(async () => {
-    const token = getToken();
-    if (!token) throw new Error('errors.notAuthenticated');
-    const res = await fetch(`${getApiUrl()}/api/membership/tiers`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (isAuthFailure(res)) throw new AuthError();
-    if (!res.ok) throw new Error('errors.membershipTiersFailed');
-    return await res.json() as MembershipTier[];
-  });
+  const res = await fetch(`${getApiUrl()}/api/membership/tiers`);
+  if (!res.ok) throw new Error('errors.membershipTiersFailed');
+  return await res.json() as MembershipTier[];
 }
 
 export async function fetchMyMembership(): Promise<MembershipMe> {
@@ -184,5 +176,19 @@ export async function getMembershipOrder(orderNo: string): Promise<MembershipOrd
     if (isAuthFailure(res)) throw new AuthError();
     if (!res.ok) throw new Error('errors.membershipOrderQueryFailed');
     return await res.json() as MembershipOrder;
+  });
+}
+
+/** The current account's most recent 100 orders; no device history is shared. */
+export async function listMembershipOrders(): Promise<MembershipOrder[]> {
+  return withAuthRetry(async () => {
+    const token = getToken();
+    if (!token) throw new AuthError();
+    const res = await fetch(`${getApiUrl()}/api/membership/orders`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (isAuthFailure(res)) throw new AuthError();
+    if (!res.ok) throw new Error('errors.membershipOrderQueryFailed');
+    return await res.json() as MembershipOrder[];
   });
 }

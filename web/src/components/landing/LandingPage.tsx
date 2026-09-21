@@ -1,705 +1,93 @@
 'use client';
 
 import Link from 'next/link';
-import { useAuth } from '@/contexts/AuthContext';
+import Image from 'next/image';
+import { useEffect, useState } from 'react';
+import { ArrowRight, Download, Folder, Laptop, Monitor, RefreshCw, Smartphone, UserRound, Check, ChevronDown } from 'lucide-react';
 import { useI18n } from '@/contexts/I18nContext';
 import { getClientReleaseDownloadUrl, isClientDownloadOverseas } from '@/lib/clientReleaseDownload';
-import { SiteFooter } from '@/components/landing/SiteFooter';
-import { SiteNav } from '@/components/landing/SiteNav';
+import { getApiUrl } from '@/lib/config';
+import { SiteFooter } from './SiteFooter';
+import { SiteNav } from './SiteNav';
 import { buttonVariants } from '@/components/ui/button';
 import type { LocalePath } from '@/lib/i18nRouting';
-import { DEFAULT_OG_IMAGE, HREFLANG, SITE_NAME, absoluteUrl } from '@/lib/seo';
-import { cn } from '@/lib/utils';
-import {
-  ArrowLeftRight,
-  Check,
-  Github,
-  FileArchive,
-  FileImage,
-  Globe2,
-  Laptop,
-  Play,
-  RefreshCw,
-  Router,
-  Server,
-  Smartphone,
-  Sparkles,
-  X,
-  Zap,
-} from 'lucide-react';
+import { SITE_NAME, absoluteUrl } from '@/lib/seo';
 
-const featureCards = [
-  {
-    icon: Globe2,
-    titleKey: 'landing.featureNoInstallTitle',
-    descKey: 'landing.featureNoInstallDesc',
-  },
-  {
-    icon: RefreshCw,
-    titleKey: 'landing.featureResumeTitle',
-    descKey: 'landing.featureResumeDesc',
-  },
-  {
-    icon: Router,
-    titleKey: 'landing.featureRestrictiveNetworkTitle',
-    descKey: 'landing.featureRestrictiveNetworkDesc',
-  },
-  {
-    icon: ArrowLeftRight,
-    titleKey: 'landing.featureBreakOneWayTitle',
-    descKey: 'landing.featureBreakOneWayDesc',
-  },
-] as const;
+type DownloadRegion = {macUrl?: string;winUrl?: string;apkUrl?: string;iosStoreUrl?: string;googlePlayUrl?: string;appStoreUrl?: string};
+type Downloads = {available: boolean;version?: string;mainland?: DownloadRegion;overseas?: DownloadRegion};
+function validDownload(value?: string) { try { const u = new URL(value || ''); return ['https:', 'http:'].includes(u.protocol) ? u.href : undefined; } catch { return undefined; } }
 
-const statItems = [
-  { icon: Zap, valueKey: 'landing.statSpeedValue', labelKey: 'landing.statSpeedLabel' },
-  { icon: RefreshCw, valueKey: 'landing.statSecurityValue', labelKey: 'landing.statSecurityLabel' },
-  { icon: Globe2, valueKey: 'landing.statPlatformValue', labelKey: 'landing.statPlatformLabel' },
-  { icon: Router, valueKey: 'landing.statMessageValue', labelKey: 'landing.statMessageLabel' },
-] as const;
-
-const compareScenarios = [
-  {
-    titleKey: 'landing.compareScenario1Title',
-    othersKey: 'landing.compareScenario1Others',
-    shrimpSendKey: 'landing.compareScenario1ShrimpSend',
-  },
-  {
-    titleKey: 'landing.compareScenario2Title',
-    othersKey: 'landing.compareScenario2Others',
-    shrimpSendKey: 'landing.compareScenario2ShrimpSend',
-  },
-  {
-    titleKey: 'landing.compareScenario3Title',
-    othersKey: 'landing.compareScenario3Others',
-    shrimpSendKey: 'landing.compareScenario3ShrimpSend',
-  },
-] as const;
-
-const steps = [
-  { icon: Laptop, titleKey: 'landing.stepOneTitle', descKey: 'landing.stepOneDesc' },
-  { icon: Router, titleKey: 'landing.stepTwoTitle', descKey: 'landing.stepTwoDesc' },
-  { icon: RefreshCw, titleKey: 'landing.stepThreeTitle', descKey: 'landing.stepThreeDesc' },
-] as const;
-
-const faqItems = [
-  { q: 'landing.faqOfflineQ', a: 'landing.faqOfflineA' },
-  { q: 'landing.faqLanLoginQ', a: 'landing.faqLanLoginA' },
-  { q: 'landing.faqWebQ', a: 'landing.faqWebA' },
-  { q: 'landing.faqS3Q', a: 'landing.faqS3A' },
-] as const;
-
-const pricingPlans = [
-  {
-    id: 'free-mainland',
-    region: 'mainland',
-    isFree: true,
-    nameKey: 'landing.pricingPlanFreeName',
-    priceKey: 'landing.pricingFreePrice',
-    secondaryKey: 'landing.pricingDomesticFreeLine',
-    devices: 3,
-    featureKeys: ['landing.pricingFeatureNoPurchase', 'landing.pricingFeatureLanS3'],
-    popular: false,
-  },
-  {
-    id: 'free-overseas',
-    region: 'overseas',
-    isFree: true,
-    nameKey: 'landing.pricingPlanFreeName',
-    priceKey: 'landing.pricingFreePrice',
-    secondaryKey: 'landing.pricingOverseasFreeLine',
-    devices: 3,
-    uploadGib: 1,
-    featureKeys: ['landing.pricingFeatureUpload', 'landing.pricingFeatureLanS3'],
-    popular: false,
-  },
-  {
-    id: 'mini',
-    region: 'mainland',
-    name: 'Mini',
-    price: '¥30',
-    suffixKey: 'landing.pricingLifetimeSuffix',
-    secondaryKey: 'landing.pricingDomesticMiniLine',
-    devices: 6,
-    featureKeys: ['landing.pricingFeatureLifetime', 'landing.pricingFeatureLanS3'],
-    popular: false,
-  },
-  {
-    id: 'domestic-pro',
-    region: 'mainland',
-    name: 'Pro',
-    price: '¥60',
-    suffixKey: 'landing.pricingLifetimeSuffix',
-    secondaryKey: 'landing.pricingDomesticProLine',
-    devices: 12,
-    featureKeys: ['landing.pricingFeatureLifetime', 'landing.pricingFeatureAddon'],
-    popular: true,
-  },
-  {
-    id: 'plus',
-    region: 'overseas',
-    name: 'Plus',
-    price: '$5.99',
-    suffixKey: 'landing.pricingPerMonth',
-    secondaryKey: 'landing.pricingOverseasPlusLine',
-    devices: 10,
-    uploadGib: 80,
-    featureKeys: ['landing.pricingFeatureUpload', 'landing.pricingFeatureLanS3'],
-    popular: false,
-  },
-  {
-    id: 'pro',
-    region: 'overseas',
-    name: 'Pro',
-    price: '$11.99',
-    suffixKey: 'landing.pricingPerMonth',
-    secondaryKey: 'landing.pricingOverseasProLine',
-    devices: 20,
-    uploadGib: 250,
-    featureKeys: ['landing.pricingFeatureUpload', 'landing.pricingFeatureLanS3'],
-    popular: true,
-  },
-  {
-    id: 'ultra',
-    region: 'overseas',
-    name: 'Ultra',
-    price: '$24.99',
-    suffixKey: 'landing.pricingPerMonth',
-    secondaryKey: 'landing.pricingOverseasUltraLine',
-    devices: 50,
-    uploadGib: 800,
-    featureKeys: ['landing.pricingFeatureUpload', 'landing.pricingFeatureLanS3'],
-    popular: false,
-  },
-] as const;
-
-function getPricingRegion(siteOrigin: string): 'mainland' | 'overseas' {
-  return isClientDownloadOverseas({ siteOrigin }) ? 'overseas' : 'mainland';
-}
-
-function GlowOrb({ className }: { className?: string }) {
-  return <div className={cn('landing-glow-orb motion-safe:animate-app-glow-drift', className)} aria-hidden />;
-}
-
-function HeroVisual() {
-  const { t } = useI18n();
-  const devices = [
-    { icon: Laptop, name: 'MacBook Pro', meta: t('landing.heroDeviceLocal'), active: true },
-    { icon: Smartphone, name: 'iPhone 15', meta: t('landing.heroDeviceOnline'), active: true },
-    { icon: Globe2, name: 'Web', meta: t('landing.heroDeviceBrowser'), active: false },
-  ] as const;
-
-  return (
-    <div className="relative mx-auto h-[460px] w-full max-w-[600px] lg:h-[540px]">
-      <div className="landing-orbit landing-orbit-1" aria-hidden />
-      <div className="landing-orbit landing-orbit-2" aria-hidden />
-
-      <div className="landing-device-card absolute left-[3%] top-[7%] w-[min(76vw,315px)] rounded-3xl p-4 shadow-2xl motion-safe:animate-app-fade-up">
-        <div className="mb-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="size-2.5 rounded-full bg-primary shadow-[0_0_16px_color-mix(in_oklch,var(--primary)_80%,transparent)]" />
-            <span className="font-mono text-[11px] text-foreground/80">{t('landing.heroPanelTitle')}</span>
-          </div>
-          <span className="rounded-full bg-primary/12 px-2 py-0.5 font-mono text-[10px] text-primary">
-            {t('landing.heroPanelBadge')}
-          </span>
-        </div>
-
-        <div className="rounded-2xl border border-primary/20 bg-primary/[0.08] px-4 py-3">
-          <div className="flex items-start gap-3">
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary ring-1 ring-primary/25">
-              <RefreshCw className="size-4" />
-            </span>
-            <div>
-              <p className="text-sm font-semibold text-foreground">{t('landing.heroMessageTitle')}</p>
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">{t('landing.heroMessageDesc')}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-4 space-y-2.5">
-          {devices.map(({ icon: Icon, name, meta, active }) => (
-            <div key={name} className="flex items-center gap-3 rounded-2xl bg-white/[0.07] px-3 py-2.5 ring-1 ring-white/[0.08]">
-              <span className="flex size-8 items-center justify-center rounded-xl bg-primary/12 text-primary">
-                <Icon className="size-4" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-xs font-medium text-foreground/90">{name}</p>
-                <p className="font-mono text-[10px] text-muted-foreground">{meta}</p>
-              </div>
-              <span className={cn('size-2.5 rounded-full', active ? 'bg-primary shadow-[0_0_12px_var(--primary)]' : 'bg-muted-foreground/35')} />
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="landing-device-card absolute right-[2%] top-[18%] hidden w-[230px] rotate-[5deg] rounded-3xl p-4 shadow-2xl sm:block">
-        <div className="mb-3 flex items-center justify-between">
-          <span className="font-mono text-[10px] text-muted-foreground">{t('landing.heroPathTitle')}</span>
-          <Router className="size-4 text-primary" />
-        </div>
-        <div className="space-y-2.5">
-          <div className="rounded-2xl border border-primary/18 bg-primary/[0.09] px-3 py-2">
-            <p className="text-xs font-semibold">{t('landing.heroPathLan')}</p>
-            <p className="font-mono text-[10px] text-muted-foreground">WebRTC / LAN</p>
-          </div>
-          <div className="rounded-2xl bg-white/[0.06] px-3 py-2 ring-1 ring-white/[0.08]">
-            <p className="text-xs font-semibold">{t('landing.heroPathS3')}</p>
-            <p className="font-mono text-[10px] text-muted-foreground">S3 compatible</p>
-          </div>
-        </div>
-      </div>
-
-      <div className="landing-device-card absolute bottom-[13%] right-[4%] w-[min(70vw,265px)] rounded-3xl p-4 shadow-2xl motion-safe:animate-app-fade-up app-stagger-3">
-        <div className="flex items-center gap-3 rounded-2xl bg-white/[0.07] px-3 py-2.5 ring-1 ring-white/[0.08]">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-primary">
-            <FileImage className="size-4" />
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-xs font-semibold">project-build.apk</p>
-            <p className="font-mono text-[10px] text-muted-foreground">{t('landing.heroResumeLabel')}</p>
-          </div>
-          <RefreshCw className="size-4 text-primary" />
-        </div>
-        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/12">
-          <div className="h-full w-[68%] rounded-full bg-primary shadow-[0_0_18px_color-mix(in_oklch,var(--primary)_80%,transparent)]" />
-        </div>
-        <p className="mt-3 text-center text-xs font-medium text-muted-foreground">{t('landing.heroTransferStatus')}</p>
-      </div>
-
-      <div className="absolute bottom-[4%] left-[8%] flex items-center gap-3 rounded-3xl border border-white/12 bg-white/[0.07] px-4 py-3 shadow-2xl backdrop-blur-xl">
-        <Server className="size-8 text-primary" />
-        <div>
-          <p className="text-xs font-semibold text-foreground">{t('landing.heroS3Title')}</p>
-          <p className="font-mono text-[10px] text-muted-foreground">{t('landing.heroS3Desc')}</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function HowItWorksVisual() {
-  const { t } = useI18n();
-  const deviceCards = [
-    {
-      icon: Laptop,
-      label: 'MacBook',
-      status: t('landing.flowSending'),
-      className: 'lg:translate-y-3',
-    },
-    {
-      icon: Smartphone,
-      label: 'iPhone',
-      status: t('landing.flowSending'),
-      className: 'lg:-translate-y-4',
-    },
-    {
-      icon: Globe2,
-      label: 'Web',
-      status: t('landing.flowLinked'),
-      className: 'lg:translate-y-3',
-    },
-  ] as const;
-
-  const transferItems = [
-    { icon: Globe2, label: 'browser', value: 'no install' },
-    { icon: FileImage, label: 'project-build.apk', value: '68%' },
-    { icon: FileArchive, label: 'release.zip', value: 'queued' },
-  ] as const;
-
-  return (
-    <div className="landing-flow-panel relative min-h-[380px] overflow-hidden rounded-[2rem] p-5 sm:p-6">
-      <div className="landing-beam" aria-hidden />
-      <div className="pointer-events-none absolute left-[12%] top-[22%] h-24 w-[76%] rounded-full border border-primary/20 opacity-80 blur-[1px]" aria-hidden />
-      <div className="pointer-events-none absolute inset-x-10 top-1/2 h-px bg-gradient-to-r from-transparent via-primary/70 to-transparent shadow-[0_0_28px_color-mix(in_oklch,var(--primary)_75%,transparent)]" aria-hidden />
-
-      <div className="relative z-10 grid min-h-[320px] gap-4 lg:grid-cols-3">
-        {deviceCards.map(({ icon: Icon, label, status, className }, index) => (
-          <div
-            key={label}
-            className={cn(
-              'landing-device-card relative flex min-h-60 flex-col justify-between overflow-hidden rounded-3xl p-4',
-              className,
-            )}
-          >
-            <div className="absolute inset-x-5 top-16 h-px bg-gradient-to-r from-transparent via-white/18 to-transparent" aria-hidden />
-            <div className="flex items-center justify-between">
-              <span className="flex size-10 items-center justify-center rounded-2xl bg-primary/12 text-primary ring-1 ring-primary/25">
-                <Icon className="size-5" />
-              </span>
-              <span className={cn('size-2.5 rounded-full', index === 2 ? 'bg-muted-foreground/45' : 'bg-primary shadow-[0_0_14px_var(--primary)]')} />
-            </div>
-
-            <div className="space-y-2">
-              {transferItems.slice(0, index === 1 ? 3 : 2).map(({ icon: ItemIcon, label: itemLabel, value }) => (
-                <div key={itemLabel} className="flex items-center gap-2 rounded-2xl bg-white/[0.065] px-2.5 py-2 ring-1 ring-white/[0.07]">
-                  <span className="flex size-7 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                    <ItemIcon className="size-3.5" />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-mono text-[10px] text-foreground/85">{itemLabel}</p>
-                    <p className="font-mono text-[9px] text-muted-foreground">{value}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div>
-              <p className="font-mono text-xs text-muted-foreground">{label}</p>
-              <p className="mt-1 text-sm font-semibold">{status}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="relative z-20 mt-4 grid gap-3 sm:grid-cols-3">
-        <div className="rounded-2xl border border-primary/18 bg-primary/[0.08] px-3 py-2">
-          <div className="flex items-center gap-2 text-xs font-semibold">
-            <Router className="size-3.5 text-primary" />
-            {t('landing.heroPathLan')}
-          </div>
-          <p className="mt-1 font-mono text-[10px] text-muted-foreground">WebRTC / LAN</p>
-        </div>
-        <div className="rounded-2xl border border-white/10 bg-white/[0.055] px-3 py-2">
-          <div className="flex items-center gap-2 text-xs font-semibold">
-            <RefreshCw className="size-3.5 text-primary" />
-            {t('landing.heroTransferStatus')}
-          </div>
-          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/12">
-            <div className="h-full w-[68%] rounded-full bg-primary shadow-[0_0_16px_color-mix(in_oklch,var(--primary)_80%,transparent)]" />
-          </div>
-        </div>
-        <div className="rounded-2xl border border-white/10 bg-white/[0.055] px-3 py-2">
-          <div className="flex items-center gap-2 text-xs font-semibold">
-            <Server className="size-3.5 text-primary" />
-            {t('landing.heroPathS3')}
-          </div>
-          <p className="mt-1 font-mono text-[10px] text-muted-foreground">S3 fallback</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function CompareSection() {
-  const { t } = useI18n();
-
-  return (
-    <section className="relative z-10 mx-auto w-full max-w-7xl px-5 pb-20 md:px-8" id="compare">
-      <div className="mx-auto mb-10 max-w-2xl text-center">
-        <p className="font-mono text-xs uppercase tracking-[0.3em] text-primary/80">{t('landing.compareKicker')}</p>
-        <h2 className="font-display mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">{t('landing.compareTitle')}</h2>
-        <p className="mt-3 text-sm leading-7 text-muted-foreground">{t('landing.compareDesc')}</p>
-      </div>
-      <div className="grid gap-4 md:grid-cols-3">
-        {compareScenarios.map(({ titleKey, othersKey, shrimpSendKey }) => (
-          <article key={titleKey} className="landing-glass-card flex flex-col rounded-3xl p-5">
-            <h3 className="text-base font-semibold tracking-tight">{t(titleKey)}</h3>
-            <div className="mt-5 space-y-3">
-              <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-3.5 py-3">
-                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                  {t('landing.compareOthersLabel')}
-                </p>
-                <div className="mt-2 flex gap-2">
-                  <X className="mt-0.5 size-4 shrink-0 text-muted-foreground/70" aria-hidden />
-                  <p className="text-sm leading-6 text-muted-foreground">{t(othersKey)}</p>
-                </div>
-              </div>
-              <div className="rounded-2xl border border-primary/25 bg-primary/[0.08] px-3.5 py-3">
-                <p className="text-[11px] font-medium uppercase tracking-wide text-primary/80">
-                  {t('landing.compareShrimpSendLabel')}
-                </p>
-                <div className="mt-2 flex gap-2">
-                  <Check className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
-                  <p className="text-sm leading-6 text-foreground">{t(shrimpSendKey)}</p>
-                </div>
-              </div>
-            </div>
-          </article>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function safeJsonLd(value: unknown): string {
-  return JSON.stringify(value).replace(/</g, '\\u003c');
-}
-
-function LandingJsonLd({ localePath, siteOrigin }: { localePath: LocalePath; siteOrigin: string }) {
-  const { t } = useI18n();
-  const homeUrl = absoluteUrl(`/${localePath}`, siteOrigin);
-  const logoUrl = absoluteUrl(DEFAULT_OG_IMAGE, siteOrigin);
-  const language = HREFLANG[localePath];
-  const graph = [
-    {
-      '@type': 'Organization',
-      '@id': `${siteOrigin}/#organization`,
-      name: SITE_NAME[localePath],
-      url: siteOrigin,
-      logo: logoUrl,
-      sameAs: [homeUrl],
-      contactPoint: {
-        '@type': 'ContactPoint',
-        contactType: 'customer support',
-        url: absoluteUrl(`/${localePath}/docs/contact`, siteOrigin),
-      },
-    },
-    {
-      '@type': 'WebSite',
-      '@id': `${siteOrigin}/#website`,
-      name: SITE_NAME[localePath],
-      url: siteOrigin,
-      inLanguage: language,
-      publisher: { '@id': `${siteOrigin}/#organization` },
-      potentialAction: {
-        '@type': 'ViewAction',
-        target: absoluteUrl(`/${localePath}/docs/intro`, siteOrigin),
-      },
-    },
-    {
-      '@type': 'SoftwareApplication',
-      '@id': `${homeUrl}#software`,
-      name: SITE_NAME[localePath],
-      applicationCategory: 'UtilitiesApplication',
-      operatingSystem: 'macOS, Windows, Android, iOS, Web',
-      url: homeUrl,
-      image: logoUrl,
-      description: t('landing.heroSubhead'),
-      offers: {
-        '@type': 'Offer',
-        price: '0',
-        priceCurrency: localePath === 'zh' ? 'CNY' : 'USD',
-      },
-    },
-    {
-      '@type': 'FAQPage',
-      '@id': `${homeUrl}#faq`,
-      inLanguage: language,
-      mainEntity: faqItems.map((item) => ({
-        '@type': 'Question',
-        name: t(item.q),
-        acceptedAnswer: {
-          '@type': 'Answer',
-          text: t(item.a),
-        },
-      })),
-    },
+export function LandingPage({localePath, siteOrigin}: {localePath: LocalePath;siteOrigin: string}) {
+  const {localeTag} = useI18n();
+  const zh = localeTag.startsWith('zh');
+  const [downloads, setDownloads] = useState<Downloads>();
+  const [platform, setPlatform] = useState('macOS');
+  const releaseHref = getClientReleaseDownloadUrl({siteOrigin});
+  const overseas = isClientDownloadOverseas({siteOrigin});
+  const region = downloads?.available ? (overseas ? downloads.overseas : downloads.mainland) : undefined;
+  useEffect(() => {
+    const controller = new AbortController();
+    const agent = navigator.userAgent;
+    queueMicrotask(() => { if (controller.signal.aborted) return; setPlatform(/Android/i.test(agent) ? 'Android' : /iPhone|iPad/i.test(agent) ? 'iOS' : /Windows/i.test(agent) ? 'Windows' : /Linux/i.test(agent) ? 'Linux' : 'macOS'); });
+    fetch(`${getApiUrl()}/api/app/public-download`, {signal: controller.signal}).then(r => r.ok ? r.json() : undefined).then(setDownloads).catch(() => {});
+    return () => controller.abort();
+  }, []);
+  const platforms = [
+    {name:'Windows',icon:Monitor,url:region?.winUrl}, {name:'macOS',icon:Laptop,url:region?.macUrl},
+    {name:'Android',icon:Smartphone,url:region?.googlePlayUrl || region?.apkUrl}, {name:'iOS',icon:Smartphone,url:region?.appStoreUrl || region?.iosStoreUrl},
+    {name:'Linux',icon:Monitor,url:undefined},
   ];
-
-  return (
-    <script
-      type="application/ld+json"
-      dangerouslySetInnerHTML={{
-        __html: safeJsonLd({
-          '@context': 'https://schema.org',
-          '@graph': graph,
-        }),
-      }}
-    />
-  );
-}
-
-export function LandingPage({ localePath, siteOrigin }: { localePath: LocalePath; siteOrigin: string }) {
-  const { t } = useI18n();
-  const { accessToken } = useAuth();
-  const pricingRegion = getPricingRegion(siteOrigin);
-  const releaseHref = getClientReleaseDownloadUrl({ siteOrigin });
-  const purchaseHref = accessToken ? '/settings/membership' : '/login?next=%2Fsettings%2Fmembership';
-  const webTrialHref = accessToken ? '/chat' : '/login?next=%2Fchat';
-  const visiblePricingPlans = pricingPlans.filter((plan) => plan.region === pricingRegion);
-
-  return (
-    <main className="landing-shell min-h-dvh overflow-hidden text-foreground">
-      <LandingJsonLd localePath={localePath} siteOrigin={siteOrigin} />
-      <GlowOrb className="-left-40 top-24 h-80 w-80" />
-      <GlowOrb className="right-[-10rem] top-[28rem] h-[28rem] w-[28rem] opacity-45" />
-
-      <SiteNav active="home" />
-
-      <section className="relative z-10 mx-auto grid w-full max-w-7xl items-center gap-10 px-5 pb-12 pt-10 md:px-8 lg:grid-cols-[0.95fr_1.05fr] lg:pb-18 lg:pt-16">
-        <div className="max-w-2xl motion-safe:animate-app-fade-up">
-          <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/[0.08] px-3 py-1.5 text-xs font-medium text-primary shadow-lg shadow-primary/10">
-            <Sparkles className="size-3.5" />
-            {t('landing.eyebrow')}
+  const mainDownload = validDownload(platforms.find(p => p.name === platform)?.url) || releaseHref;
+  const features = [
+    {icon:UserRound,title:zh?'免登录使用':'No account needed',body:zh?'安装后即可使用。在本地网络中，让设备直接连接。':'Open the app and connect your devices directly on your local network.'},
+    {icon:RefreshCw,title:zh?'断点续传':'Pick up where you left off',body:zh?'连接恢复后接着传，大文件也能安心发送。':'Resume interrupted transfers when your connection returns.'},
+    {icon:Folder,title:zh?'文件直接保存':'Save straight to your folder',body:zh?'接收的文件直接保存到下载目录，或你选择的位置。':'Receive files in Downloads, or a folder you choose.'},
+  ];
+  const faqs = [
+    [zh?'每台设备都需要登录吗？':'Does every device need an account?',zh?'不需要。设备可以独立使用。购买会员时登录一个账号，在其他设备输入授权码或扫码，再由购买者确认授权。':'No. Devices work independently. Sign in once to buy a membership, then authorize other devices with a code or QR scan and confirm them from the purchasing account.'],
+    [zh?'没有互联网也可以传输吗？':'Can I transfer without internet?',zh?'可以。客户端在同一局域网中可以直接传输。浏览器需先打开网页；局域网访问能力还取决于浏览器权限和网络环境。':'Yes. Installed clients can transfer over the same local network. Open the web app beforehand; local network access also depends on browser permissions and the network.' ],
+    [zh?'文件保存在哪里？':'Where do my files go?',zh?'客户端默认保存到系统下载目录，也可以自定义。支持目录授权的浏览器可以直接写入指定文件夹；其他浏览器遵循自身的下载设置。':'The app uses your system Downloads folder by default. Supported browsers can write directly to a folder you approve; other browsers use their download settings.' ],
+    [zh?'两台设备不能直接连通怎么办？':'What if devices cannot connect directly?',zh?'应用会尝试可用的连接方式。单向网络可以使用接收端可达地址；需要中转时，可在连接设置中配置对象存储。':'The app tries available connections. A reachable receiving address can help with one-way networks. Configure object storage in connection settings when a relay is needed.' ],
+  ];
+  const schema = {'@context':'https://schema.org','@type':'SoftwareApplication',name:SITE_NAME[localePath],applicationCategory:'UtilitiesApplication',operatingSystem:'macOS, Windows, Linux, Android, iOS, Web',url:absoluteUrl(`/${localePath}`,siteOrigin),offers:{'@type':'Offer',price:'0',priceCurrency:zh?'CNY':'USD'}};
+  return <div className="public-site">
+    <script type="application/ld+json" dangerouslySetInnerHTML={{__html:JSON.stringify(schema).replace(/</g,'\\u003c')}} />
+    <SiteNav active="home" />
+    <main className="public-main">
+      <section className="public-hero" id="features">
+        <div className="public-hero-copy">
+          <h1>{zh?<>设备之间，<br/>轻松传递。</>:<>Your devices.<br/>Simply connected.</>}</h1>
+          <p>{zh?<>文件和文字，打开就能传。<br/>支持免登录使用，也能在离线网络中互传。</>:<>Files and words, ready to go.<br/>No account needed. Local transfers work offline.</>}</p>
+          <div className="flex flex-wrap gap-3">
+            <a className={buttonVariants({size:'lg'})} href={mainDownload} target="_blank" rel="noopener noreferrer"><Download size={18}/>{zh?`下载 ${platform} 版`:`Get for ${platform}`}</a>
+            <Link className={buttonVariants({variant:'outline',size:'lg'})} href="/chat">{zh?'打开网页版':'Open web app'}</Link>
           </div>
-          <h1 className="font-display text-balance text-4xl font-semibold leading-[1.2] tracking-tight sm:text-5xl lg:text-6xl">
-            {t('landing.heroTitleBefore')}
-            {localePath === 'en' ? ' ' : null}
-            <span className="landing-gradient-text block pb-4">{t('landing.heroTitleAccent')}</span>
-          </h1>
-          <p className="mt-6 max-w-xl text-pretty text-base leading-8 text-muted-foreground sm:text-lg">
-            {t('landing.heroSubhead')}
-          </p>
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-            <a
-              href={releaseHref}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={cn(buttonVariants({ size: 'lg' }), 'h-12 rounded-2xl px-5 text-sm shadow-xl shadow-primary/20')}
-            >
-              <Github className="size-4" />
-              {t('landing.downloadPrimary')}
-            </a>
-            <Link href={webTrialHref} className={cn(buttonVariants({ variant: 'outline', size: 'lg' }), 'h-12 rounded-2xl bg-white/[0.04] px-5')}>
-              <Play className="size-4" />
-              {accessToken ? t('landing.tryWeb') : t('landing.loginToTryWeb')}
-            </Link>
-          </div>
-          <p className="mt-3 text-xs text-muted-foreground">{t('landing.heroFootnote')}</p>
+          <div className="public-platforms">{platforms.map(({name,icon:Icon})=><a key={name} href="#download"><Icon size={14}/>{name}</a>)}</div>
         </div>
-
-        <HeroVisual />
+        <Link href="/chat" className="public-product-shot" aria-label={zh?'打开虾传网页版':'Open ShrimpSend'}>
+          <Image src="/product-preview.png" alt={zh?'虾传桌面界面：设备列表与文件传输会话':'ShrimpSend desktop: devices and a file transfer conversation'} width={1440} height={960} priority unoptimized/>
+        </Link>
       </section>
-
-      <section className="relative z-10 mx-auto w-full max-w-7xl px-5 md:px-8">
-        <div className="grid overflow-hidden rounded-3xl border border-white/10 bg-white/[0.045] shadow-2xl shadow-black/20 backdrop-blur-2xl sm:grid-cols-2 lg:grid-cols-4">
-          {statItems.map(({ icon: Icon, valueKey, labelKey }) => (
-            <div key={valueKey} className="flex items-center gap-3 border-white/10 px-5 py-5 sm:border-r last:border-r-0">
-              <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-primary/12 text-primary ring-1 ring-primary/25">
-                <Icon className="size-5" />
-              </span>
-              <div>
-                <p className="text-lg font-semibold leading-none">{t(valueKey)}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{t(labelKey)}</p>
-              </div>
-            </div>
-          ))}
-        </div>
+      <section className="public-feature-row">{features.map(({icon:Icon,title,body})=><article key={title}><Icon size={27} strokeWidth={1.5}/><div><h2>{title}</h2><p>{body}</p></div></article>)}</section>
+      <section className="public-section">
+        <h2>{zh?'连接设备，选好文件，开始传输。':'Connect. Choose a file. Send.'}</h2>
+        <div className="public-steps">{[
+          [zh?'打开另一台设备上的虾传':'Open ShrimpSend on another device',zh?'在电脑或手机上打开应用，无需登录。':'Open the app on your computer or phone. No sign-in required.'],
+          [zh?'选择对方设备':'Choose your device',zh?'选择附近设备，或使用连接码与二维码配对。':'Choose a nearby device, or pair with a connection code or QR.'],
+          [zh?'选中文件并开始传输':'Choose files and send',zh?'拖入文件或输入文字，点发送即可。':'Drop in files or type a message, then press Send.'],
+        ].map(([title,body],i)=><article key={title}><span>{i+1}</span><div><h3>{title}</h3><p>{body}</p></div></article>)}</div>
+        <Link href={`/${localePath}/docs/intro`} className="inline-flex items-center gap-2 text-sm text-primary mt-7">{zh?'查看快速开始指南':'Read the getting started guide'}<ArrowRight size={16}/></Link>
       </section>
-
-      <section className="relative z-10 mx-auto w-full max-w-7xl px-5 py-20 md:px-8" id="features">
-        <div className="mx-auto mb-10 max-w-2xl text-center">
-          <p className="font-mono text-xs uppercase tracking-[0.3em] text-primary/80">{t('landing.featuresKicker')}</p>
-          <h2 className="font-display mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">{t('landing.featuresTitle')}</h2>
-        </div>
-        <div className="grid gap-4 md:grid-cols-2">
-          {featureCards.map(({ icon: Icon, titleKey, descKey }) => (
-            <article key={titleKey} className="landing-glass-card rounded-3xl p-5">
-              <span className="mb-6 flex size-12 items-center justify-center rounded-2xl bg-primary/12 text-primary ring-1 ring-primary/20">
-                <Icon className="size-5" />
-              </span>
-              <h3 className="text-base font-semibold tracking-tight">{t(titleKey)}</h3>
-              <p className="mt-3 text-sm leading-6 text-muted-foreground">{t(descKey)}</p>
-            </article>
-          ))}
-        </div>
+      <section className="public-section" id="download">
+        <div className="public-section-title"><div><h2>{zh?'在你的设备上使用':'Make yourself at home'}</h2><p>{zh?'选择适合你的版本。各设备可以独立使用。':'Choose your platform. Every device works independently.'}</p></div>{downloads?.available&&downloads.version&&<span className="text-sm text-muted-foreground">v{downloads.version}</span>}</div>
+        <div className="public-downloads">{platforms.map(({name,icon:Icon,url})=><a key={name} href={validDownload(url)||releaseHref} target="_blank" rel="noopener noreferrer"><Icon size={25} strokeWidth={1.5}/><strong>{name}</strong><span>{validDownload(url)?(zh?'下载客户端':'Download app'):(zh?'选择安装包':'Choose a package')}<ArrowRight size={14}/></span></a>)}</div>
       </section>
-
-      <CompareSection />
-
-      <section className="relative z-10 mx-auto grid w-full max-w-7xl gap-10 px-5 pb-20 md:px-8 lg:grid-cols-[0.8fr_1.2fr]">
-        <div>
-          <p className="font-mono text-xs uppercase tracking-[0.3em] text-primary/80">{t('landing.howKicker')}</p>
-          <h2 className="font-display mt-3 text-3xl font-semibold tracking-tight">{t('landing.howTitle')}</h2>
-          <div className="mt-8 space-y-4">
-            {steps.map(({ icon: Icon, titleKey, descKey }, index) => (
-              <div key={titleKey} className="flex gap-4">
-                <span className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-primary/12 text-primary">
-                  <Icon className="size-4" />
-                </span>
-                <div>
-                  <h3 className="text-sm font-semibold">{index + 1}. {t(titleKey)}</h3>
-                  <p className="mt-1 text-sm leading-6 text-muted-foreground">{t(descKey)}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-        <HowItWorksVisual />
+      <section className="public-section" id="pricing">
+        <div className="public-section-title"><div><h2>{zh?'一个账号，授权多台设备。':'One account. Your authorized devices.'}</h2><p>{zh?'账号用来管理会员，传输始终以设备为中心。':'Manage your membership in one place. Keep transfers on your devices.'}</p></div></div>
+        <div className="public-plans"><article><h3>{zh?'直接开始使用':'Start right away'}</h3><p>{zh?'日常传输无需创建账号。':'Everyday transfers without creating an account.'}</p><ul>{[zh?'局域网直接传输':'Direct local transfers',zh?'发送文件与文字':'Send files and text',zh?'自定义接收目录':'Choose your receive folder'].map(x=><li key={x}><Check size={16}/>{x}</li>)}</ul><Link href="/chat" className={buttonVariants({variant:'outline'})}>{zh?'打开网页版':'Open web app'}</Link></article><article><h3>{zh?'为设备开通会员':'Authorize your devices'}</h3><p>{zh?'购买设备名额后，按需分配与收回。':'Purchase device slots, then assign or release them as needed.'}</p><ul>{[zh?'已授权设备享受无限制信令服务':'Unlimited signaling for authorized devices',zh?'六位授权码或扫码授权':'Authorize with a six-character code or QR',zh?'其他设备无需登录购买账号':'Other devices stay signed out'].map(x=><li key={x}><Check size={16}/>{x}</li>)}</ul><Link href="/settings/membership" className={buttonVariants()}>{zh?'查看套餐与名额':'View plans and device slots'}</Link></article></div>
       </section>
-
-      <section className="relative z-10 mx-auto w-full max-w-7xl px-5 pb-20 md:px-8" id="pricing">
-        <div className="mb-8 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-          <div>
-            <p className="font-mono text-xs uppercase tracking-[0.3em] text-primary/80">{t('landing.pricingKicker')}</p>
-            <h2 className="font-display mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">{t('landing.pricingTitle')}</h2>
-            <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground">{t('landing.pricingDesc')}</p>
-          </div>
-          <p className="rounded-full border border-primary/20 bg-primary/[0.08] px-3 py-1.5 text-xs font-medium text-primary">
-            {pricingRegion === 'overseas' ? t('landing.pricingRegionOverseas') : t('landing.pricingRegionMainland')}
-          </p>
-        </div>
-        <div
-          className={cn(
-            'grid gap-4',
-            pricingRegion === 'overseas' ? 'lg:grid-cols-2 xl:grid-cols-4' : 'lg:grid-cols-3',
-          )}
-        >
-          {visiblePricingPlans.map((plan) => {
-            const isFree = 'isFree' in plan && plan.isFree;
-            const planName =
-              isFree && 'nameKey' in plan ? t(plan.nameKey) : 'name' in plan ? plan.name : '';
-            const uploadParams = 'uploadGib' in plan ? { gib: plan.uploadGib } : undefined;
-
-            return (
-              <article
-                key={plan.id}
-                className={cn(
-                  'landing-glass-card relative flex flex-col rounded-3xl p-6',
-                  plan.popular && 'border-primary/40 bg-primary/[0.04] shadow-primary/10',
-                )}
-              >
-              {plan.popular && (
-                <span className="absolute right-4 top-4 rounded-full bg-primary px-2.5 py-1 text-[11px] font-semibold text-primary-foreground">
-                  {t('landing.pricingPopular')}
-                </span>
-              )}
-              <div>
-                <p className="text-lg font-semibold tracking-tight">{planName}</p>
-                <div className="mt-5">
-                  <span className="font-display text-4xl font-bold tracking-tight">
-                    {isFree && 'priceKey' in plan ? t(plan.priceKey) : 'price' in plan ? plan.price : ''}
-                  </span>
-                  {!isFree && 'suffixKey' in plan && (
-                    <span className="ml-1 text-sm text-muted-foreground">{t(plan.suffixKey)}</span>
-                  )}
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground">{t(plan.secondaryKey)}</p>
-              </div>
-              <ul className="mt-6 flex-1 space-y-3 text-sm text-muted-foreground">
-                <li className="flex gap-2">
-                  <span className="text-primary">✓</span>
-                  <span>{t('landing.pricingFeatureDevices', { count: plan.devices })}</span>
-                </li>
-                {plan.featureKeys.map((key) => (
-                  <li key={key} className="flex gap-2">
-                    <span className="text-primary">✓</span>
-                    <span>{t(key, uploadParams)}</span>
-                  </li>
-                ))}
-              </ul>
-              <Link
-                href={isFree ? webTrialHref : purchaseHref}
-                className={cn(
-                  buttonVariants({ variant: isFree ? 'outline' : 'default' }),
-                  'mt-6 h-11 rounded-2xl font-semibold',
-                )}
-              >
-                {t(isFree ? 'landing.pricingFreeCta' : 'landing.pricingCta')}
-              </Link>
-            </article>
-            );
-          })}
-        </div>
-      </section>
-
-      <section className="relative z-10 mx-auto w-full max-w-4xl px-5 pb-20 md:px-8" id="faq">
-        <div className="mb-8 text-center">
-          <p className="font-mono text-xs uppercase tracking-[0.3em] text-primary/80">{t('landing.faqKicker')}</p>
-          <h2 className="font-display mt-3 text-3xl font-semibold tracking-tight">{t('landing.faqTitle')}</h2>
-        </div>
-        <div className="space-y-3">
-          {faqItems.map((item) => (
-            <article key={item.q} className="landing-glass-card rounded-2xl px-5 py-4">
-              <h3 className="text-sm font-semibold">{t(item.q)}</h3>
-              <p className="mt-3 text-sm leading-7 text-muted-foreground">{t(item.a)}</p>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <SiteFooter />
+      <section className="public-section public-faq" id="faq"><h2>{zh?'你可能想知道':'A few things to know'}</h2>{faqs.map(([q,a])=><details key={q}><summary>{q}<ChevronDown size={17}/></summary><p>{a}</p></details>)}</section>
     </main>
-  );
+    <SiteFooter/>
+  </div>;
 }

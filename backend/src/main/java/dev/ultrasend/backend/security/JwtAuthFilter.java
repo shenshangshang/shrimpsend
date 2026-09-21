@@ -66,6 +66,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 return;
             }
             String userId = parsed.userId();
+            request.setAttribute("authenticatedDeviceId", parsed.deviceId());
             if (parsed.deviceId() != null && parsed.deviceSessionVersion() != null) {
                 Optional<Device> od = deviceRepository.findByUser_IdAndDeviceIdAndActiveTrue(
                         Long.parseLong(userId), parsed.deviceId());

@@ -1,6 +1,8 @@
 const KEY_ID = 'ultrasend_device_id';
 const KEY_NAME = 'ultrasend_device_name';
-const KEY_PRESENCE_SESSION_ID = 'ultrasend_presence_session_id';
+let presenceSessionId: string | undefined;
+export const DEVICE_NAME_CHANGED = 'shrimpsend-device-name-changed';
+export const PENDING_DEVICE_NAME = 'shrimpsend_pending_device_name';
 const KEY_SECRET = 'ultrasend_device_secret';
 
 function detectBrowser(): string {
@@ -105,15 +107,14 @@ export function getDeviceName(): string {
 
 export function getOrCreatePresenceSessionId(): string {
   if (typeof window === 'undefined') return '';
-  let id = sessionStorage.getItem(KEY_PRESENCE_SESSION_ID);
-  if (!id) {
-    id = generateUUID();
-    sessionStorage.setItem(KEY_PRESENCE_SESSION_ID, id);
-  }
-  return id;
+  return presenceSessionId ??= generateUUID();
 }
 
 export function setDeviceName(name: string): void {
   if (typeof window === 'undefined') return;
-  localStorage.setItem(KEY_NAME, name);
+  const value = name.trim();
+  if (!value || value.length > 80 || /[\u0000-\u001f\u007f-\u009f]/.test(value)) throw new Error('Invalid device name');
+  localStorage.setItem(KEY_NAME, value);
+  localStorage.setItem(PENDING_DEVICE_NAME, value);
+  window.dispatchEvent(new Event(DEVICE_NAME_CHANGED));
 }

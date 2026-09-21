@@ -438,22 +438,22 @@
       "sendModifierEnterMac": "发送 (⌘+Enter)",
       "pickFile": "选择文件",
       "devicePanel": "设备面板",
-      "guestPlaceholder": "登录后可发文字，文件仍可直接传输"
+      "guestPlaceholder": "输入消息…"
     },
     "empty": {
-      "hint": "发送一条消息或文件，所有设备实时同步",
-      "guestHint": "用 WebRTC 发送文件。登录后可同步文字与云传输。",
+      "hint": "发送文字或文件到选中的设备",
+      "guestHint": "发一段文字，或选择文件开始传输。",
       "loadMore": "加载更多…",
       "dropHint": "松开以添加文件"
     },
     "quota": {
-      "hint": "未登录发送有频率限制",
+      "hint": "本机免费额度",
       "message": "消息 {used}/{limit}",
       "signaling": "信令 {used}/{limit}",
       "title": "发送过于频繁",
       "messageBody": "本分钟文字额度已用完（{used}/{limit}）。请 {seconds} 秒后再试。",
       "signalingBody": "本分钟传输信令额度已用完（{used}/{limit}）。请 {seconds} 秒后再试，或稍后再发文件。",
-      "infoBody": "未登录发送需防刷限制。当前消息 {messageUsed}/{messageLimit}，信令 {signalingUsed}/{signalingLimit}。登录后不受此限制。",
+      "infoBody": "当前消息 {messageUsed}/{messageLimit}，新建连接 {signalingUsed}/{signalingLimit}。授权本机后，正常使用不扣商业额度。",
       "gotIt": "知道了"
     },
     "scrollBottom": "回到底部",
@@ -484,14 +484,15 @@
       "sessionClearMessagesDone": "消息已清空",
       "sessionClearMessagesFailed": "清空消息失败",
       "sessionRemoveSelfHint": "从账号移除本机并退出登录。",
-      "sessionRemoveOtherHint": "从账号移除当前会话中的设备。移除后该设备上的账号将退出登录。",
+      "sessionRemoveOtherHint": "解除设备配对，会员授权和本地文件会保留。",
       "deleteThisDevice": "删除本设备",
       "removeDevice": "移除设备",
       "online": "在线",
       "checking": "检测中…",
       "offline": "离线",
       "deviceNumber": "设备号",
-      "toastRemovedSelf": "已删除本设备"
+      "toastRemovedSelf": "已删除本设备",
+      "peerRemoveConfirm": "解除与这台设备的配对？本地文件和会员授权会保留。"
     },
     "bubble": {
       "sending": "发送中",
@@ -516,7 +517,8 @@
       "phaseTryingS3": "正在上传到云存储…",
       "phaseTryingS3Fallback": "直连未通，正在改用云存储…",
       "sendingVia": "{channel} 发送中",
-      "receivingVia": "{channel} 接收中"
+      "receivingVia": "{channel} 接收中",
+      "receiveFailed": "接收中断，请让对方重试"
     }
   },
   "devices": {
@@ -526,7 +528,7 @@
     "removed": "已移除设备",
     "removeFailed": "移除失败，请稍后重试",
     "nameEmpty": "设备名称不能为空",
-    "title": "设备",
+    "title": "账号登录会话",
     "subtitle": "管理已登录设备与本机显示名称",
     "myDevices": "我的设备",
     "deviceCount": "共 {count} 台设备",
@@ -606,8 +608,8 @@
     "permanentDelete": "永久删除"
   },
   "membership": {
-    "title": "会员",
-    "paySuccess": "支付成功，会员权益已生效。",
+    "title": "设备会员",
+    "paySuccess": "支付成功，请分配设备授权名额。",
     "orderCreated": "订单已创建，请在新标签页完成支付宝支付。",
     "paymentPopupBlocked": "浏览器拦截了支付窗口，请允许本站弹窗后重试。",
     "paymentTabNavigateFailed": "无法在新标签页打开支付宝，请关闭拦截后重试。",
@@ -615,8 +617,8 @@
     "orderFailed": "下单失败",
     "currentTitle": "当前会员",
     "loading": "加载中…",
-    "deviceLimit": "设备上限 {count} 台",
-    "devicesBound": "当前已绑定 {count} 台设备",
+    "deviceLimit": "可授权 {count} 台",
+    "devicesBound": "当前已授权 {count} 台设备",
     "addonLine": "已增购 {packs} 包（+{slots} 台）",
     "tierBadgeAddon": "+{n} 台",
     "tierBadgeDevices": "{n} 台设备",
@@ -634,7 +636,7 @@
     "savingsVsMonthlyYear": "相较连续按月付满一年，最高省约 {pct}%",
     "subscribeStripe": "Stripe 订阅",
     "planStripeHint": "安全结账 · 自动续订 · 可随时取消",
-    "featureDevices": "{count} 台设备绑定上限",
+    "featureDevices": "{count} 个设备授权名额",
     "featureUploadHosted": "内置云传输 {gib} GiB / 月（上传计量）",
     "planPopular": "推荐",
     "pricePerMonthEquiv": "约合 {price}/月",
@@ -930,7 +932,12 @@
     "bottomProbing": "检测中…",
     "bottomOnlineCount": "{count} 台在线",
     "refreshReachTitle": "刷新在线状态",
-    "fileLine": "[文件] {fileName}"
+    "fileLine": "[文件] {fileName}",
+    "section": "设备",
+    "ready": "连接设备，即刻开传",
+    "readyHint": "同一网络内优先直传，自动选择可用线路。",
+    "accountOptional": "购买或管理设备名额",
+    "guestMode": "免登录使用中"
   },
   "sendPanel": {
     "title": "发送目标",
@@ -948,6 +955,52 @@
     "collapseTitle": "收起侧栏",
     "httpHint": "通过 HTTP 直连，需同一局域网。",
     "webrtcHint": "WebRTC 不经服务器；失败时可换 HTTP。",
-    "s3Hint": "通过 S3 云端中转，发送到所有已登录设备。"
+    "s3Hint": "通过 S3 中转发送到选中的已配对设备。"
+  },
+  "welcome": {
+    "eyebrow": "从这里，传到那里",
+    "title": "靠近一点，传得更简单。",
+    "description": "不必登录，连接另一台设备就能发送文件、照片或文字。",
+    "connect": "连接另一台设备",
+    "scan": "用另一台设备扫码，或粘贴设备 ID",
+    "private": "设备之间直接传输",
+    "resume": "中断后可继续",
+    "anything": "文件、照片与文字"
+  },
+  "receive": {
+    "folder": "接收位置",
+    "default": "浏览器默认下载目录",
+    "hint": "接收文件直接写入目标目录，不再保存第二份缓存。",
+    "browserHint": "下载目录由浏览器管理，可在浏览器设置中更改。",
+    "choose": "选择文件夹",
+    "reset": "恢复默认"
+  },
+  "deviceLicense": {
+    "entry": "本机授权"
+  },
+  "conversation": {
+    "available": "可传输",
+    "connect": "连接",
+    "noDevices": "连接另一台设备，即可开始互传。",
+    "composer": "输入文字，或把文件拖到这里",
+    "file": "文件",
+    "newline": "Shift + 回车换行",
+    "emptyThread": "发送一段文字，或拖入文件开始传输。",
+    "removeFile": "移除 {name}",
+    "membership": "会员与授权额度",
+    "allSettings": "更多设置",
+    "light": "浅色",
+    "dark": "深色",
+    "system": "跟随系统",
+    "welcomeTitle": "选一台设备，开始互传",
+    "welcomeHint": "文件和文字，都在一个会话里。",
+    "connectDevice": "连接设备",
+    "saved": "已保存到接收文件夹",
+    "browserDownload": "已交给浏览器下载",
+    "sent": "已发送",
+    "today": "今天",
+    "general": "本机设置",
+    "generalHint": "这些设置仅影响当前设备，免登录也能使用。",
+    "accountNeeded": "登录后管理账号与会员，其他功能可以免登录使用。"
   }
 }

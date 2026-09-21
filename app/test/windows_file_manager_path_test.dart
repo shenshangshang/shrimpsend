@@ -49,10 +49,10 @@ void main() {
     );
 
     expect(p.basename(receivePath), 'my file.txt');
-    expect(p.basename(p.dirname(receivePath)), 'message id');
+    expect(p.normalize(p.dirname(receivePath)), p.normalize(tempDir.absolute.path));
     expect(
       p.normalize(receivePath),
-      p.join(tempDir.absolute.path, 'message id', 'my file.txt'),
+      p.join(tempDir.absolute.path, 'my file.txt'),
     );
   });
 

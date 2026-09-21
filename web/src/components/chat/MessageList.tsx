@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { useChatContext } from '@/contexts/ChatContext';
+import { belongsToConversation } from '@/lib/conversationMessages';
+import { useChatContext, S3_VIRTUAL_DEVICE_ID } from '@/contexts/ChatContext';
 import { useI18n } from '@/contexts/I18nContext';
 import { MessageBubble } from '@/components/MessageBubble';
 import { senderDisplayLabel } from '@/lib/senderDisplay';
@@ -26,9 +27,11 @@ function isMessageTransferring(msg: { _status?: string; type?: string }): boolea
 }
 
 export function MessageList() {
-  const { t } = useI18n();
+  const { t, localeTag } = useI18n();
   const {
-    messages,
+    messages: allMessages,
+    selectedDeviceId,
+    currentDeviceId,
     devices,
     loadMoreMessages,
     loadingMore,
@@ -40,15 +43,14 @@ export function MessageList() {
     cancelTransfer,
     handleRetryText,
     handleRetryFile,
-    isGuest,
   } = useChatContext();
 
+  const messages = useMemo(() => allMessages.filter(message => belongsToConversation(message, currentDeviceId, selectedDeviceId)), [allMessages, currentDeviceId, selectedDeviceId]);
   const listRef = useRef<HTMLDivElement>(null);
   const prevMessageCountRef = useRef(0);
+  const previousThreadRef = useRef(selectedDeviceId);
   const prependingRef = useRef(false);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
-
-  const retryInfoRef = useChatContext() as unknown as { handleRetryFile: (id: string) => void };
 
   const rowVirtualizer = useVirtualizer({
     count: messages.length,
@@ -75,11 +77,18 @@ export function MessageList() {
       return;
     }
     const n = messages.length;
-    const grew = n > prevMessageCountRef.current;
+    const switchedThread = previousThreadRef.current !== selectedDeviceId;
+    previousThreadRef.current = selectedDeviceId;
+    const grew = switchedThread || n > prevMessageCountRef.current;
     prevMessageCountRef.current = n;
     if (grew) {
-      listRef.current?.scrollTo(0, listRef.current.scrollHeight);
-      setShowScrollToBottom(false);
+      if (n) rowVirtualizer.scrollToIndex(n - 1, { align: 'end' });
+      const frame = requestAnimationFrame(() => {
+        const el = listRef.current;
+        if (el) el.scrollTo(0, el.scrollHeight);
+        setShowScrollToBottom(false);
+      });
+      return () => cancelAnimationFrame(frame);
     } else {
       requestAnimationFrame(() => {
         const el = listRef.current;
@@ -88,7 +97,7 @@ export function MessageList() {
         setShowScrollToBottom(distanceToBottom > SCROLL_TO_BOTTOM_THRESHOLD);
       });
     }
-  }, [messages]);
+  }, [messages, selectedDeviceId, rowVirtualizer]);
 
   const handleListScroll = useCallback(() => {
     const el = listRef.current;
@@ -108,7 +117,7 @@ export function MessageList() {
   }, []);
 
   return (
-    <div ref={listRef} className="flex-1 space-y-4 overflow-y-auto p-4 sm:p-5" onScroll={handleListScroll}>
+    <div ref={listRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-5 sm:px-8 sm:py-6" onScroll={handleListScroll}>
       {loadingMore && (
         <div className="flex justify-center py-2">
           <span className="text-xs text-muted-foreground">{t('chat.loadMore')}</span>
@@ -120,12 +129,12 @@ export function MessageList() {
             <MessageCircle className="size-8 text-muted-foreground/40" strokeWidth={1.15} />
           </div>
           <p className="max-w-xs text-sm leading-relaxed text-muted-foreground motion-safe:animate-app-fade-up app-stagger-1">
-            {isGuest ? t('chat.empty.guestHint') : t('chat.empty.hint')}
+            {t('conversation.emptyThread')}
           </p>
         </div>
       )}
       {messages.length > 0 && (
-        <div className="relative w-full" style={{ height: rowVirtualizer.getTotalSize() }}>
+        <div className="message-list-content relative mx-auto w-full" style={{ height: rowVirtualizer.getTotalSize() }}>
           {rowVirtualizer.getVirtualItems().map((vi) => {
             const msg = messages[vi.index];
             if (!msg) return null;
@@ -141,6 +150,9 @@ export function MessageList() {
                 className="absolute left-0 top-0 w-full px-0 pb-4"
                 style={{ transform: `translateY(${vi.start}px)` }}
               >
+                {(vi.index === 0 || msg.ts - messages[vi.index - 1]!.ts > 5 * 60_000) && (
+                  <p className="mb-6 text-center text-xs text-muted-foreground">{new Intl.DateTimeFormat(localeTag.replaceAll('_', '-'), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(msg.ts)}</p>
+                )}
                 <div
                   className={`group -mx-1 flex items-start gap-1 rounded-xl px-1 py-0.5 transition-colors duration-150 ${
                     selectMode && selected ? 'bg-primary/12 ring-1 ring-primary/20' : ''
@@ -175,7 +187,7 @@ export function MessageList() {
                   <div className="min-w-0 flex-1">
                     <MessageBubble
                       msg={msg}
-                      senderLabel={senderDisplayLabel(msg.fromDeviceId, devices, t)}
+                      senderLabel={selectedDeviceId === S3_VIRTUAL_DEVICE_ID ? senderDisplayLabel(msg.fromDeviceId, devices, t) : ''}
                       isOwn={msg.fromDeviceId === getOrCreateDeviceId()}
                       selectMode={selectMode}
                       onEnterMultiSelect={onEnterMultiSelect}

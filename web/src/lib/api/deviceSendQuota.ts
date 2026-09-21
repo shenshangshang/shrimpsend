@@ -1,4 +1,4 @@
-import { getApiUrl, getDeviceAccessToken } from './client';
+import { getApiUrl, getDeviceAccessToken, fetchWithDeviceAuth } from './client';
 
 export type DeviceSendBucketQuota = {
   used: number;
@@ -88,9 +88,7 @@ export async function readQuotaFromResponse(res: Response): Promise<DeviceSendQu
 export async function fetchDeviceQuota(): Promise<DeviceSendQuota | null> {
   const token = getDeviceAccessToken();
   if (!token) return null;
-  const res = await fetch(`${getApiUrl()}/api/messages/device-quota`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  const res = await fetchWithDeviceAuth(`${getApiUrl()}/api/messages/device-quota`);
   if (!res.ok) return null;
   return readQuotaFromResponse(res);
 }

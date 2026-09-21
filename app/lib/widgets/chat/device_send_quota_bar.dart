@@ -4,7 +4,6 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../api/device_send_quota.dart';
 import '../../l10n/generated/app_localizations.dart';
-import '../../providers/auth_provider.dart';
 import '../../providers/device_send_quota_provider.dart';
 import '../../ui/app_ui.dart';
 import '../app_confirm_dialog.dart';
@@ -28,9 +27,6 @@ class _DeviceSendQuotaBarState extends ConsumerState<DeviceSendQuotaBar> {
 
   @override
   Widget build(BuildContext context) {
-    if (ref.watch(authProvider).isLoggedIn) {
-      return const SizedBox.shrink();
-    }
     final quota = ref.watch(deviceSendQuotaProvider);
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
@@ -38,6 +34,10 @@ class _DeviceSendQuotaBarState extends ConsumerState<DeviceSendQuotaBar> {
     final message = quota?.message;
     final signaling = quota?.signaling;
     final limited = quota?.limited == true || quota?.anyExhausted == true;
+    final nearLimit = quota != null &&
+        (quota.message.used >= quota.message.limit * 0.8 ||
+         quota.signaling.used >= quota.signaling.limit * 0.8);
+    if (!limited && !nearLimit) return const SizedBox.shrink();
     final fg = limited ? colors.warning : colors.textSecondary;
 
     return Material(

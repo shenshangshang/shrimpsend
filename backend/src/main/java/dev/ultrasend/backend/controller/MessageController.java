@@ -26,21 +26,13 @@ public class MessageController {
     public static final String QUOTA_HEADER = "X-Device-Send-Quota";
 
     private final MessageService messageService;
-    private final InMemoryRateLimiter rateLimiter;
+    private final dev.ultrasend.backend.license.DeviceServiceQuota deviceQuota;
     private final ObjectMapper objectMapper;
 
+    /** Compatibility URL; a billing login can never impersonate a transfer device. */
     @PostMapping("/send")
-    public ResponseEntity<Void> send(Authentication auth, @RequestBody SendMessageRequest req) {
-        if (auth == null || !auth.isAuthenticated() || AuthRoles.isDevice(auth)) {
-            log.warn("messages/send unauthenticated 401");
-            return ResponseEntity.status(401).build();
-        }
-        String userId = (String) auth.getPrincipal();
-        Object data = req.getData();
-        log.info("messages/send userId={}", userId);
-        messageService.send(userId, data);
-        log.debug("messages/send ok userId={}", userId);
-        return ResponseEntity.noContent().build();
+    public ResponseEntity<?> send(Authentication auth, @RequestBody SendMessageRequest req) {
+        return deviceSend(auth, req);
     }
 
     @PostMapping("/device-send")
@@ -49,17 +41,18 @@ public class MessageController {
             return ResponseEntity.status(401).build();
         }
         String deviceId = AuthRoles.deviceId(auth);
-        Object data = req.getData();
+        return deliver(deviceId, req.getData());
+    }
+
+    private ResponseEntity<?> deliver(String deviceId, Object data) {
         String type = DeviceSendRateLimit.envelopeType(data);
         String kind = DeviceSendRateLimit.kindForType(type);
         String bucket = DeviceSendRateLimit.bucketKey(deviceId, type);
-        int max = DeviceSendRateLimit.maxPerWindow(type);
-        InMemoryRateLimiter.Snapshot hit = rateLimiter.tryAcquireWithSnapshot(
-                bucket, max, DeviceSendRateLimit.WINDOW_MS);
+        boolean allowed = deviceQuota.acquire(deviceId, data);
         HttpHeaders headers = quotaHeaders(deviceId, kind);
-        if (!hit.acquired()) {
+        if (!allowed) {
             log.warn("messages/device-send 429 deviceId={} type={} bucket={}", deviceId, type, bucket);
-            Map<String, Object> body = new LinkedHashMap<>(DeviceSendRateLimit.quotaView(rateLimiter, deviceId));
+            Map<String, Object> body = new LinkedHashMap<>(deviceQuota.view(deviceId));
             body.put("error", "rate_limited");
             body.put("kind", kind);
             return ResponseEntity.status(429).headers(headers).body(body);
@@ -75,7 +68,7 @@ public class MessageController {
             return ResponseEntity.status(401).build();
         }
         String deviceId = AuthRoles.deviceId(auth);
-        Map<String, Object> body = DeviceSendRateLimit.quotaView(rateLimiter, deviceId);
+        Map<String, Object> body = deviceQuota.view(deviceId);
         return ResponseEntity.ok().headers(quotaHeaders(deviceId, null)).body(body);
     }
 
@@ -83,7 +76,7 @@ public class MessageController {
     public ResponseEntity<Void> deleteThread(
             Authentication auth,
             @RequestParam String threadKey) {
-        if (auth == null || !auth.isAuthenticated()) {
+        if (auth == null || !auth.isAuthenticated() || AuthRoles.isDevice(auth)) {
             return ResponseEntity.status(401).build();
         }
         if (threadKey == null || threadKey.isBlank()) {
@@ -96,7 +89,7 @@ public class MessageController {
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(Authentication auth, @PathVariable Long id) {
-        if (auth == null || !auth.isAuthenticated()) {
+        if (auth == null || !auth.isAuthenticated() || AuthRoles.isDevice(auth)) {
             return ResponseEntity.status(401).build();
         }
         Long userId = Long.parseLong((String) auth.getPrincipal());
@@ -110,7 +103,7 @@ public class MessageController {
             @RequestParam(defaultValue = "50") int limit,
             @RequestParam(required = false) Long before,
             @RequestParam(required = false) String threadKey) {
-        if (auth == null || !auth.isAuthenticated()) {
+        if (auth == null || !auth.isAuthenticated() || AuthRoles.isDevice(auth)) {
             return ResponseEntity.status(401).build();
         }
         Long userId = Long.parseLong((String) auth.getPrincipal());
@@ -126,7 +119,7 @@ public class MessageController {
             @RequestParam(defaultValue = "50") int limit,
             @RequestParam(required = false) Long before,
             @RequestParam(required = false) String threadKey) {
-        if (auth == null || !auth.isAuthenticated()) {
+        if (auth == null || !auth.isAuthenticated() || AuthRoles.isDevice(auth)) {
             return ResponseEntity.status(401).build();
         }
         log.info("messages/search disabled; cloud content search is no longer supported");
@@ -134,7 +127,7 @@ public class MessageController {
     }
 
     private HttpHeaders quotaHeaders(String deviceId, String kind) {
-        Map<String, Object> payload = new LinkedHashMap<>(DeviceSendRateLimit.quotaView(rateLimiter, deviceId));
+        Map<String, Object> payload = new LinkedHashMap<>(deviceQuota.view(deviceId));
         if (kind != null && !kind.isBlank()) {
             payload.put("kind", kind);
         }

@@ -14,6 +14,7 @@ import '../../utils/toast.dart';
 Future<void> showDevicePairSheet({
   required BuildContext context,
   String? deviceId,
+  VoidCallback? onScan,
 }) {
   final colors = context.appColors;
   return showModalBottomSheet<void>(
@@ -37,12 +38,21 @@ Future<void> showDevicePairSheet({
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                l10n.showPairQr,
+                l10n.conversationConnectDevice,
                 style: Theme.of(
                   ctx,
                 ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: AppSpacing.sm),
+              if (onScan != null)
+                TextButton.icon(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    onScan();
+                  },
+                  icon: const Icon(LucideIcons.scanLine, size: 18),
+                  label: Text(l10n.scanToPair),
+                ),
               DevicePairPanel(
                 deviceId: deviceId,
                 onAdded: () => Navigator.of(ctx).pop(),

@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
-import '../color_theme.dart';
-import '../color_theme_store.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../ui/app_ui.dart';
 import '../utils/file_utils.dart';
-import 'chat/chat_theme_helpers.dart';
 import 'file_icon_widget.dart';
 
 class FileCardBubble extends StatelessWidget {
@@ -28,37 +26,29 @@ class FileCardBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final brightness = Theme.of(context).brightness;
     final theme = Theme.of(context);
-    final colorTheme = ColorThemeStoreScope.of(context).notifier.value;
-
-    final bubbleColor = isSentByMe
-        ? colorTheme.bubbleSent(brightness)
-        : colorTheme.bubbleReceived(brightness);
-    final onBubble = isSentByMe
-        ? colorTheme.onBubbleSent(brightness)
-        : colorTheme.onBubbleReceived(brightness);
-    final muted = colorTheme.onBubbleMuted(brightness, isSentByMe: isSentByMe);
-    final accent = colorTheme.bubbleAccent(
-      brightness,
-      isSentByMe: isSentByMe,
-      accent: theme.colorScheme.primary,
-    );
+    final colors = context.appColors;
+    final l10n = AppLocalizations.of(context);
+    final bubbleColor = colors.surface;
+    final onBubble = colors.textPrimary;
+    final muted = colors.textSecondary;
+    final accent = theme.colorScheme.primary;
     final sizeStr = formatFileSize(size);
 
     return Container(
-      constraints: const BoxConstraints(maxWidth: 280),
-      padding: const EdgeInsets.all(12),
+      constraints: const BoxConstraints(maxWidth: 340),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: bubbleColor,
         borderRadius: AppRadius.small,
+        border: Border.all(color: colors.border),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           FileIconWidget(
             category: getFileCategory(fileName),
-            size: 40,
+            size: 34,
             filePath: filePath,
           ),
           const SizedBox(width: 12),
@@ -81,38 +71,31 @@ class FileCardBubble extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    if (transferTypeLabel(transferType).isNotEmpty) ...[
-                      const SizedBox(width: 6),
-                      TransferTypeMark(
-                        transferType: transferType,
-                        color: colorTheme.bubbleAccent(
-                          brightness,
-                          isSentByMe: isSentByMe,
-                          accent: AppColorTheme.protocolColor(transferType),
-                        ),
-                      ),
-                    ],
                   ],
                 ),
                 if (sizeStr.isNotEmpty) ...[
                   const SizedBox(height: 3),
                   Text(
-                    sizeStr,
-                    style: TextStyle(color: muted, fontSize: 11),
+                    '$sizeStr${filePath != null ? ' · ${isSentByMe ? l10n.conversationSent : l10n.conversationSaved}' : ''}',
+                    style: TextStyle(color: muted, fontSize: 12),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ],
             ),
           ),
-          if (hasDownload)
+          if (filePath != null)
+            Padding(
+              padding: const EdgeInsets.only(left: 8),
+              child: Text(
+                l10n.chatMenuOpen,
+                style: theme.textTheme.labelLarge?.copyWith(color: accent),
+              ),
+            ),
+          if (hasDownload && filePath == null)
             Padding(
               padding: const EdgeInsets.only(left: 4),
-              child: Icon(
-                LucideIcons.download,
-                size: 22,
-                color: accent,
-              ),
+              child: Icon(LucideIcons.download, size: 22, color: accent),
             ),
         ],
       ),

@@ -74,6 +74,16 @@ class MainActivity : FlutterFragmentActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         intent?.let { logShareIntent("configureFlutterEngine", it) }
         super.configureFlutterEngine(flutterEngine)
+        ReceiveStorageHandler(applicationContext, flutterEngine.dartExecutor.binaryMessenger)
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "dev.ultrasend/device_identity")
+            .setMethodCallHandler { call, result ->
+                if (call.method == "getAndroidId") {
+                    result.success(Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID))
+                } else {
+                    result.notImplemented()
+                }
+            }
 
         safStorageHandler = SafStorageHandler(this)
         safStorageHandler.registerChannel(flutterEngine.dartExecutor.binaryMessenger)

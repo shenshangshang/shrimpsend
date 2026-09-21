@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCallback, useEffect, useState } from 'react';
 import {
@@ -23,8 +22,9 @@ import {
 import { formatFileSize } from '@/lib/fileUtils';
 import { logger } from '@/lib/logger';
 import { toast } from 'sonner';
-import { Button, buttonVariants } from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -175,6 +175,11 @@ async function uploadPlatformFile(
 
 export default function AdminVersionsPage() {
   const { accessToken, isReady } = useAuth();
+  const [creating, setCreating] = useState(false);
+  const [query, setQuery] = useState('');
+  const [platformFilter, setPlatformFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [confirmation, setConfirmation] = useState<{action:'publish'|'delete';row:AdminAppVersionRow}|null>(null);
 
   const [versions, setVersions] = useState<AdminAppVersionRow[]>([]);
   const [listLoading, setListLoading] = useState(false);
@@ -299,6 +304,7 @@ export default function AdminVersionsPage() {
         ...publicDownloadToCreateApiBody(createPublic),
       });
       toast.success('已创建版本');
+      setCreating(false);
       setCreateVersion('');
       setCreateBuild('');
       setCreateNotes('');
@@ -331,14 +337,6 @@ export default function AdminVersionsPage() {
   };
 
   const deleteVersion = async (row: AdminAppVersionRow) => {
-    const label = `${row.version} (build ${row.buildNumber})`;
-    if (
-      !window.confirm(
-        `确定删除版本 ${label}？\n\n此操作不可恢复，已上传的安装包文件不会从对象存储中自动删除。`,
-      )
-    ) {
-      return;
-    }
     setDeletingId(row.id);
     try {
       await deleteAdminAppVersion(row.id);
@@ -448,8 +446,17 @@ export default function AdminVersionsPage() {
     );
   }
 
+  const visibleVersions = versions.filter(v => (!query || `${v.version} ${v.buildNumber}`.toLowerCase().includes(query.toLowerCase())) && (platformFilter==='all' || hasPackage(v,platformFilter as PackageSlot)) && (statusFilter==='all' || (statusFilter==='published' ? v.webPublished : !v.webPublished)));
   return (
     <>
+      <Dialog open={!!confirmation} onOpenChange={open=>{if(!open && publishingWebId===null && deletingId===null)setConfirmation(null);}}>
+        <DialogContent><DialogTitle>{confirmation?.action==='delete'?'删除这个版本？':'发布到官网？'}</DialogTitle>
+          <DialogDescription>{confirmation?.action==='delete'?'版本信息删除后无法恢复，对象存储中的安装包会保留。':'官网的下载入口将使用这个版本配置的下载链接。'}</DialogDescription>
+          <dl className="grid grid-cols-2 gap-3 py-4 border-y border-border text-sm"><dt className="text-muted-foreground">版本号</dt><dd>{confirmation?.row.version}</dd><dt className="text-muted-foreground">构建号</dt><dd>{confirmation?.row.buildNumber}</dd></dl>
+          {confirmation?.row.releaseNotes && <p className="whitespace-pre-wrap text-sm max-h-40 overflow-auto">{confirmation.row.releaseNotes}</p>}
+          <DialogFooter><Button variant="outline" disabled={publishingWebId!==null||deletingId!==null} onClick={()=>setConfirmation(null)}>取消</Button><Button variant={confirmation?.action==='delete'?'destructive':'default'} disabled={publishingWebId!==null||deletingId!==null} onClick={async()=>{if(!confirmation)return;if(confirmation.action==='delete')await deleteVersion(confirmation.row);else await publishWeb(confirmation.row);setConfirmation(null);}}>{publishingWebId!==null||deletingId!==null?'处理中…':confirmation?.action==='delete'?'删除版本':'确认发布'}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
       {transferOverlay && (
         <div
           className="fixed inset-0 z-[100] flex items-center justify-center bg-background/75 px-4 py-8 backdrop-blur-[2px]"
@@ -472,25 +479,13 @@ export default function AdminVersionsPage() {
         </div>
       )}
 
-    <div className="mx-auto max-w-4xl space-y-8 px-4 py-10">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="font-display text-xl font-semibold tracking-tight">版本管理</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            上传安装包至对象存储（浏览器直传）并写入发布版本（权限以后端校验为准）。
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Link href="/admin" className={cn(buttonVariants({ variant: 'outline' }))}>
-            返回后台
-          </Link>
-          <Link href="/chat" className={cn(buttonVariants({ variant: 'outline' }))}>
-            返回会话
-          </Link>
-        </div>
+    <div className="space-y-7">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div><h1 className="text-2xl font-semibold">{creating?'新建版本':editing?'编辑版本':'版本管理'}</h1><p className="mt-2 text-sm text-muted-foreground">管理各平台的应用版本、下载地址与发布状态。</p></div>
+        {creating||editing?<Button variant="outline" disabled={submitting||editSaving} onClick={()=>{setCreating(false);setEditing(null);}}>返回版本列表</Button>:<Button onClick={()=>setCreating(true)}>新增版本</Button>}
       </div>
 
-      <Card>
+      {creating && <Card>
         <CardHeader>
           <CardTitle>新建版本</CardTitle>
           <CardDescription>
@@ -568,10 +563,10 @@ export default function AdminVersionsPage() {
             {submitting ? '提交中…' : '上传并创建'}
           </Button>
         </CardContent>
-      </Card>
+      </Card>}
 
-      <Card>
-        <CardHeader>
+      {!creating && <Card className="border-0 shadow-none">
+        <CardHeader className={editing ? "hidden" : "px-0"}>
           <CardTitle>已有版本</CardTitle>
           <CardDescription>
             {listLoading
@@ -579,7 +574,13 @@ export default function AdminVersionsPage() {
               : `共 ${versions.length} 条 · 实心标签表示已配置，虚线边框表示该平台尚未上传`}
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-5 px-0">
+          {!editing && <><div className="flex flex-wrap gap-3 items-center">
+            <label className="flex items-center gap-2 text-sm">平台<select className="h-10 rounded-lg border border-border bg-background px-3" value={platformFilter} onChange={e=>setPlatformFilter(e.target.value)}><option value="all">全部</option>{PACKAGE_SLOTS.map(p=><option key={p.key} value={p.key}>{p.label}</option>)}</select></label>
+            <label className="flex items-center gap-2 text-sm">状态<select className="h-10 rounded-lg border border-border bg-background px-3" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}><option value="all">全部</option><option value="published">官网发布中</option><option value="draft">未在官网发布</option></select></label>
+            <Input type="search" className="w-full sm:ml-auto sm:w-64" aria-label="搜索版本" placeholder="搜索版本号或构建号" value={query} onChange={e=>setQuery(e.target.value)}/>
+          </div>
+
           <div className="overflow-x-auto rounded-xl border">
             <table className="w-full min-w-[880px] text-left text-sm">
               <thead className="border-b bg-muted/40">
@@ -594,7 +595,7 @@ export default function AdminVersionsPage() {
                 </tr>
               </thead>
               <tbody>
-                {versions.map((v) => (
+                {visibleVersions.map((v) => (
                   <tr key={v.id} className="border-b border-border/60 last:border-0">
                     <td className="px-3 py-2 tabular-nums">{v.buildNumber}</td>
                     <td className="px-3 py-2">{v.version}</td>
@@ -616,7 +617,7 @@ export default function AdminVersionsPage() {
                           variant="ghost"
                           size="sm"
                           disabled={publishingWebId === v.id || v.webPublished}
-                          onClick={() => void publishWeb(v)}
+                          onClick={() => setConfirmation({action:'publish',row:v})}
                         >
                           {publishingWebId === v.id ? '设置中…' : v.webPublished ? '官网中' : '设为官网'}
                         </Button>
@@ -626,7 +627,7 @@ export default function AdminVersionsPage() {
                           size="sm"
                           className="text-destructive hover:text-destructive"
                           disabled={deletingId === v.id}
-                          onClick={() => void deleteVersion(v)}
+                          onClick={() => setConfirmation({action:'delete',row:v})}
                         >
                           {deletingId === v.id ? '删除中…' : '删除'}
                         </Button>
@@ -638,6 +639,8 @@ export default function AdminVersionsPage() {
             </table>
           </div>
 
+          {!listLoading && visibleVersions.length===0 && <p className="py-10 text-center text-sm text-muted-foreground">没有匹配的版本</p>}
+          <p className="text-xs text-muted-foreground">共 {visibleVersions.length} 条记录</p></>}
           {editing && (
             <div className="rounded-xl border bg-muted/20 p-4 space-y-4">
               <div className="space-y-2">
@@ -693,7 +696,7 @@ export default function AdminVersionsPage() {
             </div>
           )}
         </CardContent>
-      </Card>
+      </Card>}
     </div>
     </>
   );

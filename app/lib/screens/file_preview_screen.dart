@@ -1,3 +1,4 @@
+import '../ui/product_scaffold.dart';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -68,7 +69,8 @@ class _FilePreviewScreenState extends State<FilePreviewScreen> {
     final l10n = AppLocalizations.of(context);
     final isImage = widget.file.category == FileCategory.image;
 
-    return Scaffold(
+    return ProductScaffold(
+      section: ProductSection.files,
       backgroundColor: isImage ? Colors.black : null,
       appBar: AppBar(
         backgroundColor: isImage ? Colors.black : null,

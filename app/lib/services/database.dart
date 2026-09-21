@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:path/path.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
@@ -10,8 +11,9 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart'
 import 'transfer_record.dart';
 import '../chat/thread_key.dart';
 import '../logger.dart';
+import '../device_id.dart';
 
-const _dbVersion = 9;
+const _dbVersion = 10;
 
 const _createTransferRecords = '''
 CREATE TABLE transfer_records (
@@ -98,7 +100,7 @@ CREATE INDEX idx_recv_mtime ON received_files(mtime DESC);
 ''';
 
 const _createWebDavFavorites = '''
-CREATE TABLE webdav_favorites (
+CREATE TABLE IF NOT EXISTS webdav_favorites (
   connection_id TEXT NOT NULL,
   remote_path   TEXT NOT NULL,
   name          TEXT NOT NULL,
@@ -111,7 +113,7 @@ CREATE TABLE webdav_favorites (
 ''';
 
 const _createWebDavRecent = '''
-CREATE TABLE webdav_recent (
+CREATE TABLE IF NOT EXISTS webdav_recent (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   connection_id TEXT NOT NULL,
   remote_path   TEXT NOT NULL,
@@ -120,7 +122,7 @@ CREATE TABLE webdav_recent (
   accessed_at   TEXT NOT NULL
 );
 
-CREATE INDEX idx_webdav_recent_conn_time ON webdav_recent(connection_id, accessed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_webdav_recent_conn_time ON webdav_recent(connection_id, accessed_at DESC);
 ''';
 
 /// Application SQLite database. Singleton; must be initialized in main() before use.
@@ -181,6 +183,20 @@ class AppDatabase {
       logBoot.severe('AppDatabase running in-memory (degraded, not persisted)');
     }
 
+    // Existing peer history already resides on this installation. Keep it available after
+    // the purchaser logs out, without importing any other device's account archive.
+    final prefs = await SharedPreferences.getInstance();
+    var localOwner = prefs.getString('ultrasend_offline_user_id');
+    if (localOwner == null || localOwner.isEmpty) {
+      localOwner = 'offline_${await getOrCreateDeviceId()}';
+      await prefs.setString('ultrasend_offline_user_id', localOwner);
+    }
+    for (final table in ['chat_messages', 'received_files']) {
+      await db.rawUpdate(
+        "UPDATE $table SET user_id = ? WHERE thread_key LIKE 'device|d1:%' AND (user_id IS NULL OR user_id != ?)",
+        [localOwner, localOwner],
+      );
+    }
     await _migrateTransferRecordsFromPrefs();
   }
 
@@ -301,19 +317,28 @@ class AppDatabase {
     }
   }
 
-  Future<void> _onCreate(Database db, int version) async {
-    await db.execute(_createTransferRecords);
-    await db.execute(_createChatMessages);
-    await db.execute(_createReceivedFiles);
-    await db.execute(_createWebDavFavorites);
-    await db.execute(_createWebDavRecent);
+  @visibleForTesting
+  Future<void> createSchema(Database db) => _onCreate(db, _dbVersion);
+
+  @visibleForTesting
+  Future<void> upgradeSchema(Database db, int oldVersion) =>
+      _onUpgrade(db, oldVersion, _dbVersion);
+
+  Future<void> _executeSchema(Database db, String script) async {
+    for (final statement in script.split(';')) {
+      if (statement.trim().isNotEmpty) await db.execute(statement.trim());
+    }
   }
 
-  Future<bool> _tableHasColumn(
-    Database db,
-    String table,
-    String column,
-  ) async {
+  Future<void> _onCreate(Database db, int version) async {
+    await _executeSchema(db, _createTransferRecords);
+    await _executeSchema(db, _createChatMessages);
+    await _executeSchema(db, _createReceivedFiles);
+    await _executeSchema(db, _createWebDavFavorites);
+    await _executeSchema(db, _createWebDavRecent);
+  }
+
+  Future<bool> _tableHasColumn(Database db, String table, String column) async {
     final info = await db.rawQuery('PRAGMA table_info($table)');
     for (final row in info) {
       if (row['name'] == column) return true;
@@ -347,10 +372,7 @@ class AppDatabase {
       await db.execute(
         'CREATE INDEX IF NOT EXISTS idx_msg_user_thread_ts ON chat_messages(user_id, thread_key, ts)',
       );
-      final rows = await db.query(
-        'chat_messages',
-        columns: ['id', 'user_id'],
-      );
+      final rows = await db.query('chat_messages', columns: ['id', 'user_id']);
       for (final row in rows) {
         final id = row['id'] as String;
         final uid = row['user_id'] as String? ?? '';
@@ -431,13 +453,20 @@ WHERE cache_path IS NULL OR cache_path = ''
           await db.execute('ALTER TABLE transfer_records ADD COLUMN $col');
         }
       }
-      await db.execute(_createWebDavFavorites);
-      await db.execute(_createWebDavRecent);
+      await _executeSchema(db, _createWebDavFavorites);
+      await _executeSchema(db, _createWebDavRecent);
     }
     if (oldVersion < 9) {
       if (!await _tableHasColumn(db, 'transfer_records', 'error_message')) {
         await db.execute(
           'ALTER TABLE transfer_records ADD COLUMN error_message TEXT',
+        );
+      }
+    }
+    if (oldVersion < 10) {
+      for (final table in ['chat_messages', 'received_files']) {
+        await db.execute(
+          "UPDATE $table SET thread_key = 'device' || substr(thread_key, instr(thread_key, '|d1:')) WHERE instr(thread_key, '|d1:') > 0",
         );
       }
     }

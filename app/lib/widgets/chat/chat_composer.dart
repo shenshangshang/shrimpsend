@@ -82,11 +82,11 @@ class ChatComposer extends ConsumerStatefulWidget {
 class ChatComposerState extends ConsumerState<ChatComposer>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   static const double _panelOptionIconSize = 48;
-  static const double _primaryActionSize = 44;
   final _sizeKey = GlobalKey();
   final _controller = TextEditingController();
   final _focusNode = FocusNode();
   bool _hasText = false;
+  bool _sending = false;
   bool _panelVisible = false;
   SendShortcutMode _sendShortcutMode = sendShortcutModeNotifier.value;
   AttachmentPickerChoice? _pendingPanelChoice;
@@ -279,13 +279,27 @@ class ChatComposerState extends ConsumerState<ChatComposer>
     }
   }
 
-  void _handleSend() {
+  Future<void> _handleSend() async {
+    // Enter from an active IME composition must never dispatch a half-written message.
+    if (_sending ||
+        _controller.value.composing.isValid &&
+            !_controller.value.composing.isCollapsed) {
+      return;
+    }
     final text = _controller.text.trim();
-    if (text.isEmpty) return;
-    widget.onSend(text);
-    _controller.clear();
-    if (_isDesktop) {
-      _focusNode.requestFocus();
+    if (text.isEmpty && widget.pendingFiles.isEmpty) return;
+    setState(() => _sending = true);
+    try {
+      if (widget.pendingFiles.isNotEmpty) widget.onSendPendingFiles();
+      if (text.isNotEmpty) {
+        _controller.clear();
+        await widget.onSend(text);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _sending = false);
+        if (_isDesktop) _focusNode.requestFocus();
+      }
     }
   }
 
@@ -459,141 +473,200 @@ class ChatComposerState extends ConsumerState<ChatComposer>
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (widget.pendingFiles.isNotEmpty)
-                    PendingFilesBar(
-                      files: widget.pendingFiles,
-                      onSend: widget.onSendPendingFiles,
-                      onRemove: widget.onRemovePendingFile,
-                      onClearAll: widget.onClearPendingFiles,
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      MediaQuery.sizeOf(context).width >= 768 ? 32 : 16,
+                      12,
+                      MediaQuery.sizeOf(context).width >= 768 ? 32 : 16,
+                      12 + bottomSafe * (isAttachmentActive ? 0.0 : 1.0),
                     ),
-                  Shortcuts(
-                    shortcuts: _buildSendShortcuts(),
-                    child: Actions(
-                      actions: <Type, Action<Intent>>{
-                        _SendMessageIntent: CallbackAction<_SendMessageIntent>(
-                          onInvoke: (_) {
-                            if (_hasText) _handleSend();
-                            return null;
-                          },
-                        ),
-                      },
-                      child: Padding(
-                        padding: EdgeInsets.only(
-                          left: AppSpacing.xs,
-                          right: 4,
-                          top: AppSpacing.xs,
-                          bottom:
-                              AppSpacing.xs +
-                              bottomSafe * (isAttachmentActive ? 0.0 : 1.0),
-                        ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            Expanded(
-                              child: TextField(
-                                controller: _controller,
-                                focusNode: _focusNode,
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: colors.appBarForeground,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          clipBehavior: Clip.antiAlias,
+                          decoration: BoxDecoration(
+                            color: colors.surface,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: _focusNode.hasFocus
+                                  ? theme.colorScheme.primary.withValues(
+                                      alpha: 0.6,
+                                    )
+                                  : context.appColors.border,
+                            ),
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (widget.pendingFiles.isNotEmpty)
+                                PendingFilesBar(
+                                  files: widget.pendingFiles,
+                                  onSend: widget.onSendPendingFiles,
+                                  onRemove: widget.onRemovePendingFile,
+                                  onClearAll: widget.onClearPendingFiles,
+                                  showSend: false,
                                 ),
-                                minLines: 1,
-                                maxLines: 4,
-                                textInputAction: TextInputAction.newline,
-                                keyboardAppearance: brightness,
-                                decoration: InputDecoration(
-                                  hintText: l10n.composerMessageHint,
-                                  hintStyle: theme.textTheme.bodyMedium
-                                      ?.copyWith(color: colors.inputHint),
-                                  filled: true,
-                                  fillColor: colors.surface,
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: AppSpacing.md,
-                                    vertical: 10,
-                                  ),
-                                  suffixIcon: _hasText
-                                      ? IconButton(
-                                          icon: Icon(
-                                            LucideIcons.x,
-                                            color: colors.muted,
-                                            size: 20,
-                                          ),
-                                          tooltip: l10n.composerClearInputTooltip,
-                                          onPressed: () {
-                                            _controller.clear();
-                                            _focusNode.requestFocus();
+                              Shortcuts(
+                                shortcuts: _buildSendShortcuts(),
+                                child: Actions(
+                                  actions: <Type, Action<Intent>>{
+                                    _SendMessageIntent:
+                                        CallbackAction<_SendMessageIntent>(
+                                          onInvoke: (_) {
+                                            _handleSend();
+                                            return null;
                                           },
-                                        )
-                                      : null,
-                                  border: OutlineInputBorder(
-                                    borderRadius: AppRadius.pill,
-                                    borderSide: BorderSide(
-                                      color: context.appColors.border,
-                                      width: 0.5,
-                                    ),
-                                  ),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderRadius: AppRadius.pill,
-                                    borderSide: BorderSide(
-                                      color: context.appColors.border,
-                                      width: 0.5,
-                                    ),
-                                  ),
-                                  focusedBorder: OutlineInputBorder(
-                                    borderRadius: AppRadius.pill,
-                                    borderSide: BorderSide(
-                                      color: theme.colorScheme.primary
-                                          .withValues(alpha: 0.5),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            SizedBox(
-                              width: _primaryActionSize,
-                              height: _primaryActionSize,
-                              child: IconButton(
-                                padding: EdgeInsets.zero,
-                                icon: AnimatedSwitcher(
-                                  duration: const Duration(milliseconds: 200),
-                                  transitionBuilder: (child, anim) =>
-                                      ScaleTransition(
-                                        scale: anim,
-                                        child: child,
-                                      ),
-                                  child: _hasText
-                                      ? Icon(
-                                          LucideIcons.send,
-                                          key: const ValueKey('send'),
-                                          color: colors.upload,
-                                          size: 24,
-                                        )
-                                      : _isDesktop
-                                      ? Icon(
-                                          LucideIcons.paperclip,
-                                          key: const ValueKey('add_file'),
-                                          color: colors.muted,
-                                          size: 24,
-                                        )
-                                      : Icon(
-                                          LucideIcons.circlePlus,
-                                          key: const ValueKey('add'),
-                                          color: colors.muted,
-                                          size: 26,
                                         ),
+                                  },
+                                  child: TextField(
+                                    controller: _controller,
+                                    focusNode: _focusNode,
+                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                      color: colors.appBarForeground,
+                                      fontSize:
+                                          MediaQuery.sizeOf(context).width >=
+                                              768
+                                          ? 15
+                                          : 16,
+                                      height: 1.6,
+                                    ),
+                                    minLines: 1,
+                                    maxLines: 5,
+                                    textInputAction: TextInputAction.newline,
+                                    keyboardAppearance: brightness,
+                                    decoration: InputDecoration(
+                                      hintText: l10n.conversationComposer,
+                                      hintStyle: theme.textTheme.bodyMedium
+                                          ?.copyWith(
+                                            color:
+                                                context.appColors.textSecondary,
+                                            fontSize:
+                                                MediaQuery.sizeOf(
+                                                      context,
+                                                    ).width >=
+                                                    768
+                                                ? 15
+                                                : 16,
+                                          ),
+                                      filled: false,
+                                      contentPadding: const EdgeInsets.fromLTRB(
+                                        20,
+                                        16,
+                                        20,
+                                        12,
+                                      ),
+                                      border: InputBorder.none,
+                                      enabledBorder: InputBorder.none,
+                                      focusedBorder: InputBorder.none,
+                                    ),
+                                  ),
                                 ),
-                                onPressed: _hasText
-                                    ? _handleSend
-                                    : _isDesktop
-                                    ? () => widget.onAttachmentChoice(
-                                        AttachmentPickerChoice.file,
-                                      )
-                                    : _onPlusPressed,
                               ),
-                            ),
-                          ],
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  12,
+                                  0,
+                                  12,
+                                  12,
+                                ),
+                                child: Row(
+                                  children: [
+                                    TextButton.icon(
+                                      onPressed: _isDesktop
+                                          ? () => widget.onAttachmentChoice(
+                                              AttachmentPickerChoice.file,
+                                            )
+                                          : _onPlusPressed,
+                                      icon: const Icon(
+                                        LucideIcons.paperclip,
+                                        size: 20,
+                                      ),
+                                      label: Text(l10n.conversationFile),
+                                      style: TextButton.styleFrom(
+                                        foregroundColor:
+                                            context.appColors.textSecondary,
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    FilledButton.icon(
+                                      onPressed:
+                                          !_sending &&
+                                              (_hasText ||
+                                                  widget
+                                                      .pendingFiles
+                                                      .isNotEmpty)
+                                          ? _handleSend
+                                          : null,
+                                      icon: const Icon(
+                                        LucideIcons.send,
+                                        size: 16,
+                                      ),
+                                      label: Text(l10n.pendingFilesSend),
+                                      style: FilledButton.styleFrom(
+                                        minimumSize: const Size(92, 40),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
+                        if (_isDesktop)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8, bottom: 12),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: TextButton.icon(
+                                      onPressed: () => Navigator.of(
+                                        context,
+                                      ).pushNamed('/settings/receiving'),
+                                      icon: const Icon(
+                                        LucideIcons.folderDown,
+                                        size: 14,
+                                      ),
+                                      label: Text(
+                                        Localizations.localeOf(
+                                                  context,
+                                                ).languageCode ==
+                                                'zh'
+                                            ? '接收目录'
+                                            : 'Receive folder',
+                                        style: const TextStyle(fontSize: 12),
+                                      ),
+                                      style: TextButton.styleFrom(
+                                        foregroundColor:
+                                            context.appColors.textSecondary,
+                                        padding: EdgeInsets.zero,
+                                        alignment: Alignment.centerLeft,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                Text(
+                                  _sendShortcutMode == SendShortcutMode.enter
+                                      ? '${l10n.shortcutsSendEnter} · ${l10n.conversationNewline}'
+                                      : (Platform.isMacOS
+                                            ? l10n.shortcutsSendModifierMac
+                                            : l10n.shortcutsSendModifier),
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    fontSize: 12,
+                                    color: context.appColors.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                   ClipRect(

@@ -221,7 +221,7 @@ export async function runConnectionDiagnostic(
   let directHttp = false;
   let peerHttpHealthy = false;
   let pullReachable = false;
-  let webrtcResult: boolean | null = null;
+  const webrtcResult: boolean | null = null;
   let freshLanUrl: string | undefined;
   let discoveredLanUrl: string | undefined;
   let httpDirectFailedNoUrl = false;

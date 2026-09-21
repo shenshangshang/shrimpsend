@@ -47,6 +47,7 @@ const securityHeaders = [
 
 const nextConfig = (phase: string): NextConfig => ({
   output: 'standalone',
+  devIndicators: false,
   ...(phase === PHASE_DEVELOPMENT_SERVER
     ? {}
     : {

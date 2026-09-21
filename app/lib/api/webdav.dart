@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../logger.dart';
+import '../services/local_webdav_connections.dart';
 import 'client.dart';
 
 class WebDavConnectionSummary {
@@ -102,22 +103,35 @@ class WebDavConnectionRequest {
 }
 
 Future<List<WebDavConnectionSummary>> listWebDavConnections() async {
-  if (!hasAccessToken) return [];
-  return withAuthRetry(() async {
-    final r = await http.get(
-      Uri.parse('$apiBaseUrl/api/webdav/connections'),
-      headers: apiHeaders,
-    );
-    checkAuthResponse(r, fallback: '加载 WebDAV 连接失败');
-    if (r.statusCode != 200) throw Exception('加载 WebDAV 连接失败');
-    final list = jsonDecode(r.body) as List<dynamic>;
-    return list
-        .map((e) => WebDavConnectionSummary.fromJson(e as Map<String, dynamic>))
-        .toList();
-  });
+  final local = await LocalWebDavConnections.instance.list();
+  if (!hasAccessToken) return local;
+  try {
+    return await withAuthRetry(() async {
+      final r = await http
+          .get(
+            Uri.parse('$apiBaseUrl/api/webdav/connections'),
+            headers: apiHeaders,
+          )
+          .timeout(const Duration(seconds: 10));
+      checkAuthResponse(r, fallback: '加载 WebDAV 连接失败');
+      if (r.statusCode != 200) throw Exception('加载 WebDAV 连接失败');
+      final list = jsonDecode(r.body) as List<dynamic>;
+      return [
+        ...local,
+        ...list.map(
+          (e) => WebDavConnectionSummary.fromJson(e as Map<String, dynamic>),
+        ),
+      ];
+    });
+  } catch (_) {
+    // Device-owned storage remains reachable when the account server is offline.
+    if (local.isNotEmpty) return local;
+    rethrow;
+  }
 }
 
 Future<WebDavConnectionSummary> getWebDavConnectionMeta(int id) async {
+  if (id < 0) return LocalWebDavConnections.instance.get(id);
   return withAuthRetry(() async {
     final r = await http.get(
       Uri.parse('$apiBaseUrl/api/webdav/connections/$id'),
@@ -132,6 +146,7 @@ Future<WebDavConnectionSummary> getWebDavConnectionMeta(int id) async {
 }
 
 Future<WebDavCredentials> fetchWebDavCredentials(int id) async {
+  if (id < 0) return LocalWebDavConnections.instance.credentials(id);
   return withAuthRetry(() async {
     final r = await http.post(
       Uri.parse('$apiBaseUrl/api/webdav/connections/$id/credentials'),
@@ -147,26 +162,13 @@ Future<WebDavCredentials> fetchWebDavCredentials(int id) async {
 
 Future<WebDavConnectionSummary> createWebDavConnection(
   WebDavConnectionRequest req,
-) async {
-  logApi.info('createWebDavConnection name=${req.name}');
-  return withAuthRetry(() async {
-    final r = await http.post(
-      Uri.parse('$apiBaseUrl/api/webdav/connections'),
-      headers: apiHeaders,
-      body: jsonEncode(req.toJson()),
-    );
-    checkAuthResponse(r, fallback: '保存 WebDAV 连接失败');
-    if (r.statusCode != 200) throw Exception('保存 WebDAV 连接失败');
-    return WebDavConnectionSummary.fromJson(
-      jsonDecode(r.body) as Map<String, dynamic>,
-    );
-  });
-}
+) => LocalWebDavConnections.instance.save(req);
 
 Future<WebDavConnectionSummary> updateWebDavConnection(
   int id,
   WebDavConnectionRequest req,
 ) async {
+  if (id < 0) return LocalWebDavConnections.instance.save(req, id: id);
   logApi.info('updateWebDavConnection id=$id');
   return withAuthRetry(() async {
     final r = await http.put(
@@ -183,6 +185,7 @@ Future<WebDavConnectionSummary> updateWebDavConnection(
 }
 
 Future<void> deleteWebDavConnection(int id) async {
+  if (id < 0) return LocalWebDavConnections.instance.remove(id);
   return withAuthRetry(() async {
     final r = await http.delete(
       Uri.parse('$apiBaseUrl/api/webdav/connections/$id'),
@@ -192,4 +195,3 @@ Future<void> deleteWebDavConnection(int id) async {
     if (r.statusCode != 204) throw Exception('删除 WebDAV 连接失败');
   });
 }
-

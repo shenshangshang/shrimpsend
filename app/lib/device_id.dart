@@ -1,69 +1,39 @@
-import 'dart:convert';
+import 'dart:async';
 import 'dart:io';
-import 'dart:math';
 
-import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:device_info_plus/device_info_plus.dart';
-import 'package:mobile_device_identifier/mobile_device_identifier.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:uuid/uuid.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import 'utils/runtime_platform.dart';
+import 'services/device_identity_store.dart';
+import 'services/platform_device_identity.dart';
 
-const _keyDeviceId = 'ultrasend_device_id';
 const _keyDeviceName = 'ultrasend_device_name';
-const _keyDeviceSecret = 'ultrasend_device_secret';
+const pendingDeviceNameKey = 'shrimpsend_pending_device_name';
+final deviceNameChanges = StreamController<String>.broadcast();
 
 String get _platformPrefix {
   if (kIsWeb) return 'web';
   return RuntimePlatform.osName;
 }
 
-Future<String?> _getOhosDeviceId(DeviceInfoPlugin info) async {
-  try {
-    final data = (await info.deviceInfo).data;
-    for (final key in ['ODID', 'odid', 'udid', 'UDID', 'deviceId']) {
-      final v = data[key];
-      if (v is String && v.isNotEmpty) return v;
-    }
-  } catch (_) {}
-  return null;
-}
+Future<DeviceIdentityStore>? _identityStoreFuture;
+Future<DeviceIdentityStore> getDeviceIdentityStore() =>
+    _identityStoreFuture ??= _createIdentityStore();
 
-Future<String?> _getPcDeviceId(DeviceInfoPlugin info) async {
-  if (Platform.isMacOS) {
-    final mac = await info.macOsInfo;
-    return mac.systemGUID;
-  } else if (Platform.isWindows) {
-    final win = await info.windowsInfo;
-    return win.deviceId;
-  } else if (Platform.isLinux) {
-    final linux = await info.linuxInfo;
-    return linux.machineId;
-  }
-  return null;
-}
-
-Future<String> _generateDeviceId() async {
-  final prefix = _platformPrefix;
-  try {
-    String? nativeId;
-    if (Platform.isAndroid || Platform.isIOS) {
-      nativeId = await MobileDeviceIdentifier().getDeviceId();
-    } else if (RuntimePlatform.isOhos) {
-      nativeId = await _getOhosDeviceId(DeviceInfoPlugin());
-    } else {
-      nativeId = await _getPcDeviceId(DeviceInfoPlugin());
-    }
-    if (nativeId != null && nativeId.isNotEmpty) {
-      final hash = md5.convert(utf8.encode(nativeId)).toString();
-      return '${prefix}_$hash';
-    }
-  } catch (_) {
-    // fall through to UUID fallback
-  }
-  return '${prefix}_uuid_${const Uuid().v4()}';
+Future<DeviceIdentityStore> _createIdentityStore() async {
+  final package = await PackageInfo.fromPlatform();
+  const namespace = String.fromEnvironment('DEVICE_ID_NAMESPACE');
+  final scope = '${package.packageName}:$namespace';
+  return DeviceIdentityStore(
+    platform: _platformPrefix,
+    scope: scope,
+    namespace: namespace,
+    vault: SecureDeviceIdentityVault(scope),
+    readPlatformIdentifier: readPlatformDeviceIdentifier,
+  );
 }
 
 Future<String> _generateDeviceName() async {
@@ -107,34 +77,24 @@ Future<String> _generateDeviceName() async {
   return _platformPrefix;
 }
 
-bool _isLegacyDeviceId(String id) {
-  return id.startsWith('flutter_');
-}
-
 bool _isLegacyDeviceName(String name) {
   return name == 'Flutter';
 }
 
 Future<String> getOrCreateDeviceSecret() async {
-  final prefs = await SharedPreferences.getInstance();
-  var secret = prefs.getString(_keyDeviceSecret);
-  if (secret == null || secret.length < 16) {
-    final bytes = List<int>.generate(32, (_) => Random.secure().nextInt(256));
-    secret = base64UrlEncode(bytes);
-    await prefs.setString(_keyDeviceSecret, secret);
+  final store = await getDeviceIdentityStore();
+  if (store.status.value == DeviceIdentityStatus.restartRequired) {
+    throw const DeviceIdentityException('restart_required');
   }
-  return secret;
+  return (await store.load()).secret;
 }
 
-Future<String> getOrCreateDeviceId() async {
-  final prefs = await SharedPreferences.getInstance();
-  var id = prefs.getString(_keyDeviceId);
-  if (id == null || id.isEmpty || _isLegacyDeviceId(id)) {
-    id = await _generateDeviceId();
-    await prefs.setString(_keyDeviceId, id);
-  }
-  return id;
-}
+Future<String>? _deviceIdFuture;
+Future<String> getOrCreateDeviceId() => _deviceIdFuture ??=
+    getDeviceIdentityStore().then((store) => store.getId()).catchError((Object error) {
+      _deviceIdFuture = null;
+      throw error;
+    });
 
 Future<String> getDeviceName() async {
   final prefs = await SharedPreferences.getInstance();
@@ -148,7 +108,14 @@ Future<String> getDeviceName() async {
 
 Future<void> setDeviceName(String name) async {
   final prefs = await SharedPreferences.getInstance();
-  await prefs.setString(_keyDeviceName, name);
+  final value = name.trim();
+  if (value.isEmpty ||
+      value.length > 80 ||
+      RegExp(r'[\x00-\x1f\x7f-\x9f]').hasMatch(value))
+    throw ArgumentError('Invalid device name');
+  await prefs.setString(_keyDeviceName, value);
+  await prefs.setString(pendingDeviceNameKey, value);
+  deviceNameChanges.add(value);
 }
 
 /// 登录/注册 API 的 `platform` 字段；Web 多台浏览器在后端计 1 台设备。

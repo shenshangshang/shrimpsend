@@ -1,3 +1,5 @@
+> 生产部署已改为全 Docker + 独立 `.env.production`，见 [SELF_HOST.md](../docs/SELF_HOST.md)。本文的 YAML 同步仍适用于旧部署入口 `deploy-legacy.sh` 及客户端打包；新 `deploy.sh` 不再读取 ops。
+
 # ShrimpSend ops 运维配置
 
 本目录说明 **shrimpsend / ShrimpSend** 运维配置（ops）的获取、校验与同步方式。真实密钥**不应**进入公开业务仓 Git 历史。
@@ -70,7 +72,7 @@ export ULTRASEND_OPS_DIR="$PWD/ops"
 | 启动 Docker 服务端 + 宿主机 Web | `./scripts/start-dev.sh` |
 | 停止 | `./scripts/stop-dev.sh` |
 | 同步生产配置 | `./scripts/sync-to-build-machine.sh` |
-| 生产部署 | `./scripts/deploy.sh` |
+| 生产部署 | `./scripts/deploy.sh`（配置改用 `.env.production`） |
 
 `ops/scripts/` 下仅为兼容旧路径的转发，请始终在 clone 的 **shrimpsend** 业务仓中执行上述命令。
 
@@ -135,7 +137,7 @@ ops/
 ```bash
 ./scripts/sync-to-build-machine.sh
 # 或自定义 ops 路径：
-ULTRASEND_OPS_DIR=/path/to/ops ./scripts/deploy.sh
+ULTRASEND_OPS_DIR=/path/to/ops ./scripts/sync-to-build-machine.sh
 ```
 
 **后台管理员邮箱**（前后端须一致；国内/海外 Web 共用 `web/.env.local`）：
@@ -146,7 +148,7 @@ ULTRASEND_OPS_DIR=/path/to/ops ./scripts/deploy.sh
 | 海外 prod | `overseas/application-prod-overseas.yml` → `app.admin.emails` |
 | 本地 dev-overseas | `local/application-dev-overseas.yml` → `app.admin.emails` |
 
-前端：`NEXT_PUBLIC_ADMIN_EMAILS`（海外 `deploy.sh` 构建同样使用）
+前端：`NEXT_PUBLIC_ADMIN_EMAILS`（新部署入口中请填入 `.env.production`）
 
 **发行包上传**（`storage.s3.*`）：国内 prod → COS（`cn/application-prod.yml`）；海外 prod / dev-overseas → R2。详见 `docs/release-upload-direct.md`。
 

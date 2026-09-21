@@ -119,7 +119,7 @@ public class WukongimPublishService implements RealtimePublisher {
 
     private int expireSec(Object data) {
         String type = envelopeType(data);
-        if (DeviceRosterPublisherType.EVENT.equals(type)) {
+        if (DeviceRosterPublisherType.EVENT.equals(type) || "peer_device_patch".equals(type)) {
             return Math.max(1, rosterExpireSec);
         }
         if (RealtimeEnvelopeTypes.isEphemeral(type)) {

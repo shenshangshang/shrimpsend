@@ -6,6 +6,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.Optional;
 
 public interface MembershipOrderRepository extends JpaRepository<MembershipOrder, Long> {
+    java.util.List<MembershipOrder> findTop100ByUserIdOrderByCreatedAtDesc(Long userId);
+
     Optional<MembershipOrder> findByOrderNo(String orderNo);
 
     Optional<MembershipOrder> findTopByUserIdAndToTierAndChannelAndStatusOrderByCreatedAtDesc(

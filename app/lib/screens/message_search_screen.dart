@@ -1,3 +1,4 @@
+import '../ui/product_scaffold.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -366,7 +367,8 @@ class _MessageSearchScreenState extends State<MessageSearchScreen> {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
 
-    return Scaffold(
+    return ProductScaffold(
+      section: ProductSection.files,
       backgroundColor: colors.background,
       appBar: AppBar(
         backgroundColor: colors.background,

@@ -6,6 +6,7 @@ import type { MessageEnvelope } from '@/lib/api';
 import { logger } from '@/lib/logger';
 import { getApiUrl } from '@/lib/config';
 import { unwrapWukongimPayload, rewriteLoopbackRealtimeWs } from '@/lib/wukongim';
+import { getOrCreatePresenceSessionId } from '@/lib/deviceId';
 
 const TAG = 'useWukongim';
 
@@ -78,15 +79,22 @@ export function useWukongim(
 
       const wsUrl = rewriteLoopbackRealtimeWs(tokens.websocketUrl, getApiUrl());
       const ws = new WebSocket(wsUrl);
+      let connectId = '';
+      let connectTimer: ReturnType<typeof setTimeout> | undefined;
+      const pingPending = new Set<string>();
       wsRef.current = ws;
       ws.onopen = () => {
+        connectId = `c-${++rpcIdRef.current}`;
+        connectTimer = setTimeout(() => ws.close(), 15000);
         ws.send(JSON.stringify({
           method: 'connect',
-          id: `c-${++rpcIdRef.current}`,
+          id: connectId,
           params: {
             uid: tokens.uid,
             token: tokens.token,
-            deviceId: connectMeta?.deviceId,
+            // WuKongIM connection identity is per document; the uid remains the
+            // persistent transfer device. Reusing it across tabs loses pongs.
+            deviceId: getOrCreatePresenceSessionId(),
             deviceFlag: tokens.deviceFlag,
             clientTimestamp: Date.now(),
           },
@@ -101,23 +109,29 @@ export function useWukongim(
         }
         if (msg.error) {
           logger.warn(TAG, 'rpc error', msg.error);
+          if (msg.id === connectId) ws.close();
           return;
         }
-        if (msg.result && msg.id) {
+        if (msg.id === connectId && msg.result) {
+          clearTimeout(connectTimer);
           logger.info(TAG, 'connected');
           if (mountedRef.current) setConnected(true);
           lifecycleRef.current?.onConnected?.();
           pingRef.current = setInterval(() => {
             if (ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify({ method: 'ping', id: `p-${++rpcIdRef.current}` }));
+              if (pingPending.size) { ws.close(); return; }
+              const id = `p-${++rpcIdRef.current}`; pingPending.add(id);
+              ws.send(JSON.stringify({ method: 'ping', id }));
             }
-          }, 60000);
+          }, 10000);
           return;
         }
+        if (typeof msg.id === 'string' && pingPending.delete(msg.id)) return;
         if ((msg.method === 'recv' || msg.method === 'message') && msg.params && typeof msg.params === 'object') {
-          const params = msg.params as { messageId?: unknown; payload?: unknown };
+          const params = msg.params as { messageId?: unknown; messageSeq?: unknown; payload?: unknown };
           const mid = params.messageId != null ? String(params.messageId) : '';
           if (mid) {
+            ws.send(JSON.stringify({ method: 'recvack', params: { messageId: mid, messageSeq: params.messageSeq } }));
             if (seenRef.current.has(mid)) return;
             seenRef.current.add(mid);
             if (seenRef.current.size > 256) {
@@ -132,6 +146,7 @@ export function useWukongim(
         }
       };
       ws.onclose = () => {
+        clearTimeout(connectTimer);
         logger.info(TAG, 'disconnected');
         if (cancelled) return;
         if (mountedRef.current) setConnected(false);

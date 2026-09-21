@@ -1,304 +1,76 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import Link from 'next/link';
 import { BrandLogo } from '@/components/brand/BrandLogo';
 import { useI18n } from '@/contexts/I18nContext';
 import { collatorForLocaleTag } from '@/lib/i18nCollator';
 import { useChatContext, S3_VIRTUAL_DEVICE_ID } from '@/contexts/ChatContext';
 import { DeviceConversationItem } from '@/components/devices/DeviceConversationItem';
+import { DeviceGlyph } from '@/components/devices/DeviceGlyph';
 import { AddPeerPanel } from '@/components/devices/AddPeerPanel';
-import { getReachDisplayStatus, isReachOnline, reachSortPriority } from '@/hooks/useSendTargetProbes';
-import { Button, buttonVariants } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { formatDisplayCodeChipLabel } from '@/lib/displayCode';
-import { localizedDocsHref, localeTagToPath } from '@/lib/i18nRouting';
-import { openInNewTab } from '@/lib/openInNewTab';
+import { getReachDisplayStatus, reachSortPriority } from '@/hooks/useSendTargetProbes';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { getDeviceName } from '@/lib/deviceId';
-import { loadGuestPeers } from '@/lib/guestPeers';
-import { BookOpen, Cloud, Download, Plus, RefreshCw, Settings } from 'lucide-react';
+import { Cloud, Plus, Search, Settings } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { deviceDisplayName } from '@/lib/deviceDisplayName';
 
-export function DeviceListPanel({
-  onShowSettings,
-  onShowDownload,
-  className,
-}: {
+export function DeviceListPanel({ onShowSettings, className }: {
   onShowSettings: () => void;
-  onShowDownload: () => void;
   className?: string;
 }) {
   const { t, localeTag } = useI18n();
-  const docsHref = localizedDocsHref(localeTagToPath(localeTag), 'intro');
-  const nameCollator = useMemo(() => collatorForLocaleTag(localeTag), [localeTag]);
+  const collator = useMemo(() => collatorForLocaleTag(localeTag), [localeTag]);
   const [addOpen, setAddOpen] = useState(false);
-  const {
-    connected,
-    devices,
-    currentDeviceId,
-    otherDevices,
-    selectedDeviceId,
-    setSelectedDeviceId,
-    deviceReach,
-    targetsProbing,
-    refreshSendTargets,
-    messages,
-    s3Configured,
-    s3Online,
-    s3Checking,
-    isGuest,
-  } = useChatContext();
-  const showS3 = s3Configured && !isGuest;
-
-  const registeredIds = useMemo(
-    () => new Set(devices.map((d) => d.deviceId)),
-    [devices],
-  );
-  const guestPeerIds = useMemo(
-    () => new Set(loadGuestPeers().map((p) => p.deviceId)),
-    [devices],
-  );
-
-  const selfDisplayCode = useMemo(
-    () => devices.find((d) => d.deviceId === currentDeviceId)?.displayCode ?? null,
-    [devices, currentDeviceId],
-  );
-
-  const deviceLastMessages = useMemo(() => {
-    const map: Record<string, string> = {};
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const msg = messages[i];
-      if (!msg) continue;
-      const deviceId = msg.fromDeviceId;
-      if (map[deviceId]) continue;
-      if (msg.type === 'text') {
-        const text = (msg.payload as { text?: string })?.text;
-        if (text) map[deviceId] = text;
-      } else if (msg.type === 'file') {
-        const fileName = (msg.payload as { fileName?: string })?.fileName;
-        if (fileName) map[deviceId] = t('deviceList.fileLine', { fileName });
-      }
-    }
-    return map;
-  }, [messages, t]);
-
-  const sortedDevices = useMemo(() => {
-    return [...otherDevices].sort((a, b) => {
-      const aMine = registeredIds.has(a.deviceId);
-      const bMine = registeredIds.has(b.deviceId);
-      if (aMine !== bMine) return aMine ? -1 : 1;
-      const byReach =
-        reachSortPriority(deviceReach[a.deviceId]) -
-        reachSortPriority(deviceReach[b.deviceId]);
-      if (byReach !== 0) return byReach;
-      return nameCollator.compare(a.name, b.name);
-    });
-  }, [otherDevices, deviceReach, registeredIds, nameCollator]);
-
+  const [query, setQuery] = useState('');
+  const { otherDevices, selectedDeviceId, setSelectedDeviceId, deviceReach, s3Configured, s3Online, s3Checking, isGuest, connected } = useChatContext();
+  const zh = localeTag === 'zh_CN';
+  const sortedDevices = useMemo(() => otherDevices.filter(d => deviceDisplayName(d).toLocaleLowerCase().includes(query.toLocaleLowerCase())).sort((a, b) =>
+    reachSortPriority(deviceReach[a.deviceId]) - reachSortPriority(deviceReach[b.deviceId]) || collator.compare(a.name, b.name)),
+  [otherDevices, deviceReach, collator, query]);
   return (
-    <div className={cn('flex h-full flex-col bg-background', className)}>
-      {/* Header */}
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/60 bg-background px-3 py-3">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <BrandLogo
-            size={28}
-            alt={t('deviceList.logoAlt')}
-            className="shrink-0 shadow-sm ring-1 ring-foreground/6"
-            priority
-          />
-          <div className="flex min-w-0 flex-col">
-            <div className="flex items-baseline gap-x-1.5">
-              <span className="font-display shrink-0 text-base font-semibold tracking-tight">{t('deviceList.brand')}</span>
-              <span className={cn(
-                'text-[10px] font-medium leading-none shrink-0',
-                connected ? 'text-emerald-500' : 'text-amber-500',
-              )}>
-                {connected ? t('deviceList.online') : t('deviceList.connecting')}
-              </span>
-            </div>
-            <div className="flex min-w-0 flex-nowrap items-center gap-1">
-              {selfDisplayCode != null && (
-                <span
-                  title={`${t('chat.header.deviceNumber')} ${selfDisplayCode}`}
-                  className="shrink-0 rounded-md border border-border/70 bg-muted/50 px-1.5 py-0 font-mono text-[10px] font-semibold tabular-nums leading-tight text-muted-foreground"
-                >
-                  {formatDisplayCodeChipLabel(selfDisplayCode)}
-                </span>
-              )}
-              <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">{getDeviceName()}</span>
-            </div>
-          </div>
-        </div>
-        <div className="flex items-center gap-0.5 shrink-0">
-          <Button variant="ghost" size="icon-sm" onClick={() => setAddOpen(true)} title={t('deviceList.addDeviceTitle')}>
-            <Plus className="size-4" />
-          </Button>
-          <Button variant="ghost" size="icon-sm" onClick={onShowDownload} title={t('deviceList.downloadTitle')}>
-            <Download className="size-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={() => openInNewTab(docsHref)}
-            title={t('deviceList.docsTitle')}
-          >
-            <BookOpen className="size-4" />
-          </Button>
-          <Button variant="ghost" size="icon-sm" onClick={onShowSettings} title={t('deviceList.settingsTitle')}>
-            <Settings className="size-4" />
-          </Button>
-        </div>
+    <aside className={cn('flex h-full min-h-0 flex-col bg-muted/65', className)} aria-label={t('deviceList.section')}>
+      <div className="flex shrink-0 items-center gap-2 px-5 pt-6 md:hidden">
+        <BrandLogo size={28} alt={t('deviceList.logoAlt')} priority />
+        <span className="text-lg font-semibold">{t('deviceList.brand')}</span>
       </div>
-
-      {/* Device list */}
-      <div className="flex-1 min-h-0 overflow-y-auto">
-        {isGuest && (
-          <div className="mx-2 mt-2 rounded-xl border border-border/70 bg-muted/40 px-3 py-2.5">
-            <p className="text-xs font-medium text-foreground">{t('deviceList.guestLoginTitle')}</p>
-            <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
-              {t('deviceList.guestLoginHint')}
-            </p>
-            <Link
-              href="/login"
-              className={cn(buttonVariants({ size: 'sm' }), 'mt-2 h-7')}
-            >
-              {t('deviceList.guestLoginCta')}
-            </Link>
-          </div>
-        )}
-        {sortedDevices.length === 0 && !showS3 ? (
-          <div className="flex flex-col items-center justify-center gap-3 px-5 py-8 text-center text-muted-foreground">
-            <p className="text-sm text-foreground">{t('deviceList.emptyTitle')}</p>
-            {!isGuest && (
-              <p className="text-xs text-muted-foreground/70">
-                {t('deviceList.emptyHint')}
-              </p>
-            )}
-            <AddPeerPanel className="mt-1 w-full max-w-[240px]" />
-          </div>
-        ) : (
-          <div className="space-y-1 px-1 py-1">
-            {/* S3 virtual device — pinned to top */}
-            {showS3 && (
-              <button
-                type="button"
-                onClick={() => setSelectedDeviceId(S3_VIRTUAL_DEVICE_ID)}
-                className={cn(
-                  'flex w-full items-center gap-3 rounded-lg px-2.5 py-3 text-left transition-colors duration-150',
-                  selectedDeviceId === S3_VIRTUAL_DEVICE_ID
-                    ? 'item-selected-soft'
-                    : 'bg-card hover:bg-muted/60',
-                )}
-              >
-                <div className="relative shrink-0">
-                  <div
-                    className={cn(
-                      'flex size-10 items-center justify-center rounded-lg transition-colors',
-                      selectedDeviceId === S3_VIRTUAL_DEVICE_ID
-                        ? 'bg-primary/12'
-                        : 'bg-sky-500/10',
-                    )}
-                  >
-                    <Cloud
-                      className={cn(
-                        'size-[22px]',
-                        selectedDeviceId === S3_VIRTUAL_DEVICE_ID
-                          ? 'text-primary'
-                          : 'text-sky-500',
-                      )}
-                    />
-                  </div>
-                  <span
-                    className={cn(
-                      'absolute -bottom-0.5 -right-0.5 size-3 rounded-full border-2 border-card',
-                      s3Checking
-                        ? 'bg-amber-400'
-                        : !s3Configured
-                          ? 'bg-muted-foreground/40'
-                          : s3Online
-                            ? 'bg-emerald-500'
-                            : 'bg-amber-400',
-                    )}
-                  />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <span className={cn(
-                      'truncate text-sm',
-                      selectedDeviceId === S3_VIRTUAL_DEVICE_ID
-                        ? 'font-semibold text-primary'
-                        : 'font-medium text-foreground',
-                    )}>
-                      {t('deviceList.s3RelayTitle')}
-                    </span>
-                  </div>
-                  <p
-                    className={cn(
-                      'mt-0.5 text-xs',
-                      selectedDeviceId === S3_VIRTUAL_DEVICE_ID
-                        ? 'text-muted-foreground'
-                        : 'text-text-tertiary',
-                    )}
-                  >
-                    {s3Checking
-                      ? t('deviceList.s3Checking')
-                      : !s3Configured
-                        ? t('deviceList.s3NotConfigured')
-                        : s3Online
-                          ? t('deviceList.s3OnlineAll')
-                          : t('deviceList.s3Unavailable')}
-                  </p>
-                </div>
-              </button>
-            )}
-            {sortedDevices.map((device) => (
-              <DeviceConversationItem
-                key={device.deviceId}
-                device={device}
-                isMyDevice={!isGuest && registeredIds.has(device.deviceId) && !guestPeerIds.has(device.deviceId)}
-                selected={selectedDeviceId === device.deviceId}
-                reachStatus={getReachDisplayStatus(deviceReach[device.deviceId])}
-                lastMessage={deviceLastMessages[device.deviceId]}
-                onClick={() => setSelectedDeviceId(device.deviceId)}
-              />
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Bottom bar with refresh */}
-      <div className="flex shrink-0 items-center justify-between gap-2 border-t border-border/60 px-3 py-2">
-        <span className="text-[11px] text-muted-foreground">
-          {targetsProbing
-            ? t('deviceList.bottomProbing')
-            : t('deviceList.bottomOnlineCount', {
-                count: Object.values(deviceReach).filter((e) => isReachOnline(e)).length,
-              })}
-        </span>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          onClick={refreshSendTargets}
-          disabled={targetsProbing}
-          title={t('deviceList.refreshReachTitle')}
-        >
-          <RefreshCw className={cn('size-3.5', targetsProbing && 'motion-safe:animate-spin')} />
+      <div className="flex items-center justify-between px-5 pb-4 pt-7">
+        <h2 className="text-xl font-semibold">{zh ? '传输' : 'Transfers'}</h2>
+        <Button variant="ghost" size="sm" className="-mr-2 gap-1.5 px-2 text-muted-foreground" onClick={() => setAddOpen(true)}>
+          <Plus className="size-4" />{t('conversation.connect')}
         </Button>
       </div>
-
+      <div className="relative mx-4 mb-5"><Search className="pointer-events-none absolute left-3 top-3 size-4 text-muted-foreground" /><Input aria-label={zh ? '搜索设备' : 'Search devices'} placeholder={zh ? '搜索设备' : 'Search devices'} value={query} onChange={e => setQuery(e.target.value)} className="h-10 bg-card pl-9 shadow-none" /></div>
+      <p className="px-5 pb-2 text-xs text-muted-foreground">{zh ? '我的设备' : 'My devices'}</p>
+      <div className="min-h-0 flex-1 overflow-y-auto px-2">
+        {sortedDevices.length === 0 && (
+          <div className="px-5 py-6 text-sm leading-7 text-muted-foreground">{t('conversation.noDevices')}</div>
+        )}
+        <div className="space-y-1">
+          {sortedDevices.map(device => <DeviceConversationItem key={device.deviceId} device={device}
+            selected={selectedDeviceId === device.deviceId} reachStatus={getReachDisplayStatus(deviceReach[device.deviceId])}
+            onClick={() => setSelectedDeviceId(device.deviceId)} />)}
+          {s3Configured && !isGuest && (
+            <button type="button" onClick={() => setSelectedDeviceId(S3_VIRTUAL_DEVICE_ID)} aria-pressed={selectedDeviceId === S3_VIRTUAL_DEVICE_ID}
+              className={cn('flex min-h-[72px] w-full items-center gap-3 rounded-lg px-3 py-3 text-left', selectedDeviceId === S3_VIRTUAL_DEVICE_ID ? 'bg-accent-soft' : 'hover:bg-muted')}>
+              <Cloud className="size-8 shrink-0" strokeWidth={1.6} />
+              <div className="min-w-0"><p className="text-[15px] font-medium">{t('deviceList.s3RelayTitle')}</p><p className="mt-1 text-xs text-muted-foreground">{s3Checking ? t('deviceList.s3Checking') : s3Online ? t('conversation.available') : t('deviceList.s3Unavailable')}</p></div>
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="mx-4 flex min-h-[76px] shrink-0 items-center gap-3 border-t border-border py-4">
+        <DeviceGlyph name={getDeviceName()} className="size-6 shrink-0" />
+        <div className="min-w-0 flex-1"><p className="truncate text-xs font-medium" title={getDeviceName()}>{getDeviceName()}</p><p className="mt-1 text-[11px] text-muted-foreground">{connected ? (zh ? '在线 · 本机' : 'Online · This device') : (zh ? '本机 · 离线可用' : 'This device · Offline ready')}</p></div>
+        <Button variant="ghost" size="icon" className="-mr-2 shrink-0" onClick={onShowSettings} aria-label={t('settings.title')} title={t('settings.title')}><Settings className="size-5" strokeWidth={1.7} /></Button>
+      </div>
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
-        <DialogContent className="sm:max-w-xs">
-          <DialogHeader>
-            <DialogTitle>{t('deviceList.addDeviceTitle')}</DialogTitle>
-          </DialogHeader>
+        <DialogContent className="sm:max-w-sm"><DialogHeader><DialogTitle>{t('deviceList.addDeviceTitle')}</DialogTitle></DialogHeader>
           <AddPeerPanel onAdded={() => setAddOpen(false)} />
         </DialogContent>
       </Dialog>
-    </div>
+    </aside>
   );
 }

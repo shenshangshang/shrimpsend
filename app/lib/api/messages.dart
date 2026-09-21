@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import '../logger.dart';
 import 'client.dart';
 import 'device_send_quota.dart';
+import '../services/device_pair_sync.dart';
 
 class MessageEnvelope {
   final String type;
@@ -11,8 +12,10 @@ class MessageEnvelope {
   final int ts;
   final int? id;
   final String? localId;
+
   /// Optional: directed delivery / filtering for realtime.
   final String? toDeviceId;
+
   /// Canonical conversation key (see `chat/thread_key.dart`).
   final String? threadKey;
 
@@ -54,7 +57,9 @@ Future<List<MessageEnvelope>> getMessageHistory({
   int? before,
   String? threadKey,
 }) async {
-  logApi.info('getMessageHistory limit=$limit before=$before threadKey=$threadKey');
+  logApi.info(
+    'getMessageHistory limit=$limit before=$before threadKey=$threadKey',
+  );
   return withAuthRetry(() async {
     final query = <String, String>{'limit': limit.toString()};
     if (before != null && before > 0) query['before'] = before.toString();
@@ -89,9 +94,9 @@ Future<void> deleteMessage(int messageId) async {
 Future<void> deleteThreadMessages(String threadKey) async {
   logApi.info('deleteThreadMessages threadKey=$threadKey');
   return withAuthRetry(() async {
-    final uri = Uri.parse('$apiBaseUrl/api/messages/thread').replace(
-      queryParameters: {'threadKey': threadKey},
-    );
+    final uri = Uri.parse(
+      '$apiBaseUrl/api/messages/thread',
+    ).replace(queryParameters: {'threadKey': threadKey});
     final r = await http.delete(uri, headers: apiHeaders);
     checkAuthResponse(r, fallback: '清空消息失败');
     logApi.fine('deleteThreadMessages ok threadKey=$threadKey');
@@ -102,24 +107,15 @@ Future<void> sendMessage(Map<String, dynamic> data) async {
   final type = data['type'];
   final fromDeviceId = data['fromDeviceId'];
   logApi.info('sendMessage type=$type fromDeviceId=$fromDeviceId');
-  if (hasAccessToken) {
-    return withAuthRetry(() async {
-      final r = await http.post(
-        Uri.parse('$apiBaseUrl/api/messages/send'),
-        headers: apiHeaders,
-        body: jsonEncode({'data': data}),
-      );
-      checkAuthResponse(r, fallback: '发送失败');
-      if (r.statusCode != 204) {
-        throw Exception(r.body.isNotEmpty ? r.body : '发送失败');
-      }
-      logApi.fine('sendMessage ok');
-    });
-  }
-  final r = await http.post(
-    Uri.parse('$apiBaseUrl/api/messages/device-send'),
-    headers: deviceApiHeaders,
-    body: jsonEncode({'data': data}),
+  if (data['toDeviceId'] == null &&
+      (data['threadKey']?.toString().endsWith('|kind:s3_cloud') ?? false))
+    return;
+  final r = await withDeviceAuthRetry(
+    () => http.post(
+      Uri.parse('$apiBaseUrl/api/messages/device-send'),
+      headers: deviceApiHeaders,
+      body: jsonEncode({'data': data}),
+    ),
   );
   publishDeviceSendQuotaFromResponse(r);
   if (r.statusCode == 429) {
@@ -144,12 +140,24 @@ Future<void> sendMessage(Map<String, dynamic> data) async {
 
 Future<void> pairDevice(String peerDeviceId) async {
   if (peerDeviceId.isEmpty || !hasDeviceAccessToken) return;
-  final r = await http.post(
-    Uri.parse('$apiBaseUrl/api/devices/pair'),
-    headers: deviceApiHeaders,
-    body: jsonEncode({'peerDeviceId': peerDeviceId}),
+  final r = await withDeviceAuthRetry(
+    () => http
+        .post(
+          Uri.parse('$apiBaseUrl/api/devices/pair'),
+          headers: deviceApiHeaders,
+          body: jsonEncode({'peerDeviceId': peerDeviceId}),
+        )
+        .timeout(const Duration(seconds: 8)),
   );
   if (r.statusCode != 204 && r.statusCode != 200) {
-    logApi.warning('pairDevice failed status=${r.statusCode}');
+    throw Exception(errorMessageFromResponse(r, '连接设备失败'));
   }
+}
+
+final _backgroundPairs = DevicePairSync();
+
+Future<void> pairDeviceBestEffort(String peerDeviceId) {
+  if (peerDeviceId.isEmpty || !hasDeviceAccessToken) return Future.value();
+  final key = '${deviceApiHeaders['Authorization']}|$peerDeviceId';
+  return _backgroundPairs.ensure(key, () => pairDevice(peerDeviceId));
 }

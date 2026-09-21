@@ -31,7 +31,8 @@ class PendingOutboxPrimaryAction {
   final Future<void> Function(
     List<PendingFileEntry> files,
     WebDavUploadLayout layout,
-  ) onExecute;
+  )
+  onExecute;
 
   const PendingOutboxPrimaryAction({
     required this.label,
@@ -110,6 +111,7 @@ class PendingFilesBar extends StatelessWidget {
   final VoidCallback onSend;
   final void Function(PlatformFile file) onRemove;
   final VoidCallback onClearAll;
+  final bool showSend;
 
   const PendingFilesBar({
     super.key,
@@ -117,6 +119,7 @@ class PendingFilesBar extends StatelessWidget {
     required this.onSend,
     required this.onRemove,
     required this.onClearAll,
+    this.showSend = true,
   });
 
   void _showManageSheet(BuildContext context) {
@@ -185,7 +188,7 @@ class PendingFilesBar extends StatelessWidget {
         ),
         _buildManageButton(context, colors, theme, showCount: false),
         const SizedBox(width: AppSpacing.xs),
-        _buildSendButton(context, colors),
+        if (showSend) _buildSendButton(context, colors),
       ],
     );
   }
@@ -217,7 +220,7 @@ class PendingFilesBar extends StatelessWidget {
         const SizedBox(width: AppSpacing.xs),
         _buildManageButton(context, colors, theme, showCount: true),
         const SizedBox(width: AppSpacing.xs),
-        _buildSendButton(context, colors),
+        if (showSend) _buildSendButton(context, colors),
       ],
     );
   }
@@ -287,10 +290,7 @@ class _PendingOutboxSheet extends ConsumerStatefulWidget {
   final PendingOutboxPrimaryAction? primaryAction;
   final bool showAddFiles;
 
-  const _PendingOutboxSheet({
-    this.primaryAction,
-    this.showAddFiles = false,
-  });
+  const _PendingOutboxSheet({this.primaryAction, this.showAddFiles = false});
 
   @override
   ConsumerState<_PendingOutboxSheet> createState() =>
@@ -327,9 +327,7 @@ class _PendingOutboxSheetState extends ConsumerState<_PendingOutboxSheet> {
 
   bool _hasFolderStructure(List<PendingFileEntry> entries) {
     return entries.any(
-      (e) =>
-          e.relativeSubPath != null &&
-          e.relativeSubPath!.contains('/'),
+      (e) => e.relativeSubPath != null && e.relativeSubPath!.contains('/'),
     );
   }
 
@@ -361,7 +359,7 @@ class _PendingOutboxSheetState extends ConsumerState<_PendingOutboxSheet> {
     await saveWebDavUploadLayoutPref(layout);
     final concurrency = _uploadConcurrency ?? webDavUploadConcurrencyDefault;
     await saveWebDavUploadConcurrencyPref(concurrency);
-    if (!mounted) return;
+    if (!context.mounted) return;
 
     final rootContext = context;
     if (!mounted) return;
@@ -379,7 +377,8 @@ class _PendingOutboxSheetState extends ConsumerState<_PendingOutboxSheet> {
     final entries = ref.watch(pendingFilesProvider);
     final notifier = ref.read(pendingFilesProvider.notifier);
     final primaryAction = widget.primaryAction;
-    final showUploadLayout = primaryAction != null && _hasFolderStructure(entries);
+    final showUploadLayout =
+        primaryAction != null && _hasFolderStructure(entries);
     final showUploadConcurrency = primaryAction != null;
     final uploadLayout = _uploadLayout ?? WebDavUploadLayout.flat;
     final uploadConcurrency =
@@ -458,7 +457,8 @@ class _PendingOutboxSheetState extends ConsumerState<_PendingOutboxSheet> {
                   final entry = entries[index];
                   final file = entry.file;
                   final category = getFileCategory(file.name);
-                  final subtitle = entry.relativeSubPath != null &&
+                  final subtitle =
+                      entry.relativeSubPath != null &&
                           entry.relativeSubPath!.contains('/')
                       ? '${formatFileSize(file.size)} · ${entry.relativeSubPath}'
                       : formatFileSize(file.size);
@@ -481,11 +481,7 @@ class _PendingOutboxSheetState extends ConsumerState<_PendingOutboxSheet> {
                     ),
                     trailing: GestureDetector(
                       onTap: () => removeAt(index),
-                      child: Icon(
-                        LucideIcons.x,
-                        size: 18,
-                        color: colors.muted,
-                      ),
+                      child: Icon(LucideIcons.x, size: 18, color: colors.muted),
                     ),
                     contentPadding: const EdgeInsets.symmetric(
                       horizontal: AppSpacing.md,
@@ -506,11 +502,7 @@ class _PendingOutboxSheetState extends ConsumerState<_PendingOutboxSheet> {
                 ),
                 child: Row(
                   children: [
-                    Icon(
-                      LucideIcons.folder,
-                      size: 16,
-                      color: colors.muted,
-                    ),
+                    Icon(LucideIcons.folder, size: 16, color: colors.muted),
                     const SizedBox(width: AppSpacing.xs),
                     Expanded(
                       child: Text(
@@ -586,7 +578,8 @@ class _PendingOutboxSheetState extends ConsumerState<_PendingOutboxSheet> {
                               value: uploadConcurrency.toDouble(),
                               min: webDavUploadConcurrencyMin.toDouble(),
                               max: webDavUploadConcurrencyMax.toDouble(),
-                              divisions: webDavUploadConcurrencyMax -
+                              divisions:
+                                  webDavUploadConcurrencyMax -
                                   webDavUploadConcurrencyMin,
                               label: l10n.webdavUploadConcurrencyValue(
                                 uploadConcurrency,

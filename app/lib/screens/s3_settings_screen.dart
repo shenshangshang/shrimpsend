@@ -1,3 +1,4 @@
+import '../ui/product_scaffold.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -472,7 +473,9 @@ class _S3SettingsScreenState extends ConsumerState<S3SettingsScreen> {
     final showCustomForm = _showCustomForm;
     final showClearAction = _isCustom && !_hostedAvailable;
 
-    return Scaffold(
+    return ProductScaffold(
+      section: ProductSection.files,
+      filesLocation: '/files/connections',
       appBar: AppBar(
         title: Text(l10n.s3SettingsPageTitle),
         leading: IconButton(

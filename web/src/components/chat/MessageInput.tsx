@@ -1,6 +1,9 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
+import { receiveDirectoryLabel } from '@/lib/receiveFiles';
+import { useConversationDraft } from './ConversationDrafts';
 import { useChatContext } from '@/contexts/ChatContext';
 import { useI18n } from '@/contexts/I18nContext';
 import { useSendShortcutMode } from '@/hooks/useSendShortcutMode';
@@ -8,127 +11,67 @@ import { isMacPlatform } from '@/lib/shortcutPreferences';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { extractClipboardFiles } from '@/lib/clipboardFiles';
-import { CirclePlus, Send, X } from 'lucide-react';
+import { FolderDown, ImagePlus, Paperclip, Send } from 'lucide-react';
+import { PendingFilesBar } from './PendingFilesBar';
 
 export function MessageInput() {
-  const { t } = useI18n();
-  const {
-    sendTextMessage,
-    sending,
-    handleFileSelect,
-    addPendingFiles,
-    selectedDeviceId,
-  } = useChatContext();
-
-  const [input, setInput] = useState('');
+  const { t, localeTag } = useI18n(); const zh = localeTag === 'zh_CN';
+  const [folder, setFolder] = useState<string | null>(null);
+  useEffect(() => { const sync = () => setFolder(receiveDirectoryLabel()); sync(); window.addEventListener('shrimpsend:receive-folder', sync); return () => window.removeEventListener('shrimpsend:receive-folder', sync); }, []);
+  const { sendTextMessage, sending, handleFileSelect, addPendingFiles, selectedDeviceId, pendingFiles, handleSendFiles } = useChatContext();
+  const [input, setInput] = useConversationDraft(selectedDeviceId);
   const [sendShortcutMode] = useSendShortcutMode();
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const sendTooltip =
-    sendShortcutMode === 'enter'
-      ? t('chat.input.sendEnter')
-      : isMacPlatform()
-        ? t('chat.input.sendModifierEnterMac')
-        : t('chat.input.sendModifierEnter');
-
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const submitting = useRef(false);
+  const sendTooltip = sendShortcutMode === 'enter' ? t('chat.input.sendEnter')
+    : isMacPlatform() ? t('chat.input.sendModifierEnterMac') : t('chat.input.sendModifierEnter');
+  const disabled = !selectedDeviceId;
+  const canSend = !disabled && !sending && (!!input.trim() || pendingFiles.length > 0);
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canSend || submitting.current) return;
+    submitting.current = true;
     const text = input.trim();
-    if (!text || sending) return;
-    setInput('');
-    await sendTextMessage(text);
+    try {
+      if (pendingFiles.length) handleSendFiles();
+      if (text) { setInput(''); await sendTextMessage(text); }
+    } finally { submitting.current = false; }
   };
-
-  const disabled = !selectedDeviceId;
-  const placeholder = disabled
-    ? t('chat.header.pickDeviceHint')
-    : t('chat.input.placeholder');
-
   return (
-    <form
-      onSubmit={handleSend}
-      className="shrink-0 bg-card px-3 py-2 sm:px-4 sm:py-3"
-    >
-      <div className="flex gap-1 items-center">
-        <input
-          type="file"
-          ref={fileInputRef}
-          onChange={handleFileSelect}
-          className="hidden"
-          multiple
-        />
-        <div
-          className={cn(
-            'relative flex-1 min-w-0 overflow-hidden rounded-full border border-input bg-muted/50 transition-colors',
-            'focus-within:border-ring focus-within:ring-2 focus-within:ring-inset focus-within:ring-ring/40',
-            disabled && 'opacity-50',
-          )}
-        >
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onPaste={(e) => {
-              if (disabled) return;
-              const files = extractClipboardFiles(e.clipboardData);
-              if (files.length === 0) return;
-              e.preventDefault();
-              addPendingFiles(files);
-            }}
-            onKeyDown={(e) => {
-              if (e.key !== 'Enter' || e.nativeEvent.isComposing) return;
-              const shouldSend =
-                sendShortcutMode === 'enter'
-                  ? !e.shiftKey
-                  : e.ctrlKey || e.metaKey;
-              if (shouldSend) {
-                e.preventDefault();
-                handleSend(e);
-              }
-            }}
-            placeholder={placeholder}
-            disabled={sending || disabled}
-            rows={1}
-            className={cn(
-              'w-full border-0 bg-transparent py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-0 disabled:opacity-50 resize-none overflow-y-auto max-h-24 field-sizing-content',
-              input.trim() ? 'pl-4 pr-10' : 'px-4',
-            )}
-            style={{ fieldSizing: 'content' } as React.CSSProperties}
-          />
-          {input.trim() !== '' && (
-            <button
-              type="button"
-              title={t('chat.input.clear')}
-              className="absolute inset-y-0 right-1 z-10 flex w-8 items-center justify-center rounded-full text-muted-foreground hover:text-foreground hover:bg-muted/80"
-              onClick={() => setInput('')}
-            >
-              <X className="size-4.5 shrink-0" strokeWidth={2.5} />
-            </button>
-          )}
+    <form onSubmit={handleSend} className="mx-auto w-full max-w-[1024px] shrink-0 bg-card px-4 pb-3 pt-2 sm:px-8 sm:pb-5 sm:pt-3">
+      <div className={cn('overflow-hidden rounded-xl border border-input bg-card transition-colors focus-within:border-primary/60 focus-within:ring-2 focus-within:ring-primary/10', disabled && 'opacity-50')}>
+        <PendingFilesBar />
+        <input type="file" ref={fileInputRef} onChange={handleFileSelect} className="hidden" multiple aria-label={t('chat.input.pickFile')} />
+        <input type="file" ref={imageInputRef} onChange={handleFileSelect} className="hidden" accept="image/*" multiple aria-label={zh ? '选择图片' : 'Choose images'} />
+        <textarea value={input} onChange={e => setInput(e.target.value)}
+          onPaste={e => {
+            if (disabled) return;
+            const files = extractClipboardFiles(e.clipboardData);
+            if (!files.length) return;
+            e.preventDefault(); addPendingFiles(files);
+          }}
+          onKeyDown={e => {
+            if (e.key !== 'Enter' || e.nativeEvent.isComposing) return;
+            if (sendShortcutMode === 'enter' ? !e.shiftKey : e.ctrlKey || e.metaKey) {
+              e.preventDefault(); void handleSend(e);
+            }
+          }}
+          aria-label={t('conversation.composer')} placeholder={disabled ? t('chat.header.pickDeviceHint') : t('conversation.composer')}
+          disabled={disabled} rows={1}
+          className="block max-h-40 min-h-[60px] w-full resize-none border-0 bg-transparent px-4 pb-2 pt-4 text-sm leading-6 outline-none placeholder:text-muted-foreground"
+          style={{ fieldSizing: 'content' } as React.CSSProperties} />
+        <div className="flex items-center justify-between gap-3 px-3 pb-3 sm:px-4">
+          <div className="flex gap-1"><Button type="button" variant="ghost" size="sm" disabled={disabled} onClick={() => fileInputRef.current?.click()} title={t('chat.input.pickFile')} className="gap-2 px-1.5 text-sm text-muted-foreground">
+            <Paperclip className="size-5" strokeWidth={1.7} />{t('conversation.file')}
+          </Button>
+          <Button type="button" variant="ghost" size="icon" disabled={disabled} onClick={() => imageInputRef.current?.click()} aria-label={zh ? '添加图片' : 'Add images'} className="text-muted-foreground"><ImagePlus size={18}/></Button></div>
+          <Button type="submit" disabled={!canSend} title={sendTooltip} className="h-9 gap-2 text-sm rounded-lg px-4 shadow-none">
+            <Send className="size-4" />{t('chat.send')}
+          </Button>
         </div>
-        {input.trim() !== '' ? (
-          <Button
-            type="submit"
-            size="icon"
-            disabled={sending || disabled}
-            className="size-11 shrink-0 rounded-full bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 hover:text-primary-foreground disabled:opacity-50 [&_svg]:stroke-[2.5]"
-            title={sendTooltip}
-          >
-            <Send className="size-5" />
-          </Button>
-        ) : (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            disabled={disabled}
-            className="size-11 shrink-0 rounded-full text-muted-foreground hover:text-foreground"
-            title={t('chat.input.pickFile')}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <CirclePlus className="size-[26px]" />
-          </Button>
-        )}
       </div>
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground"><Link href="/settings/receiving" className="inline-flex items-center gap-1 hover:text-primary"><FolderDown size={13}/>{zh ? '接收保存至' : 'Save received files to'} {folder ?? (zh ? '下载目录' : 'Downloads')}</Link><span className="hidden sm:inline">{sendTooltip}{sendShortcutMode === 'enter' && ` · ${t('conversation.newline')}`}</span></div>
     </form>
   );
 }

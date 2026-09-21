@@ -35,13 +35,13 @@ class WukongimJsonRpcClient {
   Timer? _pingTimer;
   Completer<void>? _connectDone;
   String? _connectId;
+  String? _pendingPingId;
   var _id = 0;
   var _closed = false;
 
-  Future<void> connect({
-    Duration timeout = const Duration(seconds: 20),
-  }) async {
+  Future<void> connect({Duration timeout = const Duration(seconds: 20)}) async {
     _closed = false;
+    _pendingPingId = null;
     final done = Completer<void>();
     _connectDone = done;
     final channel = WebSocketChannel.connect(Uri.parse(websocketUrl));
@@ -57,7 +57,9 @@ class WukongimJsonRpcClient {
       },
       onDone: () {
         if (!done.isCompleted) {
-          done.completeError(StateError('wukongim socket closed before connect'));
+          done.completeError(
+            StateError('wukongim socket closed before connect'),
+          );
         }
         _handleDisconnect('done');
       },
@@ -104,19 +106,29 @@ class WukongimJsonRpcClient {
     try {
       final text = raw is String
           ? raw
-          : utf8.decode(raw is Uint8List ? raw : Uint8List.fromList(List<int>.from(raw as List)));
+          : utf8.decode(
+              raw is Uint8List
+                  ? raw
+                  : Uint8List.fromList(List<int>.from(raw as List)),
+            );
       final msg = jsonDecode(text);
       if (msg is! Map) return;
       final map = Map<String, dynamic>.from(msg);
       if (map['error'] != null && map['id'] != null) {
         logRealtime.warning('wukongim rpc error: ${map['error']}');
         final pending = _connectDone;
-        if (pending != null && !pending.isCompleted && map['id'] == _connectId) {
+        if (pending != null &&
+            !pending.isCompleted &&
+            map['id'] == _connectId) {
           pending.completeError(StateError('wukongim auth: ${map['error']}'));
         }
         return;
       }
-      if (map['id'] != null && map['result'] != null && !_closed) {
+      if (map['id'] != null && map['id'] == _pendingPingId) {
+        _pendingPingId = null;
+        return;
+      }
+      if (map['id'] == _connectId && map['result'] != null && !_closed) {
         _startPing();
         final pending = _connectDone;
         if (pending != null && !pending.isCompleted) {
@@ -127,7 +139,17 @@ class WukongimJsonRpcClient {
       }
       if (map['method'] == 'recv' || map['method'] == 'message') {
         if (map['params'] is Map) {
-          onMessage(Map<String, dynamic>.from(map['params'] as Map));
+          final params = Map<String, dynamic>.from(map['params'] as Map);
+          if (params['messageId'] != null) {
+            _send({
+              'method': 'recvack',
+              'params': {
+                'messageId': params['messageId'].toString(),
+                'messageSeq': params['messageSeq'],
+              },
+            });
+          }
+          onMessage(params);
         }
       }
     } catch (e, st) {
@@ -137,8 +159,14 @@ class WukongimJsonRpcClient {
 
   void _startPing() {
     _pingTimer?.cancel();
-    _pingTimer = Timer.periodic(const Duration(seconds: 60), (_) {
-      _send({'method': 'ping', 'id': _nextId()});
+    _pingTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (_pendingPingId != null) {
+        _channel?.sink.close();
+        _handleDisconnect('heartbeat timeout');
+        return;
+      }
+      _pendingPingId = _nextId();
+      _send({'method': 'ping', 'id': _pendingPingId});
     });
   }
 
@@ -165,7 +193,8 @@ Map<String, dynamic>? unwrapWukongimParams(Map<String, dynamic> params) {
   Object decoded = payload;
   if (payload is String) {
     try {
-      if (payload.isNotEmpty && (payload.startsWith('{') || payload.startsWith('['))) {
+      if (payload.isNotEmpty &&
+          (payload.startsWith('{') || payload.startsWith('['))) {
         decoded = jsonDecode(payload);
       } else {
         decoded = jsonDecode(utf8.decode(base64Decode(payload)));

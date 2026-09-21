@@ -11,6 +11,7 @@ spring:
     username: "${SPRING_DATASOURCE_USERNAME:root}"
     password: "${SPRING_DATASOURCE_PASSWORD:changeme}"
   jpa:
+    open-in-view: false
     hibernate:
       ddl-auto: update
     show-sql: false
@@ -22,6 +23,9 @@ server:
   port: 9000
 
 app:
+  device-identity:
+    lease-seconds: ${DEVICE_PRESENCE_LEASE_SECONDS:45}
+    sweep-ms: ${DEVICE_PRESENCE_SWEEP_MS:5000}
   admin:
     # 逗号分隔；生产建议用环境变量覆盖
     emails: "${APP_ADMIN_EMAILS:admin@example.com}"

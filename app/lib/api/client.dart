@@ -13,10 +13,7 @@ class SessionUnavailableException implements Exception {
   final SessionUnavailableKind kind;
   final String message;
 
-  const SessionUnavailableException(
-    this.kind, [
-    this.message = '会话不可用',
-  ]);
+  const SessionUnavailableException(this.kind, [this.message = '会话不可用']);
 
   bool get isTransient => kind == SessionUnavailableKind.transient;
   bool get isExpired => kind == SessionUnavailableKind.expired;
@@ -129,7 +126,9 @@ RefreshSessionFailureKind classifyRefreshFailure(
   return RefreshSessionFailureKind.transient;
 }
 
-RefreshSessionOutcome outcomeFromRefreshFailure(RefreshSessionFailureKind kind) {
+RefreshSessionOutcome outcomeFromRefreshFailure(
+  RefreshSessionFailureKind kind,
+) {
   switch (kind) {
     case RefreshSessionFailureKind.transient:
       return RefreshSessionOutcome.transientFailure;
@@ -166,6 +165,31 @@ void setDeviceAccessToken(String? token) {
   _deviceAccessToken = token;
 }
 
+Future<void> Function()? _deviceSessionRenewal;
+Future<void>? _deviceRenewing;
+
+void setDeviceSessionRenewal(Future<void> Function()? renew) {
+  _deviceSessionRenewal = renew;
+}
+
+/// A 401 is rejected before delivery. Retry it once with a renewed device JWT.
+/// Callers must build their headers inside [request], so the retry uses the new JWT.
+Future<http.Response> withDeviceAuthRetry(
+  Future<http.Response> Function() request,
+) async {
+  final previous = _deviceAccessToken;
+  final response = await request();
+  final renew = _deviceSessionRenewal;
+  if (response.statusCode != 401 || renew == null) return response;
+  if (_deviceAccessToken == previous) {
+    _deviceRenewing ??= Future<void>.sync(renew).whenComplete(() {
+      _deviceRenewing = null;
+    });
+    await _deviceRenewing;
+  }
+  return request();
+}
+
 Map<String, String> get apiHeaders => {
   'Content-Type': 'application/json',
   if (_accessToken != null) 'Authorization': 'Bearer $_accessToken',
@@ -182,8 +206,7 @@ Map<String, String> get realtimeApiHeaders => {
 
 Map<String, String> get deviceApiHeaders => {
   'Content-Type': 'application/json',
-  if (_deviceAccessToken != null)
-    'Authorization': 'Bearer $_deviceAccessToken',
+  if (_deviceAccessToken != null) 'Authorization': 'Bearer $_deviceAccessToken',
 };
 
 /// 仅 Content-Type，**不要**带 [apiHeaders] 里的 Bearer。

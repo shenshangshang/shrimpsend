@@ -136,6 +136,8 @@ dependencies:
       path: packages/url_launcher/url_launcher_ohos
 
 dev_dependencies:
+  integration_test:
+    sdk: flutter
   flutter_test:
     sdk: flutter
 

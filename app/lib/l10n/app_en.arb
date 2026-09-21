@@ -76,7 +76,7 @@
   "settingsNavPersonalAccount": "Account",
   "settingsNavAccountSubtitle": "View and manage your account",
   "settingsMembershipCenter": "Membership",
-  "settingsMembershipSubtitleUpgrade": "Lifetime plans and more devices",
+  "settingsMembershipSubtitleUpgrade": "Device slots with no sign-in required",
   "settingsMembershipTierName": "{tierName} membership",
   "@settingsMembershipTierName": {
     "placeholders": {
@@ -96,9 +96,9 @@
       }
     }
   },
-  "settingsNavMyDevices": "My devices",
+  "settingsNavMyDevices": "Account sessions",
   "settingsNavMyDevicesSubtitleOffline": "Manage devices after you sign in",
-  "settingsNavMyDevicesSubtitleOnline": "Bound devices",
+  "settingsNavMyDevicesSubtitleOnline": "Manage sign-in sessions for this account",
   "settingsNavS3": "S3",
   "settingsNavS3Subtitle": "Wide-area file transfer",
   "settingsNavWebDav": "WebDAV",
@@ -171,9 +171,15 @@
   "settingsSavePathFallbackDialogBody": "Some in-car or custom systems block creating folders on external storage. Files are saved to app cache instead.\n\nExpected: {intendedPath}\nCurrent: {currentPath}\nReason: {reason}",
   "@settingsSavePathFallbackDialogBody": {
     "placeholders": {
-      "intendedPath": { "type": "String" },
-      "currentPath": { "type": "String" },
-      "reason": { "type": "String" }
+      "intendedPath": {
+        "type": "String"
+      },
+      "currentPath": {
+        "type": "String"
+      },
+      "reason": {
+        "type": "String"
+      }
     }
   },
   "settingsChooseFolder": "Choose folder",
@@ -307,7 +313,7 @@
   "settingsSavePathFailedToast": "Couldn't set save location",
   "settingsSavePathRestoredToast": "Save location reset to default",
   "settingsSavePathRestoreFailedToast": "Couldn't reset save location",
-  "settingsSavePathSafSyncHint": "Files are saved here automatically after each transfer",
+  "settingsSavePathSafSyncHint": "Received files are saved to this folder",
   "settingsSavePathSafMirrorLabel": "Save folder",
   "settingsSavePathCacheHint": "App cache (temporary copies; safe to clear)",
   "settingsSavePathAppReceiveLabel": "In-app receive folder",
@@ -804,14 +810,20 @@
   "s3SettingsHostedUsageMonthly": "{used} / {quota}",
   "@s3SettingsHostedUsageMonthly": {
     "placeholders": {
-      "used": { "type": "String" },
-      "quota": { "type": "String" }
+      "used": {
+        "type": "String"
+      },
+      "quota": {
+        "type": "String"
+      }
     }
   },
   "s3SettingsHostedUsageMonthlyUnlimited": "{used} (unlimited)",
   "@s3SettingsHostedUsageMonthlyUnlimited": {
     "placeholders": {
-      "used": { "type": "String" }
+      "used": {
+        "type": "String"
+      }
     }
   },
   "s3SettingsHostedUsageHint": "Counted in UTC calendar months and reset on the 1st. Upgrade your membership for a larger quota.",
@@ -905,7 +917,7 @@
   "membershipOrderCreatedAlipay": "Order created — complete payment in Alipay",
   "membershipPurchaseSuccessActive": "Payment successful — membership is active",
   "membershipCurrentTier": "Current plan",
-  "membershipTierSummary": "{tier} · up to {limit} devices",
+  "membershipTierSummary": "{tier} · {limit} device authorization slots",
   "@membershipTierSummary": {
     "placeholders": {
       "tier": {
@@ -916,7 +928,7 @@
       }
     }
   },
-  "membershipBoundDevices": "{count} devices bound",
+  "membershipBoundDevices": "{count} authorized devices",
   "@membershipBoundDevices": {
     "placeholders": {
       "count": {
@@ -938,19 +950,25 @@
   "membershipSubscriptionRenewsAt": "Next billing: {date}",
   "@membershipSubscriptionRenewsAt": {
     "placeholders": {
-      "date": {"type": "String"}
+      "date": {
+        "type": "String"
+      }
     }
   },
   "membershipSubscriptionEndsAfterCancel": "Auto-renew is off. Access remains until {date}.",
   "@membershipSubscriptionEndsAfterCancel": {
     "placeholders": {
-      "date": {"type": "String"}
+      "date": {
+        "type": "String"
+      }
     }
   },
   "membershipSubscriptionValidUntil": "Current period ends {date}",
   "@membershipSubscriptionValidUntil": {
     "placeholders": {
-      "date": {"type": "String"}
+      "date": {
+        "type": "String"
+      }
     }
   },
   "membershipMigrationCardTitle": "Lightning Vine migration",
@@ -1030,7 +1048,7 @@
       }
     }
   },
-  "membershipFeatureDevices": "Up to {count} linked devices",
+  "membershipFeatureDevices": "{count} device authorization slots",
   "@membershipFeatureDevices": {
     "placeholders": {
       "count": {
@@ -1046,6 +1064,7 @@
       }
     }
   },
+  "membershipFeatureAuthorizedSignaling": "Authorized devices have unlimited signaling for normal use",
   "membershipFeatureWebDav": "WebDAV remote storage (unlimited connections)",
   "membershipPlanPopular": "Popular",
   "membershipOverseasNoAlipay": "Overseas builds don’t support Alipay — subscribe in the app.",
@@ -1195,7 +1214,9 @@
   "chatReceivedExportingToast": "Received {name} — saving to folder…",
   "@chatReceivedExportingToast": {
     "placeholders": {
-      "name": {"type": "String"}
+      "name": {
+        "type": "String"
+      }
     }
   },
   "mobileHomeTabSettings": "Settings",
@@ -1238,7 +1259,7 @@
       }
     }
   },
-  "fileSendS3Intro": "Send via S3 cloud relay to all signed-in devices. Works across networks.",
+  "fileSendS3Intro": "Use S3 relay to send across networks to selected paired devices.",
   "fileSendS3ConfigurePrompt": "Configure S3 first to use cloud send.",
   "fileSendResumeSupported": "Resume supported",
   "fileSendResumeNotSupported": "Resume not supported",
@@ -1535,7 +1556,7 @@
   "chatScreenDeleteThisDeviceTitle": "Remove this device",
   "chatScreenDeleteThisDeviceBody": "This removes this device from your account and signs you out. Sign in again to use cloud features.",
   "chatScreenRemovePeerTitle": "Remove device",
-  "chatScreenRemovePeerBody": "The account on that device will be signed out. If it is in use, access ends immediately; otherwise the next launch will require signing in again.",
+  "chatScreenRemovePeerBody": "Disconnect this paired device. Local files and membership authorization are kept.",
   "chatScreenConfirmRemoveLabel": "Remove",
   "chatScreenConfirmDeleteLabel": "Delete",
   "chatScreenToastDeletedThisDevice": "This device was removed",
@@ -1568,7 +1589,7 @@
   "chatScreenTileRemoveThisDevice": "Remove this device",
   "chatScreenTileRemovePeer": "Remove device",
   "chatScreenSubtitleRemoveThisDevice": "Remove this device from your account and sign out",
-  "chatScreenSubtitleRemovePeer": "Remove the device in this conversation from your account",
+  "chatScreenSubtitleRemovePeer": "Disconnect this device pair",
   "chatScreenPendingFilesMissing": "Some queued files were missing and were removed",
   "chatScreenConnNotLoggedInHttp": "Not signed in — HTTP transfer only",
   "chatScreenConnOffline": "Cannot reach server — offline mode",
@@ -1600,45 +1621,73 @@
       }
     }
   },
-  "deviceSendQuotaHint": "Sending without an account is rate-limited",
+  "deviceSendQuotaHint": "This device’s free allowance",
   "deviceSendQuotaMessage": "Messages {used}/{limit}",
   "@deviceSendQuotaMessage": {
     "placeholders": {
-      "used": { "type": "int" },
-      "limit": { "type": "int" }
+      "used": {
+        "type": "int"
+      },
+      "limit": {
+        "type": "int"
+      }
     }
   },
   "deviceSendQuotaSignaling": "Signaling {used}/{limit}",
   "@deviceSendQuotaSignaling": {
     "placeholders": {
-      "used": { "type": "int" },
-      "limit": { "type": "int" }
+      "used": {
+        "type": "int"
+      },
+      "limit": {
+        "type": "int"
+      }
     }
   },
   "deviceSendQuotaTitle": "Sending too frequently",
   "deviceSendQuotaMessageBody": "This minute's message quota is used up ({used}/{limit}). Try again in {seconds}s.",
   "@deviceSendQuotaMessageBody": {
     "placeholders": {
-      "used": { "type": "int" },
-      "limit": { "type": "int" },
-      "seconds": { "type": "int" }
+      "used": {
+        "type": "int"
+      },
+      "limit": {
+        "type": "int"
+      },
+      "seconds": {
+        "type": "int"
+      }
     }
   },
   "deviceSendQuotaSignalingBody": "This minute's transfer signaling quota is used up ({used}/{limit}). Try again in {seconds}s, or send the file later.",
   "@deviceSendQuotaSignalingBody": {
     "placeholders": {
-      "used": { "type": "int" },
-      "limit": { "type": "int" },
-      "seconds": { "type": "int" }
+      "used": {
+        "type": "int"
+      },
+      "limit": {
+        "type": "int"
+      },
+      "seconds": {
+        "type": "int"
+      }
     }
   },
-  "deviceSendQuotaInfoBody": "Guest sending is rate-limited. Messages {messageUsed}/{messageLimit}, signaling {signalingUsed}/{signalingLimit}. Sign in to remove this limit.",
+  "deviceSendQuotaInfoBody": "Messages {messageUsed}/{messageLimit}; new connections {signalingUsed}/{signalingLimit}. Authorize this device for unlimited normal usage.",
   "@deviceSendQuotaInfoBody": {
     "placeholders": {
-      "messageUsed": { "type": "int" },
-      "messageLimit": { "type": "int" },
-      "signalingUsed": { "type": "int" },
-      "signalingLimit": { "type": "int" }
+      "messageUsed": {
+        "type": "int"
+      },
+      "messageLimit": {
+        "type": "int"
+      },
+      "signalingUsed": {
+        "type": "int"
+      },
+      "signalingLimit": {
+        "type": "int"
+      }
     }
   },
   "deviceSendQuotaGotIt": "Got it",
@@ -1837,7 +1886,9 @@
   "qrScannerPairFailed": "Could not pair this device: {error}",
   "@qrScannerPairFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "qrScannerLoginRequiresAccount": "Sign in on this device before scanning a login QR code",
@@ -1912,7 +1963,9 @@
   "webdavDiagnoseUploadFailed": "Diagnostic failed: {error}",
   "@webdavDiagnoseUploadFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "webdavCstCloudReadOnlyToast": "Data Capsule WebDAV does not support uploads — browse and download only. To upload files, use Settings → S3.",
@@ -1921,14 +1974,18 @@
   "webdavTestFailed": "Connection test failed: {error}",
   "@webdavTestFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "webdavSavedToast": "Saved",
   "webdavSaveFailed": "Save failed: {error}",
   "@webdavSaveFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "webdavBrowserEmpty": "This folder is empty",
@@ -1943,7 +2000,9 @@
   "webdavDeleteConfirmBody": "Delete {count} item(s)? This cannot be undone.",
   "@webdavDeleteConfirmBody": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "webdavDeleteConnection": "Delete connection",
@@ -1951,14 +2010,18 @@
   "webdavDeleteConnectionBody": "Remove \"{name}\" and stored credentials.",
   "@webdavDeleteConnectionBody": {
     "placeholders": {
-      "name": { "type": "String" }
+      "name": {
+        "type": "String"
+      }
     }
   },
   "webdavDeletedToast": "Deleted",
   "webdavDeleteFailed": "Delete failed: {error}",
   "@webdavDeleteFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "webdavRenameTitle": "Rename",
@@ -1966,7 +2029,9 @@
   "webdavRenameFailed": "Rename failed: {error}",
   "@webdavRenameFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "webdavNewFolderTitle": "New folder",
@@ -1974,27 +2039,35 @@
   "webdavCreateFolderFailed": "Create failed: {error}",
   "@webdavCreateFolderFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "webdavUploadDone": "Upload complete",
   "webdavUploadFailed": "Upload failed: {error}",
   "@webdavUploadFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "webdavDownloadDone": "Ready to share or save",
   "webdavDownloadFailed": "Download failed: {error}",
   "@webdavDownloadFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "webdavSelectedCount": "{count} selected",
   "@webdavSelectedCount": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "webdavTabFiles": "Files",
@@ -2013,50 +2086,68 @@
   "webdavTransferQueued": "Queued {count} transfer(s)",
   "@webdavTransferQueued": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "webdavBulkUploadPreparing": "Preparing {count} file(s) for upload…",
   "@webdavBulkUploadPreparing": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "webdavTransferProgressTitle": "Upload {done}/{total}",
   "@webdavTransferProgressTitle": {
     "placeholders": {
-      "done": { "type": "int" },
-      "total": { "type": "int" }
+      "done": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
     }
   },
   "webdavTransferProgressActive": "Active {count}",
   "@webdavTransferProgressActive": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "webdavTransferProgressQueued": "Queued {count}",
   "@webdavTransferProgressQueued": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "webdavTransferProgressSucceeded": "Done {count}",
   "@webdavTransferProgressSucceeded": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "webdavTransferProgressFailed": "Failed {count}",
   "@webdavTransferProgressFailed": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "webdavTransferProgressDownloading": "Downloading {count}",
   "@webdavTransferProgressDownloading": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "webdavTransferProgressComplete": "Upload complete",
@@ -2068,7 +2159,9 @@
   "webdavOutboxUploadTarget": "Upload to {path}",
   "@webdavOutboxUploadTarget": {
     "placeholders": {
-      "path": { "type": "String" }
+      "path": {
+        "type": "String"
+      }
     }
   },
   "webdavOutboxAddFiles": "Add files",
@@ -2092,7 +2185,9 @@
   "webdavUploadConcurrencyValue": "{count}",
   "@webdavUploadConcurrencyValue": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "webdavViewList": "List view",
@@ -2106,15 +2201,35 @@
   "webdavCopyFailed": "Copy failed: {error}",
   "@webdavCopyFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "webdavMoveFailed": "Move failed: {error}",
   "@webdavMoveFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "webdavShareNeedDownload": "Download the file first to share",
-  "webdavLocalDownloaded": "Downloaded"
+  "webdavLocalDownloaded": "Downloaded",
+  "transferWelcomeTitle": "A little closer. A lot simpler.",
+  "transferWelcomeDescription": "Send files, photos and text between your devices. No account needed.",
+  "transferWelcomeConnect": "Connect your first device",
+  "transferWelcomeFooter": "Direct between devices · Resume interrupted transfers",
+  "conversationAvailable": "Ready to transfer",
+  "conversationConnect": "Connect",
+  "conversationConnectDevice": "Connect a device",
+  "conversationComposer": "Type a message, or drop files here",
+  "conversationNewline": "Shift + Enter for a new line",
+  "conversationWelcomeTitle": "Choose a device to start sharing",
+  "conversationWelcomeHint": "Files and messages, together in one conversation.",
+  "conversationSaved": "Saved to receive folder",
+  "conversationSent": "Sent",
+  "conversationSearch": "Search messages",
+  "conversationFiles": "Files",
+  "conversationFile": "Files"
 }

@@ -91,6 +91,7 @@ export function I18nProvider({
   const setLocaleTag = useCallback((tag: LocaleTagValue) => {
     setLocaleTagState(tag);
     setStoredLocaleTag(tag);
+    document.documentElement.lang = tag === 'zh_CN' ? 'zh-CN' : 'en';
   }, []);
 
   const messages = MESSAGES[localeTag];

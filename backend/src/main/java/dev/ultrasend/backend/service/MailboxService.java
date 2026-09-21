@@ -36,11 +36,13 @@ public class MailboxService {
         }
         Object typeObj = map.get("type");
         String type = typeObj != null ? typeObj.toString() : null;
-        if (!RealtimeEnvelopeTypes.isEphemeral(type) && !"text".equals(type)) {
+        if (!RealtimeEnvelopeTypes.isEphemeral(type) && !"text".equals(type) && !"file".equals(type) && !"control".equals(type)) {
             return;
         }
         String fromDeviceId = stringOrNull(map.get("fromDeviceId"));
         String toDeviceId = stringOrNull(map.get("toDeviceId"));
+        // Only directed guest text belongs in the transient mailbox.
+        if (!RealtimeEnvelopeTypes.isEphemeral(type) && (toDeviceId == null || toDeviceId.isBlank())) return;
         Instant now = Instant.now();
         String json;
         try {
@@ -90,7 +92,12 @@ public class MailboxService {
             merged.putIfAbsent(row.getId(), row);
         }
         List<MailboxPendingItemDto> out = new ArrayList<>(merged.size());
-        for (MailboxItem row : merged.values()) {
+        // One cursor covers both queries: return the earliest combined page,
+        // otherwise a high ID in one source skips unread rows in the other.
+        var page = merged.values().stream()
+                .sorted(java.util.Comparator.comparing(MailboxItem::getId))
+                .limit(100).toList();
+        for (MailboxItem row : page) {
             Object parsed;
             try {
                 parsed = objectMapper.readValue(row.getData(), Object.class);

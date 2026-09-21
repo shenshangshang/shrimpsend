@@ -37,15 +37,11 @@ export function ConnectionDiagnosticSheet({ open, onOpenChange, state }: Props) 
     return () => window.clearInterval(id);
   }, [open, state?.running]);
 
-  useEffect(() => {
-    if (!open) setHelpStepId(null);
-  }, [open]);
-
   const help = helpStepId ? diagnosticStepHelp(t, helpStepId) : null;
 
   return (
     <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
+      <Dialog open={open} onOpenChange={next => { if (!next) setHelpStepId(null); onOpenChange(next); }}>
         <DialogContent
           showCloseButton
           className={cn(

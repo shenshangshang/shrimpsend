@@ -1,7 +1,6 @@
 package dev.ultrasend.backend.service;
 
 import dev.ultrasend.backend.entity.Device;
-import dev.ultrasend.backend.entity.DevicePairing;
 import dev.ultrasend.backend.repository.DevicePairingRepository;
 import dev.ultrasend.backend.repository.DeviceRepository;
 import lombok.RequiredArgsConstructor;
@@ -18,6 +17,7 @@ public class DevicePairingService {
 
     private final DevicePairingRepository devicePairingRepository;
     private final DeviceRepository deviceRepository;
+    private final DeviceIdentityService identity;
 
     @Transactional
     public void pair(String deviceId, String peerDeviceId) {
@@ -29,14 +29,14 @@ public class DevicePairingService {
         }
         String a = orderedA(deviceId, peerDeviceId);
         String b = orderedB(deviceId, peerDeviceId);
-        if (devicePairingRepository.findByDeviceAAndDeviceB(a, b).isPresent()) {
-            return;
-        }
-        devicePairingRepository.save(DevicePairing.builder()
-                .deviceA(a)
-                .deviceB(b)
-                .createdAt(Instant.now())
-                .build());
+        // Both peers may pair at once. Let the unique key make this atomic;
+        // a check-then-insert races and produces a 500 on a valid pairing.
+        devicePairingRepository.insertIfAbsent(a, b, Instant.now());
+    }
+
+    @Transactional
+    public void unpair(String me,String peer) {
+        devicePairingRepository.deleteByDeviceAAndDeviceB(orderedA(me,peer),orderedB(me,peer));
     }
 
     @Transactional(readOnly = true)
@@ -47,23 +47,17 @@ public class DevicePairingService {
         if (fromDeviceId.equals(toDeviceId)) {
             return true;
         }
-        if (sameAccount(fromDeviceId, toDeviceId)) {
-            return true;
-        }
         String a = orderedA(fromDeviceId, toDeviceId);
         String b = orderedB(fromDeviceId, toDeviceId);
         return devicePairingRepository.findByDeviceAAndDeviceB(a, b).isPresent();
     }
 
-    private boolean sameAccount(String fromDeviceId, String toDeviceId) {
-        Device from = deviceRepository.findByDeviceId(fromDeviceId).orElse(null);
-        Device to = deviceRepository.findByDeviceId(toDeviceId).orElse(null);
-        if (from == null || to == null || !from.isActive() || !to.isActive()) {
-            return false;
-        }
-        Long fromUid = from.getUser() != null ? from.getUser().getId() : null;
-        Long toUid = to.getUser() != null ? to.getUser().getId() : null;
-        return fromUid != null && fromUid.equals(toUid);
+    @Transactional(readOnly = true)
+    public java.util.List<dev.ultrasend.backend.dto.DeviceDto> peers(String me) {
+        return devicePairingRepository.findByDeviceAOrDeviceB(me, me).stream().map(pair -> {
+            String id = me.equals(pair.getDeviceA()) ? pair.getDeviceB() : pair.getDeviceA();
+            return identity.describe(id);
+        }).toList();
     }
 
     static String orderedA(String x, String y) {

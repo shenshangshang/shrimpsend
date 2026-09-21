@@ -72,6 +72,29 @@ class ChatSessionBody extends StatelessWidget {
             backgroundColor: colors.surface,
             builders: Builders(
               textMessageBuilder: textMessageBuilder,
+              chatMessageBuilder:
+                  (
+                    context,
+                    message,
+                    index,
+                    animation,
+                    child, {
+                    isRemoved,
+                    required isSentByMe,
+                    groupStatus,
+                  }) => ChatMessage(
+                    message: message,
+                    index: index,
+                    animation: animation,
+                    isRemoved: isRemoved,
+                    groupStatus: groupStatus,
+                    horizontalPadding: MediaQuery.sizeOf(context).width >= 768
+                        ? 40
+                        : 16,
+                    verticalPadding: 20,
+                    verticalGroupedPadding: 12,
+                    child: child,
+                  ),
               chatAnimatedListBuilder: (context, itemBuilder) =>
                   GestureDetector(
                     onTap: onChatTap,

@@ -83,3 +83,12 @@
 - 通过 `X-File-Hash` 头传输（LAN 场景）
 - S3 场景可用 ETag 校验
 - 传输完成后接收端可校验 hash 一致性
+
+## 2026-09 设备授权与传输身份
+
+- 账号仅购买和管理设备服务名额。传输使用 `/api/realtime/device-session` 签发的 `device_access` JWT；授权码不得用作请求令牌。
+- `/api/messages/device-send` 和兼容 URL `/api/messages/send` 均要求设备 JWT；`/api/mailbox/pending` 仅允许读取 JWT 对应的 `deviceId`。旧账号 JWT 不再能投递文件或领取其他设备的实时令牌。
+- 新的 1:1 `threadKey` 为 `device|d1:<按字典排序较小ID>|d2:<较大ID>`，不包含购买账号。消息必须定向到设备，先验证配对；授权归属不会自动建立配对。
+- `/api/devices/paired` 使用设备 JWT 列出配对；`DELETE /api/devices/paired/{peer}` 解除配对，独立于设备会员授权和账号退出。
+- 本机状态 `GET /api/device-licenses/me`；激活 `POST /api/device-licenses/redeem`，请求包含 `code` 或 `qrToken`，以及本机备注和平台。六位码等待购买者确认；二维码为高强度一次性凭证。
+- 购买者接口、名额规则和兼容迁移详见 [设备授权实现](../docs/DEVICE_LICENSES.md)。

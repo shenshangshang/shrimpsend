@@ -32,6 +32,7 @@ import java.util.*;
 public class MembershipService {
 
     private final MembershipEntitlementRepository membershipEntitlementRepository;
+    private final dev.ultrasend.backend.license.DeviceLicenseService deviceLicenses;
     private final MembershipOrderRepository membershipOrderRepository;
     private final MembershipOrderEventRepository membershipOrderEventRepository;
     private final UserRepository userRepository;
@@ -117,7 +118,7 @@ public class MembershipService {
     public MembershipMeResponse getMyMembership(Long userId) {
         if (clusterDeploymentService.isOverseasDeployment()) {
             OverseasMembershipTier ot = hostedQuotaService.effectiveTier(userId);
-            int limit = ot.getDeviceLimit();
+            int limit = deviceLicenses.deviceCapacity(userId);
             int currentCount = countEffectiveDevicesForLimit(userId);
             String ym = HostedQuotaService.currentYearMonthUtc();
             long used = hostedQuotaService.usedBytes(userId, ym);
@@ -156,7 +157,7 @@ public class MembershipService {
                     .build();
         }
         MembershipTier tier = getCurrentTier(userId);
-        int limit = resolveDeviceLimitForUser(userId);
+        int limit = deviceLicenses.deviceCapacity(userId);
         int currentCount = countEffectiveDevicesForLimit(userId);
         var entOpt = membershipEntitlementRepository.findByUserId(userId);
         int addonPacks = entOpt
@@ -270,16 +271,9 @@ public class MembershipService {
                 .orElse(freeDeviceLimit);
     }
 
-    /** 与 {@link DeviceService#countEffectiveDevicesForLimit} 一致：非 Web 全计；Web 多条记录统计上仍只占 1 名额。 */
+    /** Counts active installation licenses, independently of billing sign-in sessions. */
     private int countEffectiveDevicesForLimit(Long userId) {
-        List<Device> active = deviceRepository.findAllByUser_IdAndActiveTrue(userId);
-        long nonWeb = active.stream()
-                .filter(d -> d.getPlatform() == null || !"web".equalsIgnoreCase(d.getPlatform()))
-                .count();
-        long web = active.stream()
-                .filter(d -> d.getPlatform() != null && "web".equalsIgnoreCase(d.getPlatform()))
-                .count();
-        return (int) (nonWeb + Math.min(1, web));
+        return deviceLicenses.authorizedCount(userId);
     }
 
     @Transactional
@@ -390,6 +384,12 @@ public class MembershipService {
                 .alipayPcPayUrl(pcPayUrl)
                 .alipayOrderString(orderStr)
                 .build();
+    }
+
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public List<MembershipOrderResponse> listOrders(Long userId) {
+        return membershipOrderRepository.findTop100ByUserIdOrderByCreatedAtDesc(userId)
+                .stream().map(this::toOrderDto).toList();
     }
 
     public MembershipOrderResponse getOrder(Long userId, String orderNo) {

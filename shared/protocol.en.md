@@ -66,3 +66,13 @@ S3 is a fallback path, not a replacement for LAN transfer. It keeps delivery rel
 ## Real-time sync
 
 WuKongIM pushes updates to every signed-in device of the same account, which is also how WebRTC signaling and device/conversation state propagate in real time.
+
+## 2026-09 device authorization and transport identity
+
+Billing accounts own device service slots. Transport uses the installation's `device_access` JWT from `/api/realtime/device-session`; activation codes are never bearer tokens.
+
+Both `/api/messages/device-send` and the compatibility `/api/messages/send` URL require device authentication. Mailbox access is scoped to the authenticated device. An account JWT cannot send as or obtain realtime access for another installation.
+
+New peer threads use `device|d1:<lower-sorted ID>|d2:<higher-sorted ID>`. Pairing is independent of licensing. `GET /api/devices/paired` lists pairs and `DELETE /api/devices/paired/{peer}` disconnects one pair without revoking its license.
+
+`GET /api/device-licenses/me` reports the local grant. `POST /api/device-licenses/redeem` consumes `code` (six characters, purchaser approval required) or `qrToken` (high-entropy, single use). See [implementation and deployment](../docs/DEVICE_LICENSES.md).

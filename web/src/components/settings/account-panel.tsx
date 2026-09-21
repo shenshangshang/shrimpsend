@@ -35,15 +35,17 @@ export function AccountPanel({ onClose, hideLogout = false }: AccountPanelProps)
   const router = useRouter();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [profileError, setProfileError] = useState(false);
+  const [revision, setRevision] = useState(0);
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [showDeleteAccount, setShowDeleteAccount] = useState(false);
 
   useEffect(() => {
     fetchUserProfile()
       .then(setProfile)
-      .catch(() => {})
+      .catch(() => setProfileError(true))
       .finally(() => setLoading(false));
-  }, []);
+  }, [revision]);
 
   const handleLogout = async () => {
     await logout();
@@ -58,28 +60,28 @@ export function AccountPanel({ onClose, hideLogout = false }: AccountPanelProps)
           <div className="flex items-center justify-center py-8">
             <div className="animate-spin rounded-full h-7 w-7 border-2 border-primary border-t-transparent" />
           </div>
-        ) : (
+        ) : profileError ? <Alert variant="destructive"><AlertDescription>{t('errors.networkError')}<Button variant="outline" className="ml-3" onClick={() => { setProfileError(false); setLoading(true); setRevision(value => value + 1); }}>{t('common.retry')}</Button></AlertDescription></Alert> : (
           <>
-            <div className="flex flex-col items-center gap-1.5 py-2">
-              <span className="flex items-center justify-center w-[72px] h-[72px] rounded-full bg-primary/12 text-primary">
-                <User className="w-9 h-9" />
+            <div className="flex flex-wrap items-center gap-4 rounded-xl border border-border p-5">
+              <span className="flex items-center justify-center w-11 h-11 rounded-xl bg-primary/12 text-primary">
+                <User className="w-6 h-6" />
               </span>
               <p className="text-base font-medium mt-1">{profile?.username || ''}</p>
               <p className="text-xs text-muted-foreground">{profile?.email || ''}</p>
             </div>
 
-            <div className="flex flex-col gap-2 w-full">
-              <Button type="button" variant="outline" className="w-full" onClick={() => setShowChangePassword(true)}>
+            <div className="flex flex-col items-start gap-2 w-full border-t border-border pt-5">
+              <Button type="button" variant="outline" className="min-w-36" onClick={() => setShowChangePassword(true)}>
                 {t('account.changePassword')}
               </Button>
-              <Button type="button" variant="ghost" className="w-full text-muted-foreground hover:text-muted-foreground" onClick={() => setShowDeleteAccount(true)}>
+              <Button type="button" variant="ghost" className="text-muted-foreground hover:text-destructive" onClick={() => setShowDeleteAccount(true)}>
                 {t('account.deleteAccount')}
               </Button>
               {!hideLogout && (
                 <Button
                   type="button"
                   variant="outline"
-                  className="w-full text-destructive border-destructive/34 hover:bg-destructive/5 hover:text-destructive"
+                  className="mt-4 min-w-36"
                   onClick={handleLogout}
                 >
                   {t('settings.logout')}

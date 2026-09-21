@@ -1,5 +1,6 @@
 import { logger } from '../logger';
 import { getApiUrl } from '../config';
+import { DeviceSessionRetry } from './DeviceSessionRetry';
 import {
   RefreshSessionOutcome,
   RefreshTokenError,
@@ -69,6 +70,17 @@ export function setDeviceAccessToken(token: string | null): void {
     return;
   }
   localStorage.setItem(KEY_DEVICE_ACCESS_TOKEN, token);
+}
+
+export const deviceSessionRetry = new DeviceSessionRetry(getDeviceAccessToken);
+
+/** Only replay small API envelopes; file bodies use their own resumable transports. */
+export function fetchWithDeviceAuth(url: string, init: RequestInit = {}): Promise<Response> {
+  return deviceSessionRetry.run((token) => {
+    const headers = new Headers(init.headers);
+    if (token) headers.set('Authorization', `Bearer ${token}`);
+    return fetch(url, { ...init, headers });
+  });
 }
 
 export function realtimeAuthToken(): string | null {

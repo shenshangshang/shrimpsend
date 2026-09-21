@@ -56,113 +56,105 @@ stripe listen --forward-to localhost:9000/api/membership/stripe/webhook
 
 ## Production deployment
 
-Production runs the **server stack in Docker** via `./scripts/deploy.sh` (MySQL + WuKongIM + Spring Boot). The Next.js web app still runs on the host as a Node standalone process. Secrets live in an **ops** config directory (see [ops/README.md](../ops/README.md)).
+Production uses **four Docker containers**: MySQL, WuKongIM, Spring Boot and Next.js Web. Operators edit **one file**, `.env.production`; the server needs Docker Engine with Compose v2 (supporting `up --wait`), not host Java or Node. HTTPS is terminated by your existing reverse proxy.
 
-### One-time server setup
-
-1. Clone the public app repo and an ops config repo **as siblings**:
+### First deployment
 
 ```bash
-git clone git@github.com:shrimpsend/shrimpsend.git shrimpsend
-cd shrimpsend
-
-# Self-hosters: public samples (replace placeholders before production)
-git clone git@github.com:shrimpsend/public-ops.git ../ops
-
-# Maintainers: private production ops (requires access)
-# git clone git@github.com:shrimpsend/ops.git ../ops
+cp .env.production.example .env.production
+chmod 600 .env.production
+# Edit .env.production: replace example.com and fill every required secret.
+./scripts/deploy.sh check
+./scripts/deploy.sh up
+./scripts/deploy.sh status
 ```
 
-2. Optional: `export ULTRASEND_OPS_DIR=/path/to/your-ops` if ops is not at `../ops`.
-3. Ensure **Docker** and **Node.js 20+** are available on the server. Java and a host MySQL install are not required. Do not expose WuKongIM HTTP API port 5001 publicly (Compose binds it to `127.0.0.1`).
+`check` validates Compose without printing expanded secrets. `up` builds both application images before updating containers, then waits for all health checks. It does not pull Git, copy ops files, delete volumes, or terminate host processes. A failed startup exits nonzero; it does not automatically roll back containers.
 
-Scripts resolve ops in this order: `ULTRASEND_OPS_DIR` → sibling `../ops` → validate `.ultrasend-ops` marker and at least one config subdirectory (`cn/`, `overseas/`, `local/`, etc.).
+Generate each JWT / IM secret separately with `openssl rand -hex 32`, and each AES key with `openssl rand -base64 32`. For an **existing installation**, preserve the original encryption keys and database credentials. Changing keys without a migration can make stored data unreadable.
 
-### Deploy (interactive)
+For a config outside the checkout, use the same setting for every command:
 
 ```bash
-./scripts/deploy.sh
+DEPLOY_ENV_FILE=/etc/shrimpsend/production.env ./scripts/deploy.sh up
+DEPLOY_ENV_FILE=/etc/shrimpsend/production.env ./scripts/deploy.sh status
 ```
 
-The script may:
+Do not `source` the env file. Use Compose env syntax; put values containing literal `$` in single quotes. Shell environment variables take precedence over Compose interpolation, so remove stale deployment exports from the calling shell. No fallback credentials are exported by the new script.
 
-- Pull latest git (confirm at prompt)
-- Ask **China (xiachuan)** vs **Overseas (ShrimpSend)** cluster
-- Optionally sync from ops (`sync-to-build-machine.sh`)
-- Build backend Docker image and Next.js standalone Web
-- Restart Docker server stack (MySQL 3306, WuKongIM 5200, backend 9000) and Web (3000)
+### Configuration map
 
-You can run `scripts/sync-to-build-machine.sh` before `deploy.sh`; the deploy script can sync again when prompted.
+| Settings in `.env.production` | Purpose |
+|---|---|
+| `COMPOSE_PROJECT_NAME` | Stable identity for containers, network and volumes; keep it unchanged on redeploy |
+| `SPRING_PROFILES_ACTIVE`, `MYSQL_DATABASE` | China: `prod` / `ultrasend`; overseas: `prod-overseas` / `ultrasend_overseas` |
+| `MYSQL_ROOT_PASSWORD`, `MYSQL_USER`, `MYSQL_PASSWORD` | MySQL initialization and backend access |
+| `WUKONGIM_MANAGER_TOKEN`, `WUKONGIM_WS_PUBLIC_URL` | Shared internal IM token and browser/App reachable WS address |
+| `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET` | Account authentication |
+| `APP_MESSAGES_ENCRYPTION_KEY_BASE64`, `APP_USER_DATA_ENCRYPTION_KEK_BASE64` | Persistent data encryption; back these up separately with the database |
+| `APP_PUBLIC_WEB_BASE_URL`, `APP_CORS_ALLOWED_ORIGINS` | Public site URL and allowed browser origins |
+| `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_WUKONGIM_WS_URL`, `NEXT_PUBLIC_WEB_BASE_URL` | Explicit browser-facing endpoints; never use Docker service names here |
+| `BIND_ADDRESS`, `WEB_PORT`, `API_PORT`, `WUKONGIM_WS_PORT` | Host proxy upstreams, default `127.0.0.1:3000/9000/5200` |
+| `NEXT_PUBLIC_OPENPANEL_WEB_CLUSTER` | `cn` or `intl` for existing release/analytics cluster selection |
+| Mail/SMS, Alipay, Stripe, RevenueCat, S3 variables | Optional integrations; copy required values from your previous configuration |
 
-### Deploy (non-interactive)
+Backend receives the env file at runtime. `docker/production.yml` is a checked-in mapping with production defaults, mounted read-only outside the JAR; it is not another per-server secrets file. Local ops-synced production YAML files are excluded from the production backend build. Base schema behavior remains `ddl-auto=update`; back up before upgrading an existing database.
 
-China (default):
+The Web image receives only explicitly listed `NEXT_PUBLIC_*` build arguments, not the backend env file. All `NEXT_PUBLIC_*` values are public browser data, including the existing analytics fields. Do not put backend credentials there. Next.js freezes these values at build time: run **`up` after changing them**. See [Next.js environment variables](https://nextjs.org/docs/app/guides/environment-variables) and [Docker environment interpolation](https://docs.docker.com/compose/how-tos/environment-variables/variable-interpolation/).
+
+Changing backend-only runtime values can use `./scripts/deploy.sh apply` (no build, images must already exist). For changed mounted file contents alone, restart the backend so Spring reloads it:
 
 ```bash
-SPRING_PROFILE=prod CLUSTER_LABEL='China (xiachuan)' ./scripts/deploy.sh
+docker compose --env-file .env.production -f compose.production.yml restart backend
 ```
 
-Overseas:
+### HTTPS routing
 
-```bash
-SPRING_PROFILE=prod-overseas CLUSTER_LABEL='Overseas (ShrimpSend)' ./scripts/deploy.sh
-```
+Configure your reverse proxy:
 
-Overseas Web builds with `NEXT_PUBLIC_STRIPE_BILLING=live` automatically.
+| Public route | Host upstream |
+|---|---|
+| `https://example.com/` | `http://127.0.0.1:3000` |
+| `https://api.example.com/api/` | `http://127.0.0.1:9000` (preserve `/api/`) |
+| `wss://api.example.com/wkws` | `http://127.0.0.1:5200/`, with WebSocket Upgrade and long read timeout |
+
+Use [nginx-api-wukongim.example.conf](nginx-api-wukongim.example.conf) for API/WS routing and your existing certificate setup. MySQL and the IM management API are only reachable inside the production Compose network. IM callbacks use internal `http://backend:9000` addresses. Configure any optional webhook authentication consistently with your IM installation.
 
 ### Operations
 
 ```bash
-./scripts/deploy.sh stop
+./scripts/deploy.sh logs          # follow logs for all services
+./scripts/deploy.sh logs backend  # one service
 ./scripts/deploy.sh status
-./scripts/deploy.sh logs
+./scripts/deploy.sh stop          # preserve volumes
+./scripts/deploy.sh up            # build/update and wait until healthy
 ```
 
-### Spring profiles (reference)
+Compose defaults to the public WuKongIM v2 image used by the existing stack. Set `WUKONGIM_IMAGE` to a verified version/digest for reproducible releases. A failed build leaves the old stack running; a failed health check requires inspecting logs before retrying.
 
-| Profile | Use case |
-|---------|----------|
-| (default) | Local dev — China logic |
-| `dev-overseas` | Local dev — ShrimpSend logic (`start-dev.sh --overseas`) |
-| `prod` | China production (`application-prod.yml` from ops) |
-| `prod-overseas` | ShrimpSend production |
+### Migrate an existing installation
 
-### Environment variables (backend)
+1. Back up the existing database and encryption keys. Inspect `docker compose ls` and the existing volume names. Set `COMPOSE_PROJECT_NAME` to the **existing project name** when reusing `mysql_data` / `wukongim_data`; changing it creates a separate stack and empty volumes.
+2. Consolidate existing root `.env`, `backend/.env`, production profile YAML and `web/.env.local` values into `.env.production`. Preserve the actual database name, account passwords, encryption keys, URLs, product IDs and callback configuration. Custom Spring values can use standard Spring environment variable names in the same file. No automatic conversion is performed.
+3. Build and validate first. During the switch, stop the old host Web process using its existing service manager or recorded PID, then run the new deployment. Both cannot bind port 3000 simultaneously. Do not kill arbitrary processes by port.
+4. Existing MySQL volumes do not re-run first-boot initialization: changing `MYSQL_DATABASE` / passwords in env does **not** create a new database, grant access or rotate users. Provision/migrate them explicitly before switching clusters.
+5. Verify old history, stored S3 credentials, paired devices, guest messages and real file transfers. To revert, stop the new stack and use the previous release/config with the preserved volumes; database compatibility must be checked before downgrading.
 
-See [backend/.env.example](../backend/.env.example). Critical production values:
+The old host-Web workflow is retained as `scripts/deploy-legacy.sh` for migration reference. `ops/` remains useful for Flutter signing/build configuration. Production no longer requires cloning or syncing ops into application source.
 
-- `SPRING_DATASOURCE_*` — database
-- `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`
-- `APP_MESSAGES_ENCRYPTION_KEY_BASE64` — AES-GCM key for legacy cloud-stored message text (`enc:v1:`)
-- `APP_USER_DATA_ENCRYPTION_KEK_BASE64` — server KEK wrapping per-user DEKs (S3 SK, new message text `enc:u:v1:`)
-- `APP_USER_DATA_ENCRYPTION_MIGRATE_S3_ON_STARTUP` / `APP_USER_DATA_ENCRYPTION_MIGRATE_MESSAGES_ON_STARTUP` — one-shot migration switches
-- `WUKONGIM_API_URL`, `WUKONGIM_WS_PUBLIC_URL` — WuKongIM internal API and public WebSocket URL
-- `REALTIME_BUS` — `wukongim` (default) or `centrifugo` rollback
-- `ALIPAY_*` — China payments (optional overseas)
-- `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` — overseas
-- `REVENUECAT_WEBHOOK_AUTH`
-- `TENCENT_SMS_*` — China SMS (optional)
-- `HOSTED_S3_*`, `STORAGE_S3_*` — object storage
+## Full Docker on this workstation
 
-## Configuration layers
+For the isolated local four-container deployment, use `.env.local-deploy` and `scripts/deploy-docker-local.sh`. See [LOCAL_DOCKER.md](LOCAL_DOCKER.md) for URLs, runtime setup and restart commands.
 
-| Layer | Public repo | Your secrets |
-|-------|-------------|--------------|
-| Local dev (team) | `*.example` templates | `ops/local/` → `./scripts/deploy-local.sh` |
-| Local dev (minimal) | `config.json`, `application.yml` | `./scripts/setup-local-config.sh` |
-| Docker | `.env` from `.env.example` | Local `.env` (or `ops/local/docker.env`) |
-| Web | `web/.env.example` | `web/.env.local` (sync from `ops/web/.env.local`) |
-| Flutter OpenPanel | `openpanel_env.secrets.example.dart` | `openpanel_env.secrets.dart` (gitignored) |
-| Flutter RC / prod URLs | `env.secrets.example.dart` | `env.secrets.dart` (gitignored) |
-| Production | `*.example.yml`, `config.prod.example.bare.json` | [public-ops](https://github.com/shrimpsend/public-ops) samples or private ops → `sync-to-build-machine.sh` |
+## Local Docker development
 
-## Docker server stack
-
-MySQL + WuKongIM + backend run in Compose. Web is not included (use `./scripts/start-dev.sh` or `cd web && npm run dev`).
+`docker-compose.yml` and `start-dev.sh` remain the development stack: containerized MySQL + IM + backend, with host Web hot reload. They use `.env`, `backend/.env` and `web/.env.local`. The host MySQL port is **3307**, while the internal container port is 3306. Production explicitly uses `compose.production.yml` through `deploy.sh`.
 
 ```bash
-./scripts/setup-local-config.sh   # creates .env and backend/.env from examples
-docker compose up -d              # MySQL :3306, WuKongIM :5200/:5001, backend :9000
+./scripts/setup-local-config.sh
+cd web && npm ci && cd ..
+./scripts/start-dev.sh
+# overseas: ./scripts/start-dev.sh --overseas
 ```
 
 ## Flutter / mobile builds
@@ -178,7 +170,7 @@ HarmonyOS: copy `build-profile.example.json5` → `build-profile.json5` or sync 
 
 ## China realtime (WuKongIM on the API host)
 
-Official CN clients connect to **`wss://api.xiachuan.net/wkws`** (same host as the REST API). Nginx must reverse-proxy `/wkws/` to WuKongIM `:5200` with WebSocket `Upgrade` and a long `proxy_read_timeout`. Keep the WuKongIM HTTP API (`:5001`) on localhost / docker network only.
+Official CN clients connect to **`wss://api.xiachuan.net/wkws`** (same host as the REST API). Nginx must reverse-proxy `/wkws` to WuKongIM `:5200` with WebSocket `Upgrade` and a long `proxy_read_timeout`. Keep the WuKongIM HTTP API (`:5001`) on localhost / docker network only.
 
 See [nginx-api-wukongim.example.conf](nginx-api-wukongim.example.conf).
 

@@ -1,3 +1,4 @@
+import '../ui/product_scaffold.dart';
 import 'package:flutter/material.dart';
 
 import '../font_size_store.dart';
@@ -15,7 +16,8 @@ class FontSettingsScreen extends StatelessWidget {
     final store = FontSizeStoreScope.of(context);
     final l10n = AppLocalizations.of(context);
 
-    return Scaffold(
+    return ProductScaffold(
+      preferencesTab: 'fonts',
       appBar: AppBar(
         title: Text(l10n.settingsFontsPageTitle),
       ),

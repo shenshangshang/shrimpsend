@@ -48,8 +48,11 @@ class MessageCryptoServiceTest {
     @Test
     void tamperedCiphertextFailsAuthentication() {
         String ciphertext = cryptoService.encrypt("{\"payload\":{\"text\":\"hello\"}}");
-        String tampered = ciphertext.substring(0, ciphertext.length() - 1)
-                + (ciphertext.endsWith("A") ? "B" : "A");
+        int start = ciphertext.lastIndexOf(':') + 1;
+        byte[] bytes = java.util.Base64.getUrlDecoder().decode(ciphertext.substring(start));
+        bytes[0] ^= 1; // Change actual ciphertext, not unused Base64 padding bits.
+        String tampered = ciphertext.substring(0, start)
+                + java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
 
         assertThrows(IllegalArgumentException.class, () -> cryptoService.decryptIfNeeded(tampered));
     }

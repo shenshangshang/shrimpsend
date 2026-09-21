@@ -62,6 +62,32 @@ class MailboxServiceTest {
     }
 
     @Test
+    void directedGuestTextCanBeCollectedAfterReconnect() {
+        mailboxService.storeIfEphemeral(null, Map.of("type", "text", "fromDeviceId", "guest-a",
+                "toDeviceId", "guest-b", "payload", Map.of("text", "hello")));
+        ArgumentCaptor<MailboxItem> item = ArgumentCaptor.forClass(MailboxItem.class);
+        verify(mailboxItemRepository).save(item.capture());
+        assertNull(item.getValue().getUserId());
+        assertEquals("guest-b", item.getValue().getToDeviceId());
+    }
+
+    @Test
+    void combinedMailboxPageCannotSkipUnreadDeviceMessages() {
+        List<MailboxItem> accountRows = java.util.stream.LongStream.rangeClosed(201, 300)
+                .mapToObj(id -> MailboxItem.builder().id(id).data("{}").build()).toList();
+        List<MailboxItem> deviceRows = java.util.stream.LongStream.rangeClosed(1, 100)
+                .mapToObj(id -> MailboxItem.builder().id(id).data("{}").build()).toList();
+        when(mailboxItemRepository.findPending(eq(1L), eq("desktop"), eq(0L), any(), any()))
+                .thenReturn(accountRows);
+        when(mailboxItemRepository.findPendingForDevice(eq("desktop"), eq(0L), any(), any()))
+                .thenReturn(deviceRows);
+        var page = mailboxService.pending(1L, "desktop", 0L);
+        assertEquals(100, page.size());
+        assertEquals(1L, page.get(0).getId());
+        assertEquals(100L, page.get(99).getId());
+    }
+
+    @Test
     void pendingMapsRowsAndSkipsBadJson() {
         MailboxItem ok = MailboxItem.builder()
                 .id(4L)

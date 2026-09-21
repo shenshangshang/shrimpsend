@@ -432,6 +432,11 @@ packages:
       relative: true
     source: path
     version: "0.0.8+ultrasend.1"
+  flutter_driver:
+    dependency: transitive
+    description: flutter
+    source: sdk
+    version: "0.0.0"
   flutter_foreground_task:
     dependency: "direct main"
     description:
@@ -638,6 +643,11 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "3.1.0"
+  fuchsia_remote_debug_protocol:
+    dependency: transitive
+    description: flutter
+    source: sdk
+    version: "0.0.0"
   get_it:
     dependency: transitive
     description:
@@ -702,6 +712,11 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "2.1.1"
+  integration_test:
+    dependency: "direct dev"
+    description: flutter
+    source: sdk
+    version: "0.0.0"
   intl:
     dependency: "direct main"
     description:
@@ -835,10 +850,10 @@ packages:
     dependency: transitive
     description:
       name: matcher
-      sha256: dc0b7dc7651697ea4ff3e69ef44b0407ea32c487a39fff6a4004fa585e901861
+      sha256: "12956d0ad8390bbcc63ca2e1469c0619946ccb52809807067a7020d57e647aa6"
       url: "https://pub.flutter-io.cn"
     source: hosted
-    version: "0.12.19"
+    version: "0.12.18"
   material_color_utilities:
     dependency: transitive
     description:
@@ -1017,11 +1032,9 @@ packages:
   path_provider_ohos:
     dependency: "direct main"
     description:
-      path: "packages/path_provider/path_provider_ohos"
-      ref: "provider-v2.1.5-ohos-1.0.1"
-      resolved-ref: "7cc9f4cfbd464943096dc7c87288252c543df5cb"
-      url: "https://gitcode.com/CPF-Flutter/flutter_packages.git"
-    source: git
+      path: "../.local/flutter-deps/cpf/packages/path_provider/path_provider_ohos"
+      relative: true
+    source: path
     version: "2.2.17"
   path_provider_platform_interface:
     dependency: transitive
@@ -1151,6 +1164,14 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "6.5.0"
+  process:
+    dependency: transitive
+    description:
+      name: process
+      sha256: "4242ba3508d37e01808bdf71ad1d5bb93a8d671bf2e7450e6b1b353fb0808891"
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "5.0.6"
   provider:
     dependency: "direct main"
     description:
@@ -1338,11 +1359,9 @@ packages:
   shared_preferences_ohos:
     dependency: "direct main"
     description:
-      path: "packages/shared_preferences/shared_preferences_ohos"
-      ref: HEAD
-      resolved-ref: "2f21e26e09efb92b8429c840ae7ca0cb024f036c"
-      url: "https://gitcode.com/openharmony-tpc/flutter_packages.git"
-    source: git
+      path: "../.local/flutter-deps/tpc/packages/shared_preferences/shared_preferences_ohos"
+      relative: true
+    source: path
     version: "2.2.0"
   shared_preferences_platform_interface:
     dependency: transitive
@@ -1509,6 +1528,14 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "0.9.1"
+  sync_http:
+    dependency: transitive
+    description:
+      name: sync_http
+      sha256: "7f0cd72eca000d2e026bcd6f990b81d0ca06022ef4e32fb257b30d3d1014a961"
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "0.3.1"
   synchronized:
     dependency: transitive
     description:
@@ -1529,10 +1556,10 @@ packages:
     dependency: transitive
     description:
       name: test_api
-      sha256: "8161c84903fd860b26bfdefb7963b3f0b68fee7adea0f59ef805ecca346f0c7a"
+      sha256: "93167629bfc610f71560ab9312acdda4959de4df6fac7492c89ff0d3886f6636"
       url: "https://pub.flutter-io.cn"
     source: hosted
-    version: "0.7.10"
+    version: "0.7.9"
   timezone:
     dependency: transitive
     description:
@@ -1615,11 +1642,9 @@ packages:
   url_launcher_ohos:
     dependency: "direct main"
     description:
-      path: "packages/url_launcher/url_launcher_ohos"
-      ref: HEAD
-      resolved-ref: "2f21e26e09efb92b8429c840ae7ca0cb024f036c"
-      url: "https://gitcode.com/openharmony-tpc/flutter_packages.git"
-    source: git
+      path: "../.local/flutter-deps/tpc/packages/url_launcher/url_launcher_ohos"
+      relative: true
+    source: path
     version: "6.0.38"
   url_launcher_platform_interface:
     dependency: transitive
@@ -1764,6 +1789,14 @@ packages:
       relative: true
     source: path
     version: "1.2.1+ultrasend.1"
+  webdriver:
+    dependency: transitive
+    description:
+      name: webdriver
+      sha256: "28b82ec894fed45dd71c23ba62d1af973ed97dd59a4f5790a4d38b0b13e5657e"
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "3.2.0"
   webrtc_interface:
     dependency: transitive
     description:

@@ -1,3 +1,4 @@
+import '../ui/product_scaffold.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -50,7 +51,8 @@ class _VersionHistoryScreenState extends State<VersionHistoryScreen> {
     final colors = context.appColors;
     final l10n = AppLocalizations.of(context);
 
-    return Scaffold(
+    return ProductScaffold(
+      settingsLocation: '/settings/help',
       appBar: AppBar(
         title: Text(l10n.versionHistoryTitle),
       ),

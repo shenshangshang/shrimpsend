@@ -1,3 +1,4 @@
+import '../ui/product_scaffold.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -19,6 +20,7 @@ class AccountScreen extends ConsumerStatefulWidget {
 class _AccountScreenState extends ConsumerState<AccountScreen> {
   UserProfile? _profile;
   bool _loading = true;
+  bool _loadError = false;
 
   @override
   void initState() {
@@ -27,10 +29,21 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
   }
 
   Future<void> _loadProfile() async {
+    if (!ref.read(authProvider).isLoggedIn) {
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
+    if (mounted)
+      setState(() {
+        _loading = true;
+        _loadError = false;
+      });
     try {
       final profile = await fetchUserProfile();
       if (mounted) setState(() => _profile = profile);
-    } catch (_) {}
+    } catch (_) {
+      if (mounted) setState(() => _loadError = true);
+    }
     if (mounted) setState(() => _loading = false);
   }
 
@@ -68,100 +81,176 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = context.appColors;
-    final scheme = theme.colorScheme;
     final l10n = AppLocalizations.of(context);
-
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(l10n.accountScreenTitle),
-        leading: IconButton(
-          icon: const Icon(LucideIcons.arrowLeft),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : Align(
-              alignment: Alignment.topCenter,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(
-                  maxWidth: AppSize.contentMaxWidth,
-                ),
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.md,
-                    AppSpacing.xs,
-                    AppSpacing.md,
-                    AppSpacing.lg,
-                  ),
+    final zh = Localizations.localeOf(context).languageCode == 'zh';
+    final loggedIn = ref.watch(authProvider).isLoggedIn;
+    ref.listen(authProvider, (previous, next) {
+      if (previous?.isLoggedIn != next.isLoggedIn && next.isLoggedIn)
+        _loadProfile();
+    });
+    return ProductScaffold(
+      settingsLocation: '/account',
+      appBar: AppBar(title: Text(l10n.accountScreenTitle)),
+      body: !loggedIn
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(28),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    const SizedBox(height: AppSpacing.md),
-                    Center(
-                      child: Container(
-                        width: 72,
-                        height: 72,
-                        decoration: BoxDecoration(
-                          color: scheme.primary.withValues(alpha: 0.12),
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(
-                          LucideIcons.user,
-                          size: 36,
-                          color: scheme.primary,
-                        ),
+                    Icon(
+                      LucideIcons.userRound,
+                      size: 38,
+                      color: colors.textSecondary,
+                    ),
+                    const SizedBox(height: 20),
+                    Text(
+                      zh ? '登录后管理账号与会员' : 'Sign in to manage your account',
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
-                    const SizedBox(height: AppSpacing.sm),
-                    Center(
-                      child: Text(
-                        _profile?.username ?? '',
-                        style: theme.textTheme.titleMedium,
+                    const SizedBox(height: 12),
+                    Text(
+                      zh
+                          ? '文件传输可以继续免登录使用。'
+                          : 'You can keep transferring without an account.',
+                      style: TextStyle(color: colors.textSecondary),
+                    ),
+                    const SizedBox(height: 24),
+                    FilledButton(
+                      onPressed: () => Navigator.pushNamed(context, '/login'),
+                      child: Text(zh ? '登录' : 'Sign in'),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          : _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _loadError
+          ? Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(zh ? '暂时无法读取账号信息' : 'Unable to load your account'),
+                  const SizedBox(height: 16),
+                  OutlinedButton(
+                    onPressed: _loadProfile,
+                    child: Text(zh ? '重试' : 'Retry'),
+                  ),
+                ],
+              ),
+            )
+          : Align(
+              alignment: Alignment.topLeft,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 840),
+                child: ListView(
+                  padding: const EdgeInsets.all(28),
+                  children: [
+                    Text(
+                      zh
+                          ? '账号用于管理会员。设备上的文件和会话独立保存。'
+                          : 'Your account manages membership. Files and conversations stay on each device.',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: colors.textSecondary,
+                        height: 1.7,
                       ),
                     ),
-                    const SizedBox(height: AppSpacing.xxs),
-                    Center(
-                      child: Text(
-                        _profile?.email ?? '',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: colors.textSecondary,
+                    const SizedBox(height: 28),
+                    Row(
+                      children: [
+                        Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: colors.accentSoft,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Icon(
+                            LucideIcons.userRound,
+                            color: theme.colorScheme.primary,
+                            size: 23,
+                          ),
                         ),
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.xl),
-                    Card(
-                      clipBehavior: Clip.antiAlias,
-                      child: Padding(
-                        padding: const EdgeInsets.all(AppSpacing.sm),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            OutlinedButton(
-                              onPressed: _changePassword,
-                              child: Text(l10n.accountChangePassword),
-                            ),
-                            const SizedBox(height: AppSpacing.sm),
-                            TextButton(
-                              onPressed: _deleteAccount,
-                              style: TextButton.styleFrom(
-                                foregroundColor: colors.textTertiary,
-                              ),
-                              child: Text(l10n.accountDeleteAccount),
-                            ),
-                            const SizedBox(height: AppSpacing.sm),
-                            OutlinedButton(
-                              onPressed: _logout,
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: colors.danger,
-                                side: BorderSide(
-                                  color: colors.danger.withValues(alpha: 0.34),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _profile?.username ?? '',
+                                style: const TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w500,
                                 ),
                               ),
-                              child: Text(l10n.accountLogout),
-                            ),
-                          ],
+                              const SizedBox(height: 6),
+                              Text(
+                                _profile?.email ?? '',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: colors.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
+                      ],
+                    ),
+                    const SizedBox(height: 30),
+                    const Divider(),
+                    ListTile(
+                      contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                      leading: const Icon(LucideIcons.lockKeyhole, size: 20),
+                      title: Text(l10n.accountChangePassword),
+                      subtitle: Text(
+                        zh ? '更新用于账号登录的密码' : 'Update your sign-in password',
                       ),
+                      trailing: const Icon(LucideIcons.chevronRight, size: 18),
+                      onTap: _changePassword,
+                    ),
+                    const Divider(),
+                    ListTile(
+                      contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                      leading: const Icon(LucideIcons.badgeCheck, size: 20),
+                      title: Text(zh ? '会员与名额' : 'Membership & slots'),
+                      subtitle: Text(
+                        zh
+                            ? '查看套餐与已授权设备'
+                            : 'Manage your plan and authorized devices',
+                      ),
+                      trailing: const Icon(LucideIcons.chevronRight, size: 18),
+                      onTap: () =>
+                          Navigator.pushNamed(context, '/settings/membership'),
+                    ),
+                    const Divider(),
+                    const SizedBox(height: 28),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: OutlinedButton.icon(
+                        onPressed: _logout,
+                        icon: const Icon(LucideIcons.logOut, size: 16),
+                        label: Text(l10n.accountLogout),
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        l10n.accountDeleteAccount,
+                        style: TextStyle(fontSize: 14, color: colors.danger),
+                      ),
+                      subtitle: Text(
+                        zh
+                            ? '查看注销条件与影响'
+                            : 'Review account deletion requirements',
+                      ),
+                      trailing: const Icon(LucideIcons.chevronRight, size: 18),
+                      onTap: _deleteAccount,
                     ),
                   ],
                 ),
@@ -169,7 +258,6 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
             ),
     );
   }
-
 }
 
 class _ChangePasswordDialog extends StatefulWidget {
@@ -236,7 +324,11 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
     if (!_formKey.currentState!.validate()) return;
     final code = _codeCtrl.text.trim();
     if (code.isEmpty) {
-      setState(() => _error = AppLocalizations.of(context).accountValidationEnterVerificationCode);
+      setState(
+        () => _error = AppLocalizations.of(
+          context,
+        ).accountValidationEnterVerificationCode,
+      );
       return;
     }
     setState(() {
@@ -272,7 +364,8 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
         ? screenWidth - 32
         : AppSize.formMaxWidth;
     const verticalInset = 24.0;
-    final maxDialogHeight = media.size.height -
+    final maxDialogHeight =
+        media.size.height -
         media.padding.top -
         media.padding.bottom -
         viewInsets.top -
@@ -290,7 +383,9 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
       child: ConstrainedBox(
         constraints: BoxConstraints(
           maxWidth: dialogWidth,
-          maxHeight: maxDialogHeight > 0 ? maxDialogHeight : media.size.height * 0.5,
+          maxHeight: maxDialogHeight > 0
+              ? maxDialogHeight
+              : media.size.height * 0.5,
         ),
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(AppSpacing.md),
@@ -302,12 +397,16 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
               children: [
                 Row(
                   children: [
-                    Text(l10n.accountChangePasswordTitle,
-                        style: theme.textTheme.titleMedium),
+                    Text(
+                      l10n.accountChangePasswordTitle,
+                      style: theme.textTheme.titleMedium,
+                    ),
                     const Spacer(),
                     IconButton(
                       icon: const Icon(LucideIcons.x, size: 20),
-                      onPressed: _submitting ? null : () => Navigator.pop(context),
+                      onPressed: _submitting
+                          ? null
+                          : () => Navigator.pop(context),
                       style: IconButton.styleFrom(
                         foregroundColor: colors.textTertiary,
                       ),
@@ -366,13 +465,15 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
                     SizedBox(
                       width: 100,
                       child: FilledButton(
-                        onPressed: (_codeSending || _cooldown > 0) ? null : _sendCode,
+                        onPressed: (_codeSending || _cooldown > 0)
+                            ? null
+                            : _sendCode,
                         child: Text(
                           _codeSending
                               ? l10n.accountSendingCode
                               : _cooldown > 0
-                                  ? l10n.codeCooldownSeconds(_cooldown)
-                                  : l10n.accountSendVerificationCode,
+                              ? l10n.codeCooldownSeconds(_cooldown)
+                              : l10n.accountSendVerificationCode,
                           style: const TextStyle(fontSize: 13),
                         ),
                       ),
@@ -435,7 +536,8 @@ class _DeleteAccountDialog extends ConsumerStatefulWidget {
   const _DeleteAccountDialog({required this.email});
 
   @override
-  ConsumerState<_DeleteAccountDialog> createState() => _DeleteAccountDialogState();
+  ConsumerState<_DeleteAccountDialog> createState() =>
+      _DeleteAccountDialogState();
 }
 
 class _DeleteAccountDialogState extends ConsumerState<_DeleteAccountDialog> {
@@ -488,7 +590,11 @@ class _DeleteAccountDialogState extends ConsumerState<_DeleteAccountDialog> {
   Future<void> _confirmDelete() async {
     final code = _codeCtrl.text.trim();
     if (code.isEmpty) {
-      setState(() => _error = AppLocalizations.of(context).accountValidationEnterVerificationCode);
+      setState(
+        () => _error = AppLocalizations.of(
+          context,
+        ).accountValidationEnterVerificationCode,
+      );
       return;
     }
     setState(() {
@@ -527,11 +633,16 @@ class _DeleteAccountDialogState extends ConsumerState<_DeleteAccountDialog> {
             children: [
               Row(
                 children: [
-                  Text(l10n.accountDeleteTitle, style: theme.textTheme.titleMedium),
+                  Text(
+                    l10n.accountDeleteTitle,
+                    style: theme.textTheme.titleMedium,
+                  ),
                   const Spacer(),
                   IconButton(
                     icon: const Icon(LucideIcons.x, size: 20),
-                    onPressed: _submitting ? null : () => Navigator.pop(context),
+                    onPressed: _submitting
+                        ? null
+                        : () => Navigator.pop(context),
                     style: IconButton.styleFrom(
                       foregroundColor: colors.textTertiary,
                     ),
@@ -594,8 +705,8 @@ class _DeleteAccountDialogState extends ConsumerState<_DeleteAccountDialog> {
                         _codeSending
                             ? l10n.accountSendingCode
                             : _cooldown > 0
-                                ? l10n.codeCooldownSeconds(_cooldown)
-                                : l10n.accountSendVerificationCode,
+                            ? l10n.codeCooldownSeconds(_cooldown)
+                            : l10n.accountSendVerificationCode,
                         style: const TextStyle(fontSize: 13),
                       ),
                     ),
@@ -605,9 +716,7 @@ class _DeleteAccountDialogState extends ConsumerState<_DeleteAccountDialog> {
               const SizedBox(height: AppSpacing.lg),
               FilledButton(
                 onPressed: (_submitting || codeEmpty) ? null : _confirmDelete,
-                style: FilledButton.styleFrom(
-                  backgroundColor: colors.danger,
-                ),
+                style: FilledButton.styleFrom(backgroundColor: colors.danger),
                 child: _submitting
                     ? const SizedBox(
                         width: 18,

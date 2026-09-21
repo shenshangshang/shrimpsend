@@ -1,4 +1,4 @@
-export const BRAND_LOGO_SRC = '/brand-logo.webp';
+export const BRAND_LOGO_SRC = '/brand-mark.svg';
 export const BRAND_LOGO_PNG_SRC = '/brand-logo-512.png';
 
 /** Favicon / PWA（已烘焙 iOS 圆角，用于浏览器标签与安装图标） */

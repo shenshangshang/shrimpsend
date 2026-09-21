@@ -70,7 +70,9 @@ class AppDesktopUpdateBanner extends StatelessWidget {
               child: SelectableText(
                 body.isEmpty ? l10n.desktopUpdateReleaseNotesEmpty : body,
                 style: dialogTheme.textTheme.bodyMedium?.copyWith(
-                  color: body.isEmpty ? dialogColors.textSecondary : dialogColors.textPrimary,
+                  color: body.isEmpty
+                      ? dialogColors.textSecondary
+                      : dialogColors.textPrimary,
                   height: 1.5,
                 ),
               ),
@@ -105,16 +107,14 @@ class AppDesktopUpdateBanner extends StatelessWidget {
             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             foregroundColor: theme.colorScheme.primary,
             visualDensity: VisualDensity.compact,
-            textStyle: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
+            textStyle: theme.textTheme.bodySmall?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
           ),
           icon: const Icon(LucideIcons.fileText, size: 14),
           label: Text(l10n.desktopUpdateReleaseNotesAction),
-          onPressed: () => _showReleaseNotes(
-            context,
-            l10n,
-            info.version,
-            info.releaseNotes,
-          ),
+          onPressed: () =>
+              _showReleaseNotes(context, l10n, info.version, info.releaseNotes),
         ),
       ),
     );
@@ -131,16 +131,39 @@ class AppDesktopUpdateBanner extends StatelessWidget {
         final manager = desk.UpdateManager();
 
         return switch (manager.status) {
-          desk.UpdateStatus.updateAvailable =>
-            _available(context, theme, colors, l10n, manager),
-          desk.UpdateStatus.updating =>
-            _updating(context, theme, colors, l10n, manager.progress),
-          desk.UpdateStatus.readyToRestart =>
-            _readyRestart(context, theme, colors, l10n, manager),
-          desk.UpdateStatus.restarting =>
-            _restarting(context, theme, colors, l10n),
+          desk.UpdateStatus.updateAvailable => _available(
+            context,
+            theme,
+            colors,
+            l10n,
+            manager,
+          ),
+          desk.UpdateStatus.updating => _updating(
+            context,
+            theme,
+            colors,
+            l10n,
+            manager.progress,
+          ),
+          desk.UpdateStatus.readyToRestart => _readyRestart(
+            context,
+            theme,
+            colors,
+            l10n,
+            manager,
+          ),
+          desk.UpdateStatus.restarting => _restarting(
+            context,
+            theme,
+            colors,
+            l10n,
+          ),
+          // A background availability check must not interrupt offline work.
+          // Manual checks report errors in Settings; installation failures stay visible.
           desk.UpdateStatus.error =>
-            _error(context, theme, colors, l10n, manager),
+            manager.updateInfo == null
+                ? const SizedBox.shrink()
+                : _error(context, theme, colors, l10n, manager),
           _ => const SizedBox.shrink(),
         };
       },
@@ -158,9 +181,17 @@ class AppDesktopUpdateBanner extends StatelessWidget {
     final (surface, border) = _primaryTintCardColors(theme);
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(AppSpacing.md, AppSpacing.sm, AppSpacing.md, AppSpacing.xs),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.md,
+        AppSpacing.sm,
+        AppSpacing.md,
+        AppSpacing.xs,
+      ),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md,
+          vertical: AppSpacing.sm,
+        ),
         decoration: BoxDecoration(
           color: surface,
           borderRadius: AppRadius.small,
@@ -169,7 +200,11 @@ class AppDesktopUpdateBanner extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Icon(LucideIcons.download, color: theme.colorScheme.primary, size: 22),
+            Icon(
+              LucideIcons.download,
+              color: theme.colorScheme.primary,
+              size: 22,
+            ),
             const SizedBox(width: AppSpacing.sm),
             Expanded(
               child: Column(
@@ -189,7 +224,9 @@ class AppDesktopUpdateBanner extends StatelessWidget {
                       info.version,
                       _sizeLine(l10n, info.fileSize),
                     ),
-                    style: theme.textTheme.bodySmall?.copyWith(color: colors.textSecondary),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colors.textSecondary,
+                    ),
                   ),
                   _releaseNotesLink(context, l10n, info),
                 ],
@@ -228,7 +265,12 @@ class AppDesktopUpdateBanner extends StatelessWidget {
     final (surface, border) = _primaryTintCardColors(theme);
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(AppSpacing.md, AppSpacing.sm, AppSpacing.md, AppSpacing.xs),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.md,
+        AppSpacing.sm,
+        AppSpacing.md,
+        AppSpacing.xs,
+      ),
       child: Container(
         padding: const EdgeInsets.all(AppSpacing.md),
         decoration: BoxDecoration(
@@ -245,7 +287,10 @@ class AppDesktopUpdateBanner extends StatelessWidget {
                 SizedBox(
                   width: 20,
                   height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2, value: progress),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    value: progress,
+                  ),
                 ),
                 const SizedBox(width: AppSpacing.sm),
                 Text(
@@ -262,7 +307,9 @@ class AppDesktopUpdateBanner extends StatelessWidget {
             const SizedBox(height: AppSpacing.xs),
             Text(
               '${(progress * 100).clamp(0, 100).toStringAsFixed(0)}%',
-              style: theme.textTheme.bodySmall?.copyWith(color: colors.textSecondary),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colors.textSecondary,
+              ),
             ),
           ],
         ),
@@ -279,7 +326,12 @@ class AppDesktopUpdateBanner extends StatelessWidget {
     final (surface, border) = _primaryTintCardColors(theme);
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(AppSpacing.md, AppSpacing.sm, AppSpacing.md, AppSpacing.xs),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.md,
+        AppSpacing.sm,
+        AppSpacing.md,
+        AppSpacing.xs,
+      ),
       child: Container(
         padding: const EdgeInsets.all(AppSpacing.md),
         decoration: BoxDecoration(
@@ -296,7 +348,10 @@ class AppDesktopUpdateBanner extends StatelessWidget {
                 SizedBox(
                   width: 20,
                   height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: theme.colorScheme.primary),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: theme.colorScheme.primary,
+                  ),
                 ),
                 const SizedBox(width: AppSpacing.sm),
                 Expanded(
@@ -330,9 +385,17 @@ class AppDesktopUpdateBanner extends StatelessWidget {
     final info = manager.updateInfo;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(AppSpacing.md, AppSpacing.sm, AppSpacing.md, AppSpacing.xs),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.md,
+        AppSpacing.sm,
+        AppSpacing.md,
+        AppSpacing.xs,
+      ),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md,
+          vertical: AppSpacing.sm,
+        ),
         decoration: BoxDecoration(
           color: surface,
           borderRadius: AppRadius.small,
@@ -358,7 +421,9 @@ class AppDesktopUpdateBanner extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     l10n.desktopUpdateReadyBody,
-                    style: theme.textTheme.bodySmall?.copyWith(color: colors.textSecondary),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colors.textSecondary,
+                    ),
                   ),
                   if (info != null) _releaseNotesLink(context, l10n, info),
                 ],
@@ -393,9 +458,17 @@ class AppDesktopUpdateBanner extends StatelessWidget {
     final msg = manager.error ?? l10n.desktopUpdateErrorUnknown;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(AppSpacing.md, AppSpacing.sm, AppSpacing.md, AppSpacing.xs),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.md,
+        AppSpacing.sm,
+        AppSpacing.md,
+        AppSpacing.xs,
+      ),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md,
+          vertical: AppSpacing.sm,
+        ),
         decoration: BoxDecoration(
           color: surface,
           borderRadius: AppRadius.small,
@@ -423,7 +496,9 @@ class AppDesktopUpdateBanner extends StatelessWidget {
                     msg,
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodySmall?.copyWith(color: colors.textSecondary),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colors.textSecondary,
+                    ),
                   ),
                 ],
               ),

@@ -119,6 +119,9 @@ class RealtimeHub {
     required String reason,
     bool forceReconnect = false,
   }) async {
+    // Android emits resume and connectivity events during the initial socket
+    // handshake. They must not close the connection already being established.
+    if (_connecting) return;
     if (_client == null) {
       await _connect(reason: reason);
       return;

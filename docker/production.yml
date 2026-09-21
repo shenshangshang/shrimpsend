@@ -1,0 +1,39 @@
+# Fixed production defaults. Operator values come from .env.production.
+# Loaded outside the JAR: secrets are never copied into the image.
+app:
+  device-identity:
+    lease-seconds: ${DEVICE_PRESENCE_LEASE_SECONDS:45}
+    sweep-ms: ${DEVICE_PRESENCE_SWEEP_MS:5000}
+  datasource:
+    sdt:
+      url: "${SDT_DATASOURCE_URL:}"
+      username: "${SDT_DATASOURCE_USERNAME:}"
+      password: "${SDT_DATASOURCE_PASSWORD:}"
+  jwt:
+    access-secret: "${JWT_ACCESS_SECRET}"
+    refresh-secret: "${JWT_REFRESH_SECRET}"
+  device-license:
+    secret: "${DEVICE_LICENSE_SECRET}"
+    namespace: "${DEVICE_LICENSE_NAMESPACE:C}"
+    code-ttl-seconds: ${DEVICE_LICENSE_CODE_TTL_SECONDS:600}
+    replacements-per-day: ${DEVICE_LICENSE_REPLACEMENTS_PER_DAY:20}
+  cors:
+    allowed-origins: "${APP_CORS_ALLOWED_ORIGINS}"
+  messages:
+    encryption:
+      allow-dev-fallback-key: false
+  user-data:
+    encryption:
+      allow-dev-fallback-kek: false
+  membership:
+    alipay:
+      mock-notify-enabled: false
+    revenuecat:
+      webhook-auth: "${REVENUECAT_WEBHOOK_AUTH:}"
+  storage:
+    hosted-s3:
+      enabled: ${HOSTED_S3_ENABLED:false}
+
+spring:
+  jpa:
+    open-in-view: false

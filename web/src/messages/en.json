@@ -438,22 +438,22 @@
       "sendModifierEnterMac": "Send (⌘+Enter)",
       "pickFile": "Attach file",
       "devicePanel": "Devices",
-      "guestPlaceholder": "Sign in to send messages — you can still send files"
+      "guestPlaceholder": "Write a message…"
     },
     "empty": {
-      "hint": "Send a message or file — synced to all devices",
-      "guestHint": "Send files over WebRTC. Sign in for messages and cloud transfer.",
+      "hint": "Send text or files to the selected device",
+      "guestHint": "Send a message, or choose files to get started.",
       "loadMore": "Load more…",
       "dropHint": "Release to add files"
     },
     "quota": {
-      "hint": "Sending without an account is rate-limited",
+      "hint": "This device’s free allowance",
       "message": "Messages {used}/{limit}",
       "signaling": "Signaling {used}/{limit}",
       "title": "Sending too frequently",
       "messageBody": "This minute's message quota is used up ({used}/{limit}). Try again in {seconds}s.",
       "signalingBody": "This minute's transfer signaling quota is used up ({used}/{limit}). Try again in {seconds}s, or send the file later.",
-      "infoBody": "Guest sending is rate-limited. Messages {messageUsed}/{messageLimit}, signaling {signalingUsed}/{signalingLimit}. Sign in to remove this limit.",
+      "infoBody": "Messages {messageUsed}/{messageLimit}; new connections {signalingUsed}/{signalingLimit}. Authorize this device for unlimited normal usage.",
       "gotIt": "Got it"
     },
     "scrollBottom": "Scroll to bottom",
@@ -484,14 +484,15 @@
       "sessionClearMessagesDone": "Messages cleared",
       "sessionClearMessagesFailed": "Failed to clear messages",
       "sessionRemoveSelfHint": "Remove this device from your account and sign out.",
-      "sessionRemoveOtherHint": "Remove this device from your account. It will be signed out there.",
+      "sessionRemoveOtherHint": "Disconnect this pair. Membership authorization and local files are kept.",
       "deleteThisDevice": "Remove this device",
       "removeDevice": "Remove device",
       "online": "Online",
       "checking": "Checking…",
       "offline": "Offline",
       "deviceNumber": "Device no.",
-      "toastRemovedSelf": "This device was removed"
+      "toastRemovedSelf": "This device was removed",
+      "peerRemoveConfirm": "Disconnect this paired device? Local files and membership authorization are kept."
     },
     "bubble": {
       "sending": "Sending…",
@@ -516,7 +517,8 @@
       "phaseTryingS3": "Uploading to cloud storage…",
       "phaseTryingS3Fallback": "Direct path failed, switching to cloud storage…",
       "sendingVia": "Sending via {channel}",
-      "receivingVia": "Receiving via {channel}"
+      "receivingVia": "Receiving via {channel}",
+      "receiveFailed": "Receive interrupted. Ask the sender to retry."
     }
   },
   "devices": {
@@ -526,7 +528,7 @@
     "removed": "Device removed",
     "removeFailed": "Could not remove device",
     "nameEmpty": "Name cannot be empty",
-    "title": "Devices",
+    "title": "Account sessions",
     "subtitle": "Manage signed-in devices and this device name",
     "myDevices": "My devices",
     "deviceCount": "{count} device(s)",
@@ -606,8 +608,8 @@
     "permanentDelete": "Delete permanently"
   },
   "membership": {
-    "title": "Membership",
-    "paySuccess": "Payment received — membership is active.",
+    "title": "Device membership",
+    "paySuccess": "Payment successful. Assign your device slots.",
     "orderCreated": "Order created. Complete payment in the new tab.",
     "paymentPopupBlocked": "The browser blocked the payment window. Allow pop-ups for this site and try again.",
     "paymentTabNavigateFailed": "Could not open Alipay in the payment tab. Allow pop-ups and try again.",
@@ -615,8 +617,8 @@
     "orderFailed": "Could not create order",
     "currentTitle": "Membership",
     "loading": "Loading…",
-    "deviceLimit": "Device limit: {count}",
-    "devicesBound": "{count} device(s) linked",
+    "deviceLimit": "{count} authorization slots",
+    "devicesBound": "{count} authorized devices",
     "addonLine": "{packs} add-on pack(s) (+{slots} slots)",
     "tierBadgeAddon": "+{n}",
     "tierBadgeDevices": "{n} devices",
@@ -634,7 +636,7 @@
     "savingsVsMonthlyYear": "Save up to {pct}% vs paying monthly for a year",
     "subscribeStripe": "Subscribe with Stripe",
     "planStripeHint": "Secure checkout · Renews · Cancel anytime",
-    "featureDevices": "Up to {count} linked devices",
+    "featureDevices": "{count} device authorization slots",
     "featureUploadHosted": "{gib} GiB / month hosted upload quota",
     "planPopular": "Popular",
     "pricePerMonthEquiv": "~{price}/mo billed yearly",
@@ -930,7 +932,12 @@
     "bottomProbing": "Checking…",
     "bottomOnlineCount": "{count} online",
     "refreshReachTitle": "Refresh reachability",
-    "fileLine": "[File] {fileName}"
+    "fileLine": "[File] {fileName}",
+    "section": "Devices",
+    "ready": "Connect. Send. Done.",
+    "readyHint": "The fastest available route is selected automatically.",
+    "accountOptional": "Purchase or manage device slots",
+    "guestMode": "Using without an account"
   },
   "sendPanel": {
     "title": "Send to",
@@ -948,6 +955,52 @@
     "collapseTitle": "Collapse panel",
     "httpHint": "HTTP direct transfer — same LAN required.",
     "webrtcHint": "WebRTC is peer-to-peer; switch to HTTP if it fails.",
-    "s3Hint": "Upload via S3 — delivers to all signed-in devices."
+    "s3Hint": "Use S3 relay to send to selected paired devices."
+  },
+  "welcome": {
+    "eyebrow": "FROM HERE TO THERE",
+    "title": "A little closer. A lot simpler.",
+    "description": "Send files, photos and text between your devices. No account needed.",
+    "connect": "Connect another device",
+    "scan": "Scan from another device, or paste its device ID",
+    "private": "Direct between devices",
+    "resume": "Resume interrupted transfers",
+    "anything": "Files, photos & text"
+  },
+  "receive": {
+    "folder": "Receive location",
+    "default": "Browser downloads folder",
+    "hint": "Received files go directly to the destination without a second cached copy.",
+    "browserHint": "Change the download location in your browser settings.",
+    "choose": "Choose folder",
+    "reset": "Use default"
+  },
+  "deviceLicense": {
+    "entry": "Device authorization"
+  },
+  "conversation": {
+    "available": "Ready to transfer",
+    "connect": "Connect",
+    "noDevices": "Connect another device to start sharing.",
+    "composer": "Type a message, or drop files here",
+    "file": "Files",
+    "newline": "Shift + Enter for a new line",
+    "emptyThread": "Send a message or drop a file to get started.",
+    "removeFile": "Remove {name}",
+    "membership": "Membership & device slots",
+    "allSettings": "More settings",
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System",
+    "welcomeTitle": "Choose a device to start sharing",
+    "welcomeHint": "Files and messages, together in one conversation.",
+    "connectDevice": "Connect a device",
+    "saved": "Saved to receive folder",
+    "browserDownload": "Sent to browser Downloads",
+    "sent": "Sent",
+    "today": "Today",
+    "general": "This device",
+    "generalHint": "These settings apply to this device and work without signing in.",
+    "accountNeeded": "Sign in to manage your account and membership. Other features work without signing in."
   }
 }

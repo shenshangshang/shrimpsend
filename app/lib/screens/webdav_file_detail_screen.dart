@@ -1,3 +1,4 @@
+import '../ui/product_scaffold.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -105,7 +106,9 @@ class _WebDavFileDetailScreenState extends ConsumerState<WebDavFileDetailScreen>
     final theme = Theme.of(context);
     final entry = widget.entry;
 
-    return Scaffold(
+    return ProductScaffold(
+      section: ProductSection.files,
+      filesLocation: '/files/cloud',
       appBar: AppBar(
         title: Text(l10n.webdavActionDetails),
         actions: [

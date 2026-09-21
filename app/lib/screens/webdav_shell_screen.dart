@@ -1,3 +1,4 @@
+import '../ui/product_scaffold.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -101,8 +102,9 @@ class _WebDavShellScreenState extends ConsumerState<WebDavShellScreen>
   }
 
   Future<void> _reloadPendingFiles() async {
-    final dropped =
-        await ref.read(pendingFilesProvider.notifier).reloadFromStore();
+    final dropped = await ref
+        .read(pendingFilesProvider.notifier)
+        .reloadFromStore();
     if (!mounted) return;
     if (dropped > 0) {
       AppToast.show(
@@ -230,9 +232,7 @@ class _WebDavShellScreenState extends ConsumerState<WebDavShellScreen>
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => WebDavTransferListScreen(
-          connection: widget.connection,
-        ),
+        builder: (_) => WebDavTransferListScreen(connection: widget.connection),
       ),
     );
   }
@@ -244,9 +244,8 @@ class _WebDavShellScreenState extends ConsumerState<WebDavShellScreen>
     final ok = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
-        builder: (_) => WebDavConnectionScreen(
-          connectionId: widget.connection.id,
-        ),
+        builder: (_) =>
+            WebDavConnectionScreen(connectionId: widget.connection.id),
       ),
     );
     if (ok == true && mounted) {
@@ -304,152 +303,61 @@ class _WebDavShellScreenState extends ConsumerState<WebDavShellScreen>
             }
           } catch (e) {
             if (!mounted) return;
-            AppToast.show(
-              context,
-              message: l10n.webdavUploadFailed('$e'),
-            );
+            AppToast.show(context, message: l10n.webdavUploadFailed('$e'));
           }
         },
       ),
     );
   }
 
-  Widget _buildWebDavBottomBar(BuildContext context) {
+  Widget _buildWebDavTabs(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final colors = context.appColors;
-    final theme = Theme.of(context);
-    final contentBg = _contentBackground(context);
     final pendingCount = ref.watch(pendingFilesProvider).length;
-
-    Widget tab({
-      required int index,
-      required String label,
-      required IconData icon,
-    }) {
-      final selected = _tabIndex == index;
-      final color = selected ? theme.colorScheme.primary : colors.textSecondary;
-      return Expanded(
-        child: Semantics(
-          button: true,
-          selected: selected,
-          label: label,
-          child: InkWell(
-            onTap: () => _onTabSelected(index),
-            child: SizedBox(
-              height: AppLayout.webDavBottomBarHeight,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(icon, color: color, size: 20),
-                  const SizedBox(height: 2),
-                  Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: color,
-                      fontSize: 10,
-                      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+    final labels = [
+      l10n.webdavTabFiles,
+      l10n.webdavTabRecent,
+      l10n.webdavTabFavorites,
+    ];
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: colors.border)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: List.generate(labels.length, (index) {
+                  final selected = _tabIndex == index;
+                  return Semantics(
+                    selected: selected,
+                    child: TextButton(
+                      onPressed: () => _onTabSelected(index),
+                      style: TextButton.styleFrom(
+                        minimumSize: const Size(64, 44),
+                        foregroundColor: selected
+                            ? Theme.of(context).colorScheme.primary
+                            : colors.textSecondary,
+                        backgroundColor: selected ? colors.accentSoft : null,
+                      ),
+                      child: Text(labels[index]),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 180),
-                    height: 2,
-                    width: selected ? 28 : 0,
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.primary,
-                      borderRadius: BorderRadius.circular(1),
-                    ),
-                  ),
-                ],
+                  );
+                }),
               ),
             ),
           ),
-        ),
-      );
-    }
-
-    return ColoredBox(
-      color: contentBg,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Divider(height: 1, thickness: 1, color: colors.border),
-          SafeArea(
-            top: false,
-            minimum: EdgeInsets.zero,
-            child: SizedBox(
-              height: AppLayout.webDavBottomBarHeight,
-              child: Row(
-                children: [
-                  tab(
-                    index: 0,
-                    label: l10n.webdavTabFiles,
-                    icon: LucideIcons.folder,
-                  ),
-                  tab(
-                    index: 1,
-                    label: l10n.webdavTabRecent,
-                    icon: LucideIcons.clock,
-                  ),
-                  tab(
-                    index: 2,
-                    label: l10n.webdavTabFavorites,
-                    icon: LucideIcons.star,
-                  ),
-                  Container(
-                    width: 1,
-                    height: 28,
-                    color: colors.border,
-                  ),
-                  Semantics(
-                    button: true,
-                    enabled: _showOutboxButton,
-                    label: l10n.webdavTabUpload,
-                    child: InkWell(
-                      onTap: _showOutboxButton ? _openOutboxSheet : null,
-                      child: Opacity(
-                        opacity: _showOutboxButton ? 1 : 0.35,
-                        child: SizedBox(
-                          width: 56,
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Badge(
-                                isLabelVisible: pendingCount > 0,
-                                label: Text(
-                                  '$pendingCount',
-                                  style: const TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                child: Icon(
-                                  LucideIcons.upload,
-                                  color: theme.colorScheme.primary,
-                                  size: 22,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                l10n.webdavTabUpload,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: theme.textTheme.labelSmall?.copyWith(
-                                  color: theme.colorScheme.primary,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+          const SizedBox(width: 12),
+          Badge(
+            isLabelVisible: pendingCount > 0,
+            label: Text('$pendingCount'),
+            child: FilledButton.icon(
+              onPressed: _showOutboxButton ? _openOutboxSheet : null,
+              icon: const Icon(LucideIcons.upload, size: 16),
+              label: Text(l10n.webdavTabUpload),
             ),
           ),
         ],
@@ -501,7 +409,9 @@ class _WebDavShellScreenState extends ConsumerState<WebDavShellScreen>
     }
 
     final client = _client!;
-    final transferUi = ref.watch(webDavTransferUiProvider(widget.connection.id));
+    final transferUi = ref.watch(
+      webDavTransferUiProvider(widget.connection.id),
+    );
     final activeTransfers = transferUi.activeCount;
     final contentBg = _contentBackground(context);
 
@@ -509,6 +419,7 @@ class _WebDavShellScreenState extends ConsumerState<WebDavShellScreen>
       color: contentBg,
       child: Column(
         children: [
+          _buildWebDavTabs(context),
           Expanded(
             child: Stack(
               clipBehavior: Clip.none,
@@ -554,7 +465,6 @@ class _WebDavShellScreenState extends ConsumerState<WebDavShellScreen>
               ],
             ),
           ),
-          _buildWebDavBottomBar(context),
         ],
       ),
     );
@@ -592,11 +502,18 @@ class _WebDavShellScreenState extends ConsumerState<WebDavShellScreen>
     );
   }
 
-  Widget _wrapShell(BuildContext context, PreferredSizeWidget appBar, Widget body) {
+  Widget _wrapShell(
+    BuildContext context,
+    PreferredSizeWidget appBar,
+    Widget body,
+  ) {
     final contentBg = _contentBackground(context);
     return ColoredBox(
       color: contentBg,
-      child: Scaffold(
+      child: ProductScaffold(
+        section: ProductSection.files,
+        filesLocation: '/files/cloud',
+        embedded: widget.embedded,
         primary: !widget.embedded,
         resizeToAvoidBottomInset: false,
         backgroundColor: contentBg,
@@ -648,9 +565,7 @@ class _WebDavShellScreenState extends ConsumerState<WebDavShellScreen>
 
     return [
       IconButton(
-        icon: Icon(
-          _searchVisible ? LucideIcons.searchX : LucideIcons.search,
-        ),
+        icon: Icon(_searchVisible ? LucideIcons.searchX : LucideIcons.search),
         onPressed: _toggleActiveTabSearch,
         tooltip: _searchVisible
             ? l10n.fmSearchCloseTooltip

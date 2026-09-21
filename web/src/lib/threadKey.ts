@@ -16,7 +16,7 @@ export function accountPartOffline(offlineUserId: string): string {
 export function threadKeyOneToOne(accountPart: string, deviceIdA: string, deviceIdB: string): string {
   const a = deviceIdA <= deviceIdB ? deviceIdA : deviceIdB;
   const b = deviceIdA <= deviceIdB ? deviceIdB : deviceIdA;
-  return `${accountPart}|d1:${a}|d2:${b}`;
+  return `device|d1:${a}|d2:${b}`;
 }
 
 export function threadKeyS3Cloud(accountPart: string): string {

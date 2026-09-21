@@ -218,7 +218,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsMembershipSubtitleUpgrade =>
-      'Lifetime plans and more devices';
+      'Device slots with no sign-in required';
 
   @override
   String settingsMembershipTierName(String tierName) {
@@ -231,14 +231,15 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get settingsNavMyDevices => 'My devices';
+  String get settingsNavMyDevices => 'Account sessions';
 
   @override
   String get settingsNavMyDevicesSubtitleOffline =>
       'Manage devices after you sign in';
 
   @override
-  String get settingsNavMyDevicesSubtitleOnline => 'Bound devices';
+  String get settingsNavMyDevicesSubtitleOnline =>
+      'Manage sign-in sessions for this account';
 
   @override
   String get settingsNavS3 => 'S3';
@@ -692,7 +693,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsSavePathSafSyncHint =>
-      'Files are saved here automatically after each transfer';
+      'Received files are saved to this folder';
 
   @override
   String get settingsSavePathSafMirrorLabel => 'Save folder';
@@ -1780,12 +1781,12 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String membershipTierSummary(String tier, int limit) {
-    return '$tier · up to $limit devices';
+    return '$tier · $limit device authorization slots';
   }
 
   @override
   String membershipBoundDevices(int count) {
-    return '$count devices bound';
+    return '$count authorized devices';
   }
 
   @override
@@ -1892,13 +1893,17 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String membershipFeatureDevices(int count) {
-    return 'Up to $count linked devices';
+    return '$count device authorization slots';
   }
 
   @override
   String membershipFeatureUploadHosted(int gib) {
     return '$gib GiB / month hosted upload quota';
   }
+
+  @override
+  String get membershipFeatureAuthorizedSignaling =>
+      'Authorized devices have unlimited signaling for normal use';
 
   @override
   String get membershipFeatureWebDav =>
@@ -2185,7 +2190,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get fileSendS3Intro =>
-      'Send via S3 cloud relay to all signed-in devices. Works across networks.';
+      'Use S3 relay to send across networks to selected paired devices.';
 
   @override
   String get fileSendS3ConfigurePrompt =>
@@ -2753,7 +2758,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get chatScreenRemovePeerBody =>
-      'The account on that device will be signed out. If it is in use, access ends immediately; otherwise the next launch will require signing in again.';
+      'Disconnect this paired device. Local files and membership authorization are kept.';
 
   @override
   String get chatScreenConfirmRemoveLabel => 'Remove';
@@ -2817,8 +2822,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Remove this device from your account and sign out';
 
   @override
-  String get chatScreenSubtitleRemovePeer =>
-      'Remove the device in this conversation from your account';
+  String get chatScreenSubtitleRemovePeer => 'Disconnect this device pair';
 
   @override
   String get chatScreenPendingFilesMissing =>
@@ -2910,8 +2914,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get deviceSendQuotaHint =>
-      'Sending without an account is rate-limited';
+  String get deviceSendQuotaHint => 'This device’s free allowance';
 
   @override
   String deviceSendQuotaMessage(int used, int limit) {
@@ -2943,7 +2946,7 @@ class AppLocalizationsEn extends AppLocalizations {
     int signalingUsed,
     int signalingLimit,
   ) {
-    return 'Guest sending is rate-limited. Messages $messageUsed/$messageLimit, signaling $signalingUsed/$signalingLimit. Sign in to remove this limit.';
+    return 'Messages $messageUsed/$messageLimit; new connections $signalingUsed/$signalingLimit. Authorize this device for unlimited normal usage.';
   }
 
   @override
@@ -3710,4 +3713,55 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get webdavLocalDownloaded => 'Downloaded';
+
+  @override
+  String get transferWelcomeTitle => 'A little closer. A lot simpler.';
+
+  @override
+  String get transferWelcomeDescription =>
+      'Send files, photos and text between your devices. No account needed.';
+
+  @override
+  String get transferWelcomeConnect => 'Connect your first device';
+
+  @override
+  String get transferWelcomeFooter =>
+      'Direct between devices · Resume interrupted transfers';
+
+  @override
+  String get conversationAvailable => 'Ready to transfer';
+
+  @override
+  String get conversationConnect => 'Connect';
+
+  @override
+  String get conversationConnectDevice => 'Connect a device';
+
+  @override
+  String get conversationComposer => 'Type a message, or drop files here';
+
+  @override
+  String get conversationNewline => 'Shift + Enter for a new line';
+
+  @override
+  String get conversationWelcomeTitle => 'Choose a device to start sharing';
+
+  @override
+  String get conversationWelcomeHint =>
+      'Files and messages, together in one conversation.';
+
+  @override
+  String get conversationSaved => 'Saved to receive folder';
+
+  @override
+  String get conversationSent => 'Sent';
+
+  @override
+  String get conversationSearch => 'Search messages';
+
+  @override
+  String get conversationFiles => 'Files';
+
+  @override
+  String get conversationFile => 'Files';
 }

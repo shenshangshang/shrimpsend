@@ -16,28 +16,29 @@ class WebDavConnectionsNotifier
     ref.listen<AuthState>(authProvider, (prev, next) {
       if (prev?.isLoggedIn == true && !next.isLoggedIn) {
         WebDavCredentialStore.instance.wipeAll();
+        ref.invalidateSelf();
       }
       if (next.isLoggedIn) {
         ref.invalidateSelf();
       }
     });
-    if (!ref.watch(authProvider).isLoggedIn) return [];
+
     return listWebDavConnections();
   }
 
   Future<void> refresh() async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
-      if (!ref.read(authProvider).isLoggedIn) return [];
       return listWebDavConnections();
     });
   }
 }
 
 final webDavConnectionsProvider =
-    AsyncNotifierProvider<WebDavConnectionsNotifier, List<WebDavConnectionSummary>>(
-  WebDavConnectionsNotifier.new,
-);
+    AsyncNotifierProvider<
+      WebDavConnectionsNotifier,
+      List<WebDavConnectionSummary>
+    >(WebDavConnectionsNotifier.new);
 
 class WebDavFavoritesNotifier
     extends AutoDisposeFamilyAsyncNotifier<List<WebDavFavoriteRecord>, int> {
@@ -59,10 +60,12 @@ class WebDavFavoritesNotifier
   }
 }
 
-final webDavFavoritesProvider = AutoDisposeAsyncNotifierProvider.family<
-    WebDavFavoritesNotifier,
-    List<WebDavFavoriteRecord>,
-    int>(WebDavFavoritesNotifier.new);
+final webDavFavoritesProvider =
+    AutoDisposeAsyncNotifierProvider.family<
+      WebDavFavoritesNotifier,
+      List<WebDavFavoriteRecord>,
+      int
+    >(WebDavFavoritesNotifier.new);
 
 class WebDavRecentNotifier
     extends AutoDisposeFamilyAsyncNotifier<List<WebDavRecentRecord>, int> {
@@ -84,10 +87,12 @@ class WebDavRecentNotifier
   }
 }
 
-final webDavRecentProvider = AutoDisposeAsyncNotifierProvider.family<
-    WebDavRecentNotifier,
-    List<WebDavRecentRecord>,
-    int>(WebDavRecentNotifier.new);
+final webDavRecentProvider =
+    AutoDisposeAsyncNotifierProvider.family<
+      WebDavRecentNotifier,
+      List<WebDavRecentRecord>,
+      int
+    >(WebDavRecentNotifier.new);
 
 class WebDavTransferUiState {
   final WebDavTransferProgressSummary progress;
@@ -119,15 +124,18 @@ class WebDavTransferUiNotifier
   }
 }
 
-final webDavTransferUiProvider = AutoDisposeNotifierProvider.family<
-    WebDavTransferUiNotifier,
-    WebDavTransferUiState,
-    int>(WebDavTransferUiNotifier.new);
+final webDavTransferUiProvider =
+    AutoDisposeNotifierProvider.family<
+      WebDavTransferUiNotifier,
+      WebDavTransferUiState,
+      int
+    >(WebDavTransferUiNotifier.new);
 
 Future<WebDavCredentials> resolveWebDavCredentials(
   int connectionId, {
   bool forceRefresh = false,
 }) async {
+  if (connectionId < 0) return fetchWebDavCredentials(connectionId);
   if (!forceRefresh) {
     final cached = await WebDavCredentialStore.instance.read(connectionId);
     if (cached != null && !cstCloudNeedsCredentialRefresh(cached)) {

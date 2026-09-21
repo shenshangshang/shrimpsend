@@ -46,14 +46,16 @@ class _LocaleRegionGateScreenState extends State<LocaleRegionGateScreen> {
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(AppSpacing.lg),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: AppSize.formMaxWidth),
+              constraints: const BoxConstraints(maxWidth: 440),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  Align(alignment: Alignment.centerLeft, child: Image.asset('assets/logo.png', width: 44, height: 44)),
+                  const SizedBox(height: 28),
                   Text(
                     l10n.localeRegionGateTitle,
                     style: theme.textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                   const SizedBox(height: AppSpacing.sm),

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:saver_gallery/saver_gallery.dart';
+import 'package:path/path.dart' as p;
 
 import '../file_save_preferences.dart';
 import '../logger.dart';
@@ -11,6 +12,7 @@ import 'file_export_service.dart';
 import 'file_store.dart';
 import 'received_file_dao.dart';
 import 'saf_storage_service.dart';
+import 'android_receive_storage.dart';
 import 'visible_export_target.dart';
 
 final _log = logChat;
@@ -114,9 +116,7 @@ class FileExportPipeline {
         'FileExportPipeline waiting for index row $messageId '
         'attempt=${attempt + 1}/$_maxNullRecordAttempts',
       );
-      await Future<void>.delayed(
-        Duration(milliseconds: 400 * (attempt + 1)),
-      );
+      await Future<void>.delayed(Duration(milliseconds: 400 * (attempt + 1)));
     }
     return null;
   }
@@ -172,9 +172,7 @@ class FileExportPipeline {
             exportError: e.toString(),
           );
         } else {
-          await Future<void>.delayed(
-            Duration(milliseconds: 1500 * attempt),
-          );
+          await Future<void>.delayed(Duration(milliseconds: 1500 * attempt));
           activeRecord =
               await ReceivedFileDao.instance.getByMessageId(messageId) ??
               activeRecord;
@@ -215,7 +213,10 @@ class FileExportPipeline {
   void _verifyExportedFile(String destPath, int expectedSize) {
     final dest = File(destPath);
     if (!dest.existsSync()) {
-      throw FileSystemException('Export destination missing after copy', destPath);
+      throw FileSystemException(
+        'Export destination missing after copy',
+        destPath,
+      );
     }
     final destSize = dest.lengthSync();
     if (destSize != expectedSize) {
@@ -253,6 +254,44 @@ class FileExportPipeline {
     final expectedSize = record.size > 0
         ? record.size
         : File(sourcePath).lengthSync();
+    final target = await FileStore.getVisibleExportTarget();
+    final androidPath = await AndroidReceiveStorage.complete(
+      sourcePath,
+      expectedSize,
+    );
+    if (androidPath != null) {
+      _verifyExportedFile(androidPath, expectedSize);
+      await ReceivedFileDao.instance.updateExportState(
+        messageId: messageId,
+        exportStatus: ExportStatus.done,
+        visiblePath: androidPath,
+        absPath: androidPath,
+        clearCachePath: true,
+        exportTarget: ExportTargetKind.downloads,
+        exportError: '',
+      );
+      return true;
+    }
+    final directDirectory = target.posixPath;
+    if (directDirectory != null &&
+        p.equals(
+          p.normalize(File(sourcePath).parent.path),
+          p.normalize(directDirectory),
+        )) {
+      _verifyExportedFile(sourcePath, expectedSize);
+      await ReceivedFileDao.instance.updateExportState(
+        messageId: messageId,
+        exportStatus: ExportStatus.done,
+        visiblePath: sourcePath,
+        absPath: sourcePath,
+        clearCachePath: true,
+        exportTarget: target.isCustom
+            ? ExportTargetKind.custom
+            : ExportTargetKind.downloads,
+        exportError: '',
+      );
+      return true;
+    }
     await _waitForStableSourceFile(sourcePath, expectedSize);
     final sourceSize = File(sourcePath).lengthSync();
     if (expectedSize > 0 && sourceSize != expectedSize) {
@@ -277,7 +316,6 @@ class FileExportPipeline {
     final isMedia = isImageOrVideoFileName(record.fileName);
     final galleryOnly = saveToGallery && isMedia;
 
-    final target = await FileStore.getVisibleExportTarget();
     late final _ExportResult exportResult;
     var gallerySaved = record.gallerySaved;
 
@@ -388,7 +426,8 @@ class FileExportPipeline {
             targetKind: ExportTargetKind.downloads,
           );
         }
-        final dir = target.posixPath ?? await FileStore.getDesktopDownloadsDir();
+        final dir =
+            target.posixPath ?? await FileStore.getDesktopDownloadsDir();
         if (dir == null || dir.isEmpty) {
           throw const FileSystemException('Downloads directory unavailable');
         }
@@ -425,12 +464,15 @@ class FileExportPipeline {
     }
   }
 
-  Future<void> _cleanupCacheAfterExportIfNeeded(ReceivedFileRecord record) async {
+  Future<void> _cleanupCacheAfterExportIfNeeded(
+    ReceivedFileRecord record,
+  ) async {
     if (!await getDeleteCacheAfterSave()) return;
     if (record.exportStatus == ExportStatus.legacy) return;
     if (record.exportStatus != ExportStatus.done) return;
 
-    final hasVisibleCopy = record.gallerySaved ||
+    final hasVisibleCopy =
+        record.gallerySaved ||
         (record.visiblePath != null && record.visiblePath!.isNotEmpty);
     if (!hasVisibleCopy) return;
 

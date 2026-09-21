@@ -1,3 +1,4 @@
+import 'ui/product_routes.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -34,19 +35,6 @@ import 'l10n/app_brand.dart';
 import 'l10n/generated/app_localizations.dart';
 import 'preferences/locale_region_store.dart';
 import 'screens/app_entry_screen.dart';
-import 'screens/login_screen.dart';
-import 'screens/devices_screen.dart';
-import 'screens/file_manager_screen.dart';
-import 'screens/account_screen.dart';
-import 'screens/settings_screen.dart';
-import 'screens/font_settings_screen.dart';
-import 'screens/shortcut_settings_screen.dart';
-import 'screens/s3_settings_screen.dart';
-import 'screens/webdav_settings_screen.dart';
-import 'screens/webdav_connection_screen.dart';
-import 'screens/version_history_screen.dart';
-import 'screens/app_log_screen.dart';
-import 'screens/membership_screen.dart';
 import 'services/app_update_service.dart';
 import 'widgets/app_update_dialog.dart';
 import 'widgets/auth_session_lifecycle.dart';
@@ -87,7 +75,9 @@ const _isrgRootX1Asset = 'assets/certs/isrg_root_x1.pem';
 /// (common on Win10 without Windows root-cert auto-update).
 Future<void> _injectLetsEncryptRootCa() async {
   try {
-    final pemBytes = (await rootBundle.load(_isrgRootX1Asset)).buffer.asUint8List();
+    final pemBytes = (await rootBundle.load(
+      _isrgRootX1Asset,
+    )).buffer.asUint8List();
     SecurityContext.defaultContext.setTrustedCertificatesBytes(pemBytes);
   } catch (e, st) {
     final message = e.toString();
@@ -181,10 +171,7 @@ Future<void> _bootstrap(List<String> args) async {
   await loadSendShortcutMode();
   logBoot.info('boot: locale/region + shortcuts loaded');
 
-  await bestEffortBootStep(
-    'openpanel init',
-    OpenpanelBootstrap.initIfEligible,
-  );
+  await bestEffortBootStep('openpanel init', OpenpanelBootstrap.initIfEligible);
   await bestEffortBootStep(
     'feedmatter init',
     FeedmatterBootstrap.initIfEligible,
@@ -229,9 +216,7 @@ Future<void> _bootstrap(List<String> args) async {
     const maxWait = Duration(seconds: 30);
     const pollInterval = Duration(seconds: 1);
     final deadline = DateTime.now().add(maxWait);
-    logAuth.info(
-      'startup network wait: begin maxWait=${maxWait.inSeconds}s',
-    );
+    logAuth.info('startup network wait: begin maxWait=${maxWait.inSeconds}s');
 
     while (DateTime.now().isBefore(deadline)) {
       final results = await Connectivity().checkConnectivity();
@@ -668,99 +653,86 @@ class MyApp extends StatelessWidget {
                             return ValueListenableBuilder<LocaleRegionState>(
                               valueListenable: localeRegionStore.notifier,
                               builder: (_, lr, __) {
-                            final l10n = lookupAppLocalizations(lr.locale);
-                            final taskTitle = brandProductName(
-                              l10n,
-                              lr.serviceRegion,
-                            );
-                            final textScale =
-                                scaleForFontSizeLevel(fontSizeLevel);
-                            final baseWght =
-                                wghtForFontWeightLevel(fontWeightLevel);
-                            return OKToast(
-                              position: ToastPosition(
-                                align: Alignment(0, -0.4),
-                                offset: 0,
-                              ),
-                              textPadding: const EdgeInsets.symmetric(
-                                horizontal: 20,
-                                vertical: 12,
-                              ),
-                              radius: 12,
-                              child: MaterialApp(
-                                navigatorKey: navigatorKey,
-                                navigatorObservers: [
-                                  if (OpenpanelBootstrap.isInitialized)
-                                    OpenpanelObserver(),
-                                  NativeTabBarNavigatorObserver(),
-                                ],
-                                locale: lr.locale,
-                                title: taskTitle,
-                                themeMode: themeMode,
-                                theme: buildAppTheme(
-                                  colorTheme: colorTheme,
-                                  brightness: Brightness.light,
-                                  baseWght: baseWght,
-                                ),
-                                darkTheme: buildAppTheme(
-                                  colorTheme: colorTheme,
-                                  brightness: Brightness.dark,
-                                  baseWght: baseWght,
-                                ),
-                                localizationsDelegates: [
-                                  ...AppLocalizations.localizationsDelegates,
-                                  CountryLocalizations.delegate,
-                                ],
-                                supportedLocales:
-                                    AppLocalizations.supportedLocales,
-                                initialRoute: '/',
-                                routes: {
-                                  '/login': (_) => const LoginScreen(),
-                                  '/': (_) => AppEntryScreen(
-                                    localeRegionStore: localeRegionStore,
-                                    initialOfflineWithoutLogin:
-                                        initialOfflineWithoutLogin,
+                                final l10n = lookupAppLocalizations(lr.locale);
+                                final taskTitle = brandProductName(
+                                  l10n,
+                                  lr.serviceRegion,
+                                );
+                                final textScale = scaleForFontSizeLevel(
+                                  fontSizeLevel,
+                                );
+                                final baseWght = wghtForFontWeightLevel(
+                                  fontWeightLevel,
+                                );
+                                return OKToast(
+                                  position: ToastPosition(
+                                    align: Alignment(0, -0.4),
+                                    offset: 0,
                                   ),
-                                  '/files': (_) => const FileManagerScreen(),
-                                  '/settings': (_) => const SettingsScreen(),
-                                  '/settings/membership': (_) =>
-                                      const MembershipScreen(),
-                                  '/settings/s3': (_) =>
-                                      const S3SettingsScreen(),
-                                  '/settings/webdav': (_) =>
-                                      const WebDavSettingsScreen(),
-                                  '/webdav/add': (_) =>
-                                      const WebDavConnectionScreen(),
-                            '/settings/shortcuts': (_) =>
-                                const ShortcutSettingsScreen(),
-                            '/settings/fonts': (_) =>
-                                const FontSettingsScreen(),
-                                  '/settings/version-history': (_) =>
-                                      const VersionHistoryScreen(),
-                                  '/settings/app-log': (_) =>
-                                      const AppLogScreen(),
-                                  '/devices': (_) => const DevicesScreen(),
-                                  '/account': (_) => const AccountScreen(),
-                                },
-                                builder: (context, child) =>
-                                    MediaQuery(
-                                  data: MediaQuery.of(context).copyWith(
-                                    textScaler: TextScaler.linear(textScale),
+                                  textPadding: const EdgeInsets.symmetric(
+                                    horizontal: 20,
+                                    vertical: 12,
                                   ),
-                                  child: DesktopFileDropScope(
+                                  radius: 12,
+                                  child: MaterialApp(
+                                    debugShowCheckedModeBanner: false,
                                     navigatorKey: navigatorKey,
+                                    navigatorObservers: [
+                                      if (OpenpanelBootstrap.isInitialized)
+                                        OpenpanelObserver(),
+                                      NativeTabBarNavigatorObserver(),
+                                    ],
                                     locale: lr.locale,
-                                    child: AuthSessionLifecycle(
-                                      child: RealtimeHubLifecycle(
-                                        child: _UpdateCheckWrapper(
-                                          navigatorKey: navigatorKey,
-                                          child: child,
+                                    title: taskTitle,
+                                    themeMode: themeMode,
+                                    theme: buildAppTheme(
+                                      colorTheme: colorTheme,
+                                      brightness: Brightness.light,
+                                      baseWght: baseWght,
+                                    ),
+                                    darkTheme: buildAppTheme(
+                                      colorTheme: colorTheme,
+                                      brightness: Brightness.dark,
+                                      baseWght: baseWght,
+                                    ),
+                                    localizationsDelegates: [
+                                      ...AppLocalizations
+                                          .localizationsDelegates,
+                                      CountryLocalizations.delegate,
+                                    ],
+                                    supportedLocales:
+                                        AppLocalizations.supportedLocales,
+                                    initialRoute: '/',
+                                    routes: {
+                                      ...productRoutes,
+                                      '/': (_) => AppEntryScreen(
+                                        localeRegionStore: localeRegionStore,
+                                        initialOfflineWithoutLogin:
+                                            initialOfflineWithoutLogin,
+                                      ),
+                                    },
+                                    builder: (context, child) => MediaQuery(
+                                      data: MediaQuery.of(context).copyWith(
+                                        textScaler: TextScaler.linear(
+                                          textScale,
+                                        ),
+                                      ),
+                                      child: DesktopFileDropScope(
+                                        navigatorKey: navigatorKey,
+                                        locale: lr.locale,
+                                        child: AuthSessionLifecycle(
+                                          child: RealtimeHubLifecycle(
+                                            child: _UpdateCheckWrapper(
+                                              navigatorKey: navigatorKey,
+                                              child: child,
+                                            ),
+                                          ),
                                         ),
                                       ),
                                     ),
                                   ),
-                                ),
-                              ),
+                                );
+                              },
                             );
                           },
                         );
@@ -769,9 +741,7 @@ class MyApp extends StatelessWidget {
                   },
                 );
               },
-            );
-          },
-        ),
+            ),
           ),
         ),
       ),

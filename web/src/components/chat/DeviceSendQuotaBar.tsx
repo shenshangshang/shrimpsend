@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useChatContext } from '@/contexts/ChatContext';
 import { useI18n } from '@/contexts/I18nContext';
 import { cn } from '@/lib/utils';
 import { Gauge } from 'lucide-react';
@@ -16,25 +15,37 @@ import {
 
 export function DeviceSendQuotaBar() {
   const { t } = useI18n();
-  const { isGuest } = useChatContext();
   const [quota, setQuota] = useState<DeviceSendQuota | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
 
   useEffect(() => {
-    if (!isGuest) return;
+    let active = true;
     setDeviceSendQuotaListener((next) => {
+      if (!active) return;
       setQuota(next);
       if (next.limited) setDialogOpen(true);
     });
-    void fetchDeviceQuota().then((q) => {
-      if (q) setQuota(q);
-    });
-    return () => setDeviceSendQuotaListener(null);
-  }, [isGuest]);
+    const refresh = async () => {
+      try {
+        const next = await fetchDeviceQuota();
+        if (active && next) setQuota(next);
+      } catch {
+        // Keep the last known quota while offline; sends remain server-validated.
+      }
+    };
+    void refresh();
+    window.addEventListener('online', refresh);
+    return () => {
+      active = false;
+      window.removeEventListener('online', refresh);
+      setDeviceSendQuotaListener(null);
+    };
+  }, []);
 
-  if (!isGuest) return null;
 
   const limited = !!quota?.limited || (quota?.message.remaining ?? 1) <= 0 || (quota?.signaling.remaining ?? 1) <= 0;
+  const nearLimit = !!quota && (quota.message.used >= quota.message.limit * 0.8 || quota.signaling.used >= quota.signaling.limit * 0.8);
+  if (!limited && !nearLimit && !dialogOpen) return null;
   const seconds = quota ? quotaRetrySeconds(quota) : 1;
   const dialogBody = (() => {
     if (limited && quota?.kind === 'signaling') {

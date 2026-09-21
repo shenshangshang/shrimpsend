@@ -1,3 +1,4 @@
+import '../ui/product_scaffold.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -165,7 +166,9 @@ class _WebDavTransferListScreenState extends State<WebDavTransferListScreen>
     final colors = context.appColors;
     final theme = Theme.of(context);
 
-    return Scaffold(
+    return ProductScaffold(
+      section: ProductSection.files,
+      filesLocation: '/files/tasks',
       appBar: AppBar(
         title: Text(l10n.webdavTransferList),
         bottom: TabBar(

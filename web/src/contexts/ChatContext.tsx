@@ -1,14 +1,21 @@
 'use client';
+import { rememberPeerProfiles } from '@/lib/guestPeers';
+import { publishDevicePresence, mergePeerSnapshot } from '@/lib/devicePresence';
+import { DEVICE_NAME_CHANGED } from '@/lib/deviceId';
+
+import { loadDeviceHistory, saveDeviceHistory, historyKey } from '@/lib/deviceHistory';
+import { listPairedDevices } from '@/lib/api/devices';
 
 import { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRealtime } from '@/contexts/RealtimeContext';
 import { useSendTargetProbes, type DeviceReachEntry } from '@/hooks/useSendTargetProbes';
-import { listDevices, registerDevice, updateDevicePresence, sendMessage, pairDevice, getMessageHistory, deleteMessage, deleteThreadMessages, hasS3Config, checkS3Online, updateDevice, DeviceSendRateLimitedError } from '@/lib/api';
+import { registerDevice, updateDevicePresence, sendMessage, pairDevice, getMessageHistory, deleteMessage, deleteThreadMessages, hasS3Config, checkS3Online, updateDevice, DeviceSendRateLimitedError } from '@/lib/api';
 import type { DeviceDto, MessageEnvelope, ChatMessage } from '@/lib/api';
 import { getOrCreateDeviceId, getDeviceName, getOrCreatePresenceSessionId, generateUUID } from '@/lib/deviceId';
 import { logger } from '@/lib/logger';
+import { belongsToConversation, mergeMessageHistory } from '@/lib/conversationMessages';
 import {
   S3_VIRTUAL_DEVICE_ID,
   accountPartLoggedIn,
@@ -60,6 +67,7 @@ import { analyticsLengthBucket, analyticsTrack } from '@/lib/analytics';
 import { AnalyticsEvents } from '@/lib/analyticsEvents';
 import { isWebPeer } from '@/lib/peerPlatform';
 import { filePayloadTransferChannel } from '@/lib/filePayload';
+import { createReceiveSink, saveReceivedBlob, type ReceiveSink } from '@/lib/receiveFiles';
 import { downloadS3FileAsBrowserSave } from '@/lib/downloadS3File';
 import { classifyDevice } from '@/lib/probePriority';
 import {
@@ -74,7 +82,6 @@ import {
 
 const TAG = 'ChatContext';
 const MAX_PARALLEL_FILE_SENDS = 3;
-const MAX_PARALLEL_WEBRTC_TARGETS = 2;
 const cloudTransfer: CloudTransferService = new S3TransferService();
 const CHAT_PAGE_SIZE = 20;
 const EPHEMERAL_TYPES = new Set([
@@ -192,9 +199,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const pendingPatchesRef = useRef<Map<string, Partial<ChatMessage>>>(new Map());
   const rafFlushingRef = useRef<number | null>(null);
   const pullSemaphoreRef = useRef(new AsyncSemaphore(3));
+  const cancelledTransferIdsRef = useRef(new Set<string>());
   const hopSkipCacheRef = useRef(new TransferHopSkipCache());
-  const sendSingleFileRef = useRef<(file: File, useLan: boolean, targetDevices: DeviceDto[], opts?: { reportTerminalFailure?: boolean }) => Promise<boolean>>(async () => false);
-  const sendFilesViaWebRTCRef = useRef<(files: File[], targetDeviceId: string, opts?: { fallbackS3?: boolean; reportTerminalFailure?: boolean }) => Promise<boolean>>(async () => false);
+  const sendSingleFileRef = useRef<(file: File, useLan: boolean, targetDevices: DeviceDto[], opts?: { reportTerminalFailure?: boolean; reuseLocalId?: string }) => Promise<boolean>>(async () => false);
+  const sendFilesViaWebRTCRef = useRef<(files: File[], targetDeviceId: string, opts?: { fallbackS3?: boolean; reportTerminalFailure?: boolean; reuseLocalId?: string }) => Promise<boolean>>(async () => false);
 
   const [devices, setDevices] = useState<DeviceDto[]>([]);
   const [selectedTargets, setSelectedTargets] = useState<Set<string>>(() => new Set());
@@ -250,6 +258,31 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   if (!webrtcManagerRef.current) {
     webrtcManagerRef.current = new WebRTCManager();
   }
+
+  const [historyLoaded, setHistoryLoaded] = useState(false);
+  const historySnapshot = useRef(new Map<string,string>());
+  const historyWrites = useRef(Promise.resolve());
+  useEffect(() => {
+    let cancelled = false;
+    void loadDeviceHistory(currentDeviceId).then(saved => {
+      if (cancelled) return;
+      historySnapshot.current = new Map(saved.map(m => [historyKey(m),JSON.stringify(m)]));
+      setMessages(current => {
+        const map = new Map(saved.map(m => [historyKey(m),m]));
+        for (const m of current) map.set(historyKey(m),m);
+        return [...map.values()].sort((a,b) => a.ts-b.ts);
+      });
+    }).catch(error => logger.warn(TAG,'local history unavailable',error))
+      .finally(() => { if (!cancelled) setHistoryLoaded(true); });
+    return () => { cancelled = true; };
+  }, [currentDeviceId]);
+  useEffect(() => {
+    if (!historyLoaded) return;
+    // Start the transaction promptly, so navigating away after sending does not lose the row.
+    historyWrites.current = historyWrites.current.then(async () => {
+      historySnapshot.current = await saveDeviceHistory(currentDeviceId,messages,historySnapshot.current);
+    }).catch(error => logger.warn(TAG,'local history save failed',error));
+  }, [messages,historyLoaded,currentDeviceId]);
 
   // ─── Message update helpers ───────────────────────────────────────────
 
@@ -325,12 +358,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       const fileSize = webrtcFileSizeMap.current.get(fileId);
       webrtcFileSizeMap.current.delete(fileId);
       speedTrackersRef.current.delete(localId);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      a.click();
-      URL.revokeObjectURL(url);
+      if (blob) void saveReceivedBlob(blob, fileName);
       updateMessageByLocalId(localId, {
         _status: 'sent',
         _progress: undefined,
@@ -392,7 +420,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       webrtcFileLocalIdMap.current.delete(fileId);
       webrtcFileSizeMap.current.delete(fileId);
       speedTrackersRef.current.delete(localId);
-      updateMessageByLocalId(localId, { _status: 'failed', _progress: undefined, _speed: undefined });
+      if (error.includes('Transfer cancelled')) cancelledTransferIdsRef.current.add(localId);
+      updateMessageByLocalId(localId, { _status: error.includes('Transfer cancelled') ? 'cancelled' : 'failed', _progress: undefined, _speed: undefined });
       logger.warn(TAG, 'WebRTC file failed', fileName, error);
     };
 
@@ -412,12 +441,16 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   // ─── Transfer helpers ─────────────────────────────────────────────────
 
   const cancelTransfer = useCallback((localId: string) => {
+    cancelledTransferIdsRef.current.add(localId);
     const controller = activeTransfersRef.current.get(localId);
     if (controller) {
       controller.abort();
       activeTransfersRef.current.delete(localId);
-      updateMessageByLocalId(localId, { _status: 'cancelled', _progress: undefined });
     }
+    for (const [fileId, mappedId] of webrtcFileLocalIdMap.current) {
+      if (mappedId === localId) webrtcManagerRef.current?.cancelTransferByFileId(fileId);
+    }
+    updateMessageByLocalId(localId, { _status: 'cancelled', _progress: undefined, _speed: undefined });
   }, [updateMessageByLocalId]);
 
   const pullFileFromOffer = useCallback(async (
@@ -465,12 +498,15 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     });
     const pullTracker = new SpeedTracker();
     speedTrackersRef.current.set(localId, pullTracker);
+    let receiveSink: ReceiveSink | undefined;
+    let pullTimer: ReturnType<typeof setTimeout> | undefined;
+    const pullAbort = new AbortController();
+    activeTransfersRef.current.set(localId, pullAbort);
     try {
-      const pullAbort = new AbortController();
-      const pullTimer = window.setTimeout(() => pullAbort.abort(), 3_600_000);
+      pullTimer = setTimeout(() => pullAbort.abort(), 3_600_000);
       let resp: Response;
       try {
-        resp = await fetch(pullUrl, { signal: pullAbort.signal }).finally(() => clearTimeout(pullTimer));
+        resp = await fetch(pullUrl, { signal: pullAbort.signal });
       } catch (fetchErr) {
         if (isLikelyNetworkOrCorsError(fetchErr)) {
           reportCorsLikely({ url: pullUrl, mode: 'download', channel: 'lan', cause: fetchErr });
@@ -483,12 +519,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       const totalSize = parseInt(resp.headers.get('X-File-Size') ?? '0', 10) || fileSize || 0;
       const reader = resp.body?.getReader();
       if (!reader) throw new Error('No response body');
-      const parts: ArrayBuffer[] = [];
+      receiveSink = await createReceiveSink(name);
       let received = 0;
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        parts.push(value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength) as ArrayBuffer);
+        await receiveSink.write(new Uint8Array(value));
         received += value.byteLength;
         if (totalSize > 0) {
           pullTracker.update(received);
@@ -497,17 +533,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         }
       }
       speedTrackersRef.current.delete(localId);
-      if (parts.length === 0) {
-        updateMessageByLocalId(localId, { _status: 'failed', _progress: undefined, _speed: undefined });
-        return;
-      }
-      const blob = new Blob(parts, { type: 'application/octet-stream' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = name || 'download';
-      a.click();
-      URL.revokeObjectURL(url);
+      if (totalSize > 0 && received !== totalSize) throw new Error(`Incomplete file: ${received}/${totalSize}`);
+      await receiveSink.finish();
       updateMessageByLocalId(localId, {
         _status: 'sent',
         _progress: undefined,
@@ -516,11 +543,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       });
       logger.info(TAG, 'pullFileFromOffer downloaded', name);
     } catch (e) {
+      await receiveSink?.abort().catch(() => {});
       const msg = e instanceof Error ? e.message : t('chat.pullFailed');
       logger.warn(TAG, 'pullFileFromOffer failed', msg, 'pullUrl=', pullUrl);
       speedTrackersRef.current.delete(localId);
-      updateMessageByLocalId(localId, { _status: 'failed', _progress: undefined });
+      updateMessageByLocalId(localId, { _status: pullAbort.signal.aborted ? 'cancelled' : 'failed', _progress: undefined });
     } finally {
+      activeTransfersRef.current.delete(localId);
+      clearTimeout(pullTimer);
       sem.release();
     }
   }, [updateMessageByLocalId, t]);
@@ -549,7 +579,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         pendingLanHttpProbesRef.current.delete(probeId);
         resolve(result);
       });
-      sendMessage({ type: 'lan_http_probe', payload: { probeId, targetDeviceId, senderLanHttpUrl: selfLanUrl }, fromDeviceId: myId, toDeviceId: targetDeviceId, ts: Date.now() }).catch((e) => {
+      sendMessage({ type: 'lan_http_probe', payload: { probeId, targetDeviceId, senderLanHttpUrl: selfLanUrl }, fromDeviceId: myId, toDeviceId: targetDeviceId, ts: Date.now() }).catch(() => {
         clearTimeout(timer);
         pendingLanHttpProbesRef.current.delete(probeId);
         resolve({ success: false });
@@ -588,6 +618,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   // ─── WebRTC signal handling ───────────────────────────────────────────
 
+  const receivedOfferIdsRef = useRef(new Set<string>());
   const handleWebRTCSignal = useCallback((data: MessageEnvelope) => {
     const signal = data.payload as WebRTCSignal;
     if (!signal || !signal.sessionId) return;
@@ -595,8 +626,13 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     const mgr = webrtcManagerRef.current;
     if (!mgr) return;
     if (signal.type === 'webrtc_offer' && signal.senderDeviceId !== getOrCreateDeviceId() && signal.targetDeviceId === getOrCreateDeviceId()) {
+      if (receivedOfferIdsRef.current.has(signal.sessionId)) return;
+      receivedOfferIdsRef.current.add(signal.sessionId);
+      if (receivedOfferIdsRef.current.size > 256) {
+        receivedOfferIdsRef.current.delete(receivedOfferIdsRef.current.values().next().value!);
+      }
       for (const fileMeta of signal.files) {
-        const localId = generateUUID();
+        const localId = fileMeta.senderLocalId ?? generateUUID();
         webrtcFileLocalIdMap.current.set(fileMeta.fileId, localId);
         if (fileMeta.fileSize > 0) webrtcFileSizeMap.current.set(fileMeta.fileId, fileMeta.fileSize);
         speedTrackersRef.current.set(localId, new SpeedTracker());
@@ -658,30 +694,18 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         });
         return;
       }
-      if (data.type === 'device_roster_patch') {
-        const patch = data as MessageEnvelope & {
-          action?: string;
-          deviceId?: string;
-          device?: DeviceDto;
-        };
-        if (patch.action === 'remove' && patch.deviceId) {
-          setDevices((prev) => prev.filter((d) => d.deviceId !== patch.deviceId));
-          return;
-        }
-        if (patch.action === 'upsert' && patch.device) {
-          setDevices((prev) => {
-            const idx = prev.findIndex((d) => d.deviceId === patch.device!.deviceId);
-            if (idx < 0) return [...prev, patch.device!];
-            const next = [...prev];
-            next[idx] = patch.device!;
-            return next;
+      if (data.type === 'device_roster_patch') return;
+      if (data.type === 'peer_device_patch') {
+        const patch = data as unknown as { device?: DeviceDto };
+        if (patch.device?.deviceId) {
+          const updated = patch.device;
+          rememberPeerProfiles([updated]);
+          setDevices(prev => {
+            if (!prev.some(d => d.deviceId === updated.deviceId)) return prev;
+            return mergeDeviceRosters(mergePeerSnapshot(prev, prev.map(d => d.deviceId === updated.deviceId ? updated : d)), loadGuestPeers());
           });
-          if (patch.device.deviceId !== getOrCreateDeviceId() && patch.device.presenceStatus !== 'offline') {
-            setProbeForceAll(false);
-            setTargetProbeToken((x) => x + 1);
-          }
-          return;
         }
+        return;
       }
       if (isWebRTCSignal(data)) {
         handleWebRTCSignal(data);
@@ -782,10 +806,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       if (data.type === 'webrtc_probe_result') {
         return;
       }
-      if (!userIdRef.current && data.type === 'text') {
+      if (data.type === 'text') {
         const me = getOrCreateDeviceId();
-        const sel = selectedDeviceIdRef.current;
-        if (data.fromDeviceId !== me && data.fromDeviceId !== sel) return;
+        // Delivery is scoped to this device by the server, independent of
+        // which conversation happens to be open in the UI.
+        if (data.toDeviceId && data.toDeviceId !== me && data.fromDeviceId !== me) return;
       }
       if (data.type === 'text' && data.fromDeviceId !== getOrCreateDeviceId()) {
         const incomingText =
@@ -891,26 +916,25 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   const loadDevices = useCallback(() => {
     const guests = loadGuestPeers();
-    if (!userId) {
-      setDevices(guests.map(guestPeerToDeviceDto));
-      return;
-    }
-    listDevices()
-      .then((list) => setDevices(mergeDeviceRosters(list, guests)))
-      .catch((e) => logger.warn(TAG, 'listDevices failed', e));
-  }, [userId]);
+    setDevices(prev => mergeDeviceRosters(prev, guests));
+    listPairedDevices()
+      .then((list) => { rememberPeerProfiles(list); setDevices(prev => mergeDeviceRosters(mergePeerSnapshot(prev, list), loadGuestPeers())); })
+      .catch((e) => logger.warn(TAG, 'listPairedDevices failed', e));
+  }, []);
 
   // ─── App-level realtime (survives leaving /chat) ──────────────────────
 
   const { connected, subscribe } = useRealtime();
 
-  useEffect(() => subscribe(onMessage), [subscribe, onMessage]);
+  const messageHandlerRef = useRef(onMessage);
+  useEffect(() => { messageHandlerRef.current = onMessage; }, [onMessage]);
+  useEffect(() => subscribe(data => messageHandlerRef.current(data)), [subscribe]);
 
   useEffect(() => {
-    if (!connected || !userId) return;
+    if (!connected) return;
     void (async () => {
       try {
-        await registerDevice(getOrCreateDeviceId(), getDeviceName(), {
+        if (userId) await registerDevice(getOrCreateDeviceId(), getDeviceName(), {
           platform: 'web',
           sessionId: presenceSessionId,
         });
@@ -996,9 +1020,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   // ─── Load initial data ────────────────────────────────────────────────
 
   useEffect(() => {
-    if (!userId || !selectedDeviceId) {
-      setMessages([]);
-      hasNoMoreRef.current = false;
+    if (!userId || selectedDeviceId !== S3_VIRTUAL_DEVICE_ID) {
+      hasNoMoreRef.current = true;
       return;
     }
     const outbound = outboundForWebChat(userId, selectedDeviceId, getOrCreateDeviceId());
@@ -1010,7 +1033,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         if (cancelled) return;
         const filtered = list.filter((m) => !EPHEMERAL_TYPES.has(m.type));
         if (list.length < CHAT_PAGE_SIZE) hasNoMoreRef.current = true;
-        setMessages(filtered.reverse() as ChatMessage[]);
+        setMessages(prev => mergeMessageHistory(prev, filtered as ChatMessage[]));
       })
       .catch((e) => logger.warn(TAG, 'loadHistory failed', e));
     transferStateManager.cleanExpired();
@@ -1040,7 +1063,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       }
       if (cancelled) return;
       try {
-        const list = await listDevices();
+        const list = await listPairedDevices();
         if (!cancelled) setDevices(mergeDeviceRosters(list, loadGuestPeers()));
       } catch (e) {
         logger.warn(TAG, 'listDevices failed', e);
@@ -1052,45 +1075,40 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   }, [userId, presenceSessionId]);
 
   useEffect(() => {
-    if (!userId) return;
-    const deviceId = getOrCreateDeviceId();
-    const markOnline = () => {
-      void updateDevicePresence(deviceId, {
-        sessionId: presenceSessionId,
-        status: 'online',
-        platform: 'web',
-      }).then((dto) => {
-        setDevices((prev) => {
-          const idx = prev.findIndex((d) => d.deviceId === dto.deviceId);
-          if (idx < 0) return [...prev, dto];
-          const next = [...prev];
-          next[idx] = dto;
-          return next;
-        });
-      }).catch((e) => logger.warn(TAG, 'presence online failed', e));
+    if (!connected) return;
+    let busy = false;
+    const online = async () => {
+      if (busy) return;
+      busy = true;
+      try { await publishDevicePresence('online'); } catch (e) { logger.warn(TAG, 'device heartbeat failed', e); }
+      finally { busy = false; }
     };
-    const markOffline = () => {
-      void updateDevicePresence(deviceId, {
-        sessionId: presenceSessionId,
-        status: 'offline',
-        platform: 'web',
-      }, { keepalive: true }).catch((e) => logger.warn(TAG, 'presence offline failed', e));
+    const offline = () => { void publishDevicePresence('offline').catch(() => {}); };
+    const resume = () => {
+      if (document.visibilityState === 'visible') { void online(); loadDevices(); }
     };
-    const onVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        markOnline();
-        loadDevices();
-      }
-    };
-    window.addEventListener('pagehide', markOffline);
-    document.addEventListener('visibilitychange', onVisibility);
-    markOnline();
+    const nameChanged = () => { void online(); loadDevices(); };
+    const onStorage = (event: StorageEvent) => { if (event.key === 'ultrasend_device_name') nameChanged(); };
+    void online();
+    const heartbeat = setInterval(() => void online(), 15000);
+    const fallback = setInterval(loadDevices, 30000);
+    window.addEventListener('pagehide', offline);
+    window.addEventListener('pageshow', resume);
+    window.addEventListener('online', resume);
+    window.addEventListener('storage', onStorage);
+    window.addEventListener(DEVICE_NAME_CHANGED, nameChanged);
+    document.addEventListener('visibilitychange', resume);
     return () => {
-      document.removeEventListener('visibilitychange', onVisibility);
-      window.removeEventListener('pagehide', markOffline);
-      markOffline();
+      clearInterval(heartbeat); clearInterval(fallback);
+      window.removeEventListener('pagehide', offline);
+      window.removeEventListener('pageshow', resume);
+      window.removeEventListener('online', resume);
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener(DEVICE_NAME_CHANGED, nameChanged);
+      document.removeEventListener('visibilitychange', resume);
+      offline();
     };
-  }, [userId, presenceSessionId, loadDevices]);
+  }, [connected, loadDevices]);
 
   // Config flag + connectivity (CUSTOM: presigned HEAD from client; HOSTED: configured only)
   const runS3ConfigCheck = useCallback(async (seq: number) => {
@@ -1309,6 +1327,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   const refreshDevices = loadDevices;
 
+  // Refresh reachability without creating RTC sessions or touching file streams.
+  useEffect(() => {
+    const timer = setInterval(() => { setProbeForceAll(false); setTargetProbeToken(value => value + 1); }, 15000);
+    return () => clearInterval(timer);
+  }, []);
+
   // Initial probe when connected and devices available
   const initialTargetProbeForUserRef = useRef<string | undefined>(undefined);
   useEffect(() => {
@@ -1330,7 +1354,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   const loadMoreMessages = useCallback(async () => {
     if (loadingMoreRef.current || hasNoMoreRef.current) return;
-    if (!userId || !selectedDeviceId) return;
+    if (!userId || selectedDeviceId !== S3_VIRTUAL_DEVICE_ID) return;
     const outbound = outboundForWebChat(userId, selectedDeviceId, getOrCreateDeviceId());
     if (!outbound) return;
     loadingMoreRef.current = true;
@@ -1344,7 +1368,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       const filtered = list.filter((m) => !EPHEMERAL_TYPES.has(m.type));
       if (list.length < CHAT_PAGE_SIZE) hasNoMoreRef.current = true;
       if (filtered.length > 0) {
-        setMessages((prev) => [...(filtered.reverse() as ChatMessage[]), ...prev]);
+        setMessages(prev => mergeMessageHistory(prev, filtered as ChatMessage[]));
       }
     } catch (e) {
       logger.warn(TAG, 'loadMoreMessages failed', e);
@@ -1453,6 +1477,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       const placeholder: ChatMessage = {
         type: 'file',
         payload: lanPayload,
+        toDeviceId: outbound.toDeviceId,
+        threadKey: outbound.threadKey,
         fromDeviceId: deviceId,
         ts: Date.now(),
         _localId: localId,
@@ -1544,6 +1570,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     const placeholder: ChatMessage = {
       type: 'file',
       payload: s3Payload,
+      toDeviceId: outbound.toDeviceId,
+      threadKey: outbound.threadKey,
       fromDeviceId: deviceId,
       ts: Date.now(),
       _localId: localId,
@@ -1639,6 +1667,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       const placeholder: ChatMessage = {
         type: 'file',
         payload: { fileName: meta.fileName, size: meta.fileSize, webrtc: true, localId },
+        toDeviceId: targetDeviceId,
         fromDeviceId: deviceId,
         ts: Date.now(),
         _localId: localId,
@@ -1666,6 +1695,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       await session.sendsFinished;
       return true;
     } catch (err) {
+      if (String(err).includes('Transfer cancelled')) return false;
       if (err instanceof DeviceSendRateLimitedError) {
         for (const { meta } of pendingWithMeta) {
           const localId = webrtcFileLocalIdMap.current.get(meta.fileId);
@@ -1796,6 +1826,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       setMessages((prev) => [...prev, {
         type: 'file',
         payload: { fileName: file.name, size: file.size, localId },
+        toDeviceId: targetId,
         fromDeviceId: deviceId,
         ts: Date.now(),
         _localId: localId,
@@ -1813,8 +1844,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           ? candidates
           : devices.filter((d) => d.deviceId === targetId && !!d.lanHttpUrl);
         const verified = await verifyLanTargets(withUrl);
+        if (cancelledTransferIdsRef.current.has(localId)) return;
         if (verified.length > 0) {
           sent = await sendSingleFile(file, true, verified, { reportTerminalFailure: false, reuseLocalId: localId });
+          if (cancelledTransferIdsRef.current.has(localId)) return;
           if (sent) {
             hopSkipCacheRef.current.markSucceeded(targetId, 'httpPush');
             return;
@@ -1834,6 +1867,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           reportTerminalFailure: !hops.includes('s3'),
           reuseLocalId: localId,
         });
+        if (cancelledTransferIdsRef.current.has(localId)) return;
         if (sent) {
           hopSkipCacheRef.current.markSucceeded(targetId, 'webrtc');
           return;
@@ -1944,17 +1978,16 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   );
 
   const handleRetryFile = useCallback((localId: string) => {
+    cancelledTransferIdsRef.current.delete(localId);
     const info = retryInfoRef.current.get(localId);
     if (!info) return;
-    retryInfoRef.current.delete(localId);
-    setMessages((prev) => prev.filter((m) => m._localId !== localId));
     switch (info.channel) {
       case 'lan':
-        void sendSingleFileRef.current(info.file, true, info.targetDevices);
+        void sendSingleFileRef.current(info.file, true, info.targetDevices, { reuseLocalId: localId });
         break;
       case 'webrtc':
         if (info.webrtcTargetDeviceId) {
-          void sendFilesViaWebRTCRef.current([info.file], info.webrtcTargetDeviceId);
+          void sendFilesViaWebRTCRef.current([info.file], info.webrtcTargetDeviceId, { reuseLocalId: localId });
         } else {
           const peerId = info.webrtcTargetDeviceId ?? selectedDeviceId;
           const peer = peerId ? devices.find((d) => d.deviceId === peerId) : undefined;
@@ -1968,7 +2001,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         }
         break;
       default:
-        void sendSingleFileRef.current(info.file, false, []);
+        void sendSingleFileRef.current(info.file, false, [], { reuseLocalId: localId });
     }
   }, [devices, selectedDeviceId, userId]);
 
@@ -2006,12 +2039,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   const toggleSelectAllMessages = useCallback(() => {
     setSelectedKeys((prev) => {
-      const allKeys = messages.map(getMessageSelectKey).filter(Boolean) as string[];
+      const allKeys = messages.filter(m => belongsToConversation(m, currentDeviceId, selectedDeviceId)).map(getMessageSelectKey).filter(Boolean) as string[];
       const allSelected = allKeys.length > 0 && allKeys.every((k) => prev.has(k));
       if (allSelected) return new Set();
       return new Set(allKeys);
     });
-  }, [messages, getMessageSelectKey]);
+  }, [messages, getMessageSelectKey, currentDeviceId, selectedDeviceId]);
 
   const enterSelectWithKey = useCallback((key: string) => {
     setSelectMode(true);
@@ -2036,11 +2069,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const clearCurrentThreadMessages = useCallback(async () => {
     const uid = userIdRef.current;
     const peer = selectedDeviceIdRef.current;
-    if (!uid || !peer) return;
-    const outbound = outboundForWebChat(uid, peer, getOrCreateDeviceId());
-    if (!outbound) return;
-    await deleteThreadMessages(outbound.threadKey);
-    setMessages([]);
+    if (!peer) return;
+    if (uid && peer === S3_VIRTUAL_DEVICE_ID) {
+      const outbound = outboundForWebChat(uid, peer, getOrCreateDeviceId());
+      if (outbound) await deleteThreadMessages(outbound.threadKey);
+    }
+    setMessages(prev => prev.filter(m => !belongsToConversation(m, getOrCreateDeviceId(), peer)));
     hasNoMoreRef.current = true;
   }, []);
 
@@ -2117,9 +2151,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     if (peerId === me) {
       throw new Error('chat.errors.pairSelf');
     }
-    ingestGuestPeer({ deviceId: peerId, name: shortDeviceLabel(peerId) });
     try {
       await pairDevice(peerId);
+      ingestGuestPeer({ deviceId: peerId, name: shortDeviceLabel(peerId) });
+      loadDevices();
       await sendMessage({
         type: 'device_pair_hello',
         payload: { deviceId: me, name: getDeviceName(), platform: 'web' },
@@ -2134,7 +2169,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     setSelectedDeviceId(peerId);
     setProbeForceAll(false);
     setTargetProbeToken((x) => x + 1);
-  }, [ingestGuestPeer]);
+  }, [ingestGuestPeer, loadDevices]);
 
   // ─── Context value ────────────────────────────────────────────────────
 
@@ -2201,8 +2236,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     handleDeleteMessage, cancelTransfer, handleRetryText, handleRetryFile,
     loadMoreMessages, loadingMore,
     selectMode, selectedKeys, toggleMessageSelect, exitSelectMode, toggleSelectAllMessages, enterSelectWithKey, handleBulkDelete, clearCurrentThreadMessages,
-    webrtcAvailable, userId, addPeerByDeviceId, s3Configured, s3Online, s3Checking, checkS3Config, probeSingleDevice,
-    runSessionConnectionDiagnostic, connectionDiagnostic, diagnosticSheetOpen, setDiagnosticSheetOpen,
+    webrtcAvailable, userId, addPeerByDeviceId, s3Configured, s3Online, s3Checking, checkS3Config,
   ]);
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;

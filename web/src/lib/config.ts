@@ -2,9 +2,10 @@
  * 统一的服务地址推导。
  *
  * 规则：
- *   SSR（服务端渲染）→ 后端在同一台机器，统一用 localhost
- *   浏览器-本地网络 → 始终连接同 hostname 的本机服务端口
- *   非局域网（公网 Web）→ 始终 api.{当前 host}（WSS 走 API 同域 /wkws，由 nginx 反代悟空 IM）
+ *   SSR（服务端渲染）→ 优先 API_INTERNAL_URL（容器内服务名）
+ *   浏览器 → 优先 NEXT_PUBLIC_API_URL / NEXT_PUBLIC_WUKONGIM_WS_URL
+ *   未配置时，本地网络 → 同 hostname 的服务端口
+ *   未配置时，公网 Web → api.{当前 host}（WSS 走 API 同域 /wkws，由 nginx 反代悟空 IM）
  */
 
 const BACKEND_PORT = 9000;
@@ -18,8 +19,11 @@ function isLocalNetwork(): boolean {
 
 export function getApiUrl(): string {
   if (typeof window === 'undefined') {
-    return `http://localhost:${BACKEND_PORT}`;
+    const configured = process.env.API_INTERNAL_URL?.trim() || process.env.NEXT_PUBLIC_API_URL?.trim();
+    return configured ? configured.replace(/\/+$/, '') : `http://localhost:${BACKEND_PORT}`;
   }
+  const configured = process.env.NEXT_PUBLIC_API_URL?.trim();
+  if (configured) return configured.replace(/\/+$/, '');
   if (isLocalNetwork()) {
     return `${window.location.protocol}//${window.location.hostname}:${BACKEND_PORT}`;
   }
@@ -27,6 +31,8 @@ export function getApiUrl(): string {
 }
 
 export function getWukongimWsUrl(): string {
+  const configured = process.env.NEXT_PUBLIC_WUKONGIM_WS_URL?.trim();
+  if (configured) return configured;
   if (typeof window === 'undefined' || isLocalNetwork()) {
     const host = typeof window === 'undefined' ? 'localhost' : window.location.hostname;
     return `ws://${host}:${WUKONGIM_WS_PORT}`;

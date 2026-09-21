@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../device_id.dart';
 import '../logger.dart';
 import '../utils/runtime_platform.dart';
+import '../services/device_identity_store.dart';
 import 'client.dart';
 
 class RealtimeTokenResponse {
@@ -55,6 +56,10 @@ Future<RealtimeTokenResponse> createDeviceSession({
 }) async {
   logApi.info('createDeviceSession deviceId=$deviceId platform=$platform');
   final secret = await getOrCreateDeviceSecret();
+  final identity = await getDeviceIdentityStore();
+  if (identity.status.value == DeviceIdentityStatus.recoveryRequired) {
+    throw const DeviceIdentityException('recovery_required');
+  }
   final r = await http.post(
     Uri.parse('$apiBaseUrl/api/realtime/device-session'),
     headers: jsonHeadersOnly,
@@ -63,15 +68,23 @@ Future<RealtimeTokenResponse> createDeviceSession({
       'deviceSecret': secret,
       'platform': platform,
     }),
-  );
+  ).timeout(const Duration(seconds: 12));
   if (r.statusCode < 200 || r.statusCode >= 300) {
+    if (r.statusCode == 401 && r.body.contains('device secret mismatch')) {
+      identity.requireRecovery();
+      throw const DeviceIdentityException('recovery_required');
+    }
     throw Exception(errorMessageFromResponse(r, '获取连接凭证失败'));
   }
+  identity.sessionVerified();
   final res = RealtimeTokenResponse.fromJson(
     jsonDecode(r.body) as Map<String, dynamic>,
   );
   if (res.deviceAccessToken != null && res.deviceAccessToken!.isNotEmpty) {
     setDeviceAccessToken(res.deviceAccessToken);
+    setDeviceSessionRenewal(() async {
+      await createDeviceSession(deviceId: deviceId, platform: platform);
+    });
   }
   logApi.info(
     'createDeviceSession success uid=${res.uid} flag=${res.deviceFlag} ws=${res.websocketUrl}',

@@ -1,35 +1,39 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { Components } from 'react-markdown';
+import { Children, isValidElement, type ReactNode } from 'react';
+
+function textOf(value: ReactNode): string { return Children.toArray(value).map(child => isValidElement<{children?: ReactNode}>(child) ? textOf(child.props.children) : String(child)).join(''); }
+function headingId(value: string) { return 'legal-' + value.replace(/[`*_~]/g, '').trim().toLowerCase().replace(/\s+/g, '-').replace(/[^\p{Letter}\p{Number}-]/gu, ''); }
 
 const components: Components = {
   h1: ({ children, ...props }) => (
-    <h1 className="mb-4 mt-10 scroll-mt-20 text-2xl font-bold tracking-tight text-foreground first:mt-0" {...props}>
+    <h1 id={headingId(textOf(children))} className="mb-4 mt-10 scroll-mt-20 text-[26px] font-semibold tracking-tight text-foreground first:mt-0" {...props}>
       {children}
     </h1>
   ),
   h2: ({ children, ...props }) => (
-    <h2 className="mb-3 mt-9 scroll-mt-20 text-xl font-semibold tracking-tight text-foreground" {...props}>
+    <h2 id={headingId(textOf(children))} className="mb-3 mt-9 scroll-mt-20 text-xl font-semibold tracking-tight text-foreground" {...props}>
       {children}
     </h2>
   ),
   h3: ({ children, ...props }) => (
-    <h3 className="mb-2 mt-7 text-lg font-semibold text-foreground" {...props}>
+    <h3 id={headingId(textOf(children))} className="mb-2 mt-7 text-lg font-semibold text-foreground" {...props}>
       {children}
     </h3>
   ),
   p: ({ children, ...props }) => (
-    <p className="mb-4 text-sm leading-relaxed text-foreground/90" {...props}>
+    <p className="mb-4 text-sm leading-7 text-foreground/90" {...props}>
       {children}
     </p>
   ),
   ul: ({ children, ...props }) => (
-    <ul className="mb-4 list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-foreground/90" {...props}>
+    <ul className="mb-4 list-disc space-y-1.5 pl-5 text-sm leading-7 text-foreground/90" {...props}>
       {children}
     </ul>
   ),
   ol: ({ children, ...props }) => (
-    <ol className="mb-4 list-decimal space-y-1.5 pl-5 text-sm leading-relaxed text-foreground/90" {...props}>
+    <ol className="mb-4 list-decimal space-y-1.5 pl-5 text-sm leading-7 text-foreground/90" {...props}>
       {children}
     </ol>
   ),
@@ -92,7 +96,7 @@ const components: Components = {
     );
   },
   pre: ({ children, ...props }) => (
-    <pre className="mb-4 overflow-x-auto rounded-lg border border-border/60 bg-muted/50 p-3 text-xs leading-relaxed" {...props}>
+    <pre className="mb-4 overflow-x-auto rounded-lg border border-border/60 bg-muted/50 p-3 text-xs leading-7" {...props}>
       {children}
     </pre>
   ),
@@ -104,11 +108,12 @@ const components: Components = {
 };
 
 export function LegalMarkdown({ source }: { source: string }) {
-  return (
+  const headings = [...source.matchAll(/^(#{1,2})\s+(.+)$/gm)].map(match => ({depth: match[1].length, title: match[2].replace(/[`*_~]/g, '').trim()}));
+  const title = headings.find(h=>h.depth===1)?.title || 'Contents';
+  return <main className="public-docs public-legal">
+    <aside className="public-docs-sidebar"><div><h2>{title}</h2><nav aria-label={title}>{headings.filter(h=>h.depth===2).map(h=><a key={h.title} href={`#${headingId(h.title)}`}>{h.title}</a>)}</nav></div></aside>
     <article className="legal-markdown text-foreground">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
-        {source}
-      </ReactMarkdown>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>{source}</ReactMarkdown>
     </article>
-  );
+  </main>;
 }

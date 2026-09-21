@@ -304,7 +304,7 @@ class WdDio with DioMixin implements Dio {
       }) async {
     // fix auth error
     var pResp = await this.wdOptions(self, path, cancelToken: cancelToken);
-    if (pResp.statusCode != 200) {
+    if (!_isSuccessfulOptions(pResp.statusCode)) {
       throw newResponseError(pResp);
     }
 
@@ -346,7 +346,7 @@ class WdDio with DioMixin implements Dio {
       }) async {
     // fix auth error
     var pResp = await this.wdOptions(self, path, cancelToken: cancelToken);
-    if (pResp.statusCode != 200) {
+    if (!_isSuccessfulOptions(pResp.statusCode)) {
       throw newResponseError(pResp);
     }
 
@@ -505,6 +505,9 @@ class WdDio with DioMixin implements Dio {
   bool _isTransientGatewayStatus(int? status) =>
       status == 502 || status == 503 || status == 429;
 
+  static bool _isSuccessfulOptions(int? status) =>
+      status != null && status >= 200 && status < 300;
+
   static const _transientRetryDelays = <Duration>[
     Duration.zero,
     Duration(seconds: 1),
@@ -524,7 +527,7 @@ class WdDio with DioMixin implements Dio {
         await Future<void>.delayed(delay);
       }
       final pResp = await wdOptions(self, path, cancelToken: cancelToken);
-      if (pResp.statusCode == 200) return;
+      if (_isSuccessfulOptions(pResp.statusCode)) return;
       if (!_isTransientGatewayStatus(pResp.statusCode)) {
         throw newResponseError(pResp);
       }
