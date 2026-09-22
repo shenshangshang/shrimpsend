@@ -1,3 +1,5 @@
+> 历史设计：本文保留早期 Centrifugo / LAN-WAN 方案，不作为当前实现依据。当前架构、9 月 19–20 日改动及后续计划见 [PROJECT_STATUS.md](PROJECT_STATUS.md)。
+
 # 虾传 项目计划（完整版）
 
 ## 文档说明

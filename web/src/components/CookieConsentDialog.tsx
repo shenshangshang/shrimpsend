@@ -30,18 +30,18 @@ export function CookieConsentDialog() {
 
   return (
     <div className="fixed inset-x-0 bottom-3 z-50 flex max-w-[100vw] justify-center overflow-x-clip px-3 sm:bottom-5 sm:justify-end sm:px-6">
-      <section className="relative w-full min-w-0 max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-3xl border border-white/10 bg-background/82 p-3 shadow-xl shadow-black/20 ring-1 ring-white/[0.06] backdrop-blur-2xl sm:max-w-2xl sm:p-4">
+      <section className="relative w-full min-w-0 max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-xl border border-border bg-card p-4 shadow-lg sm:max-w-xl sm:p-4">
         <div
-          className="pointer-events-none absolute -top-16 right-0 size-36 rounded-full bg-primary/10 blur-3xl"
+          className="hidden"
           aria-hidden
         />
         <div
-          className="pointer-events-none absolute inset-x-4 bottom-0 h-px bg-gradient-to-r from-transparent via-primary/25 to-transparent sm:inset-x-10"
+          className="hidden"
           aria-hidden
         />
         <div className="relative flex flex-col gap-3">
           <div className="flex items-start gap-3">
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary ring-1 ring-primary/18">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/18">
               <Cookie className="size-4" aria-hidden />
             </span>
             <div className="min-w-0 flex-1">
@@ -73,7 +73,7 @@ export function CookieConsentDialog() {
           </div>
 
           {preferencesOpen ? (
-            <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-3">
+            <div className="rounded-lg border border-border bg-muted p-3">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-xs font-semibold text-foreground">{t('cookieConsent.necessaryLabel')}</p>
@@ -83,7 +83,7 @@ export function CookieConsentDialog() {
                   {t('cookieConsent.alwaysOn')}
                 </span>
               </div>
-              <label className="mt-3 flex cursor-pointer items-start gap-3 rounded-xl p-2 transition-colors hover:bg-white/[0.04]">
+              <label className="mt-3 flex cursor-pointer items-start gap-3 rounded-xl p-2 transition-colors hover:bg-muted">
                 <input
                   type="checkbox"
                   checked={analyticsEnabled}
@@ -104,7 +104,7 @@ export function CookieConsentDialog() {
               onClick={() => closeWithConsent(false)}
               className={cn(
                 buttonVariants({ variant: 'ghost', size: 'lg' }),
-                'h-9 rounded-2xl px-4',
+                'h-9 rounded-lg px-4',
               )}
             >
               {t('cookieConsent.rejectOptional')}
@@ -114,7 +114,7 @@ export function CookieConsentDialog() {
               onClick={() => setPreferencesOpen((value) => !value)}
               className={cn(
                 buttonVariants({ variant: 'outline', size: 'lg' }),
-                'h-9 rounded-2xl bg-white/[0.04] px-4',
+                'h-9 rounded-lg bg-muted px-4',
               )}
             >
               {preferencesOpen ? t('cookieConsent.hidePreferences') : t('cookieConsent.manage')}
@@ -124,7 +124,7 @@ export function CookieConsentDialog() {
               onClick={() => closeWithConsent(preferencesOpen ? analyticsEnabled : true)}
               className={cn(
                 buttonVariants({ size: 'lg' }),
-                'h-9 rounded-2xl px-4 shadow-sm shadow-primary/10',
+                'h-9 rounded-lg px-4 shadow-none',
               )}
             >
               {preferencesOpen ? t('cookieConsent.save') : t('cookieConsent.acceptAll')}

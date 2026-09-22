@@ -87,3 +87,12 @@ centrifugo:
   url: http://localhost:8000
   http-api-key: "${CENTRIFUGO_HTTP_API_KEY:CHANGE_ME}"
   token-hmac-secret: "${CENTRIFUGO_TOKEN_HMAC_SECRET:CHANGE_ME}"
+
+realtime:
+  bus: "${REALTIME_BUS:wukongim}"
+
+wukongim:
+  api-url: "${WUKONGIM_API_URL:http://127.0.0.1:5001}"
+  ws-public-url: "${WUKONGIM_WS_PUBLIC_URL:wss://api.xiachuan.net/wkws}"
+  manager-token: "${WUKONGIM_MANAGER_TOKEN:CHANGE_ME}"
+  system-uid: ultrasend

@@ -116,12 +116,13 @@ export function resolveOpenPanelWebConfig():
 }
 
 export function getOpenPanelClient(): OpenPanel | null {
+  if (typeof window !== 'undefined' && window.location.pathname === '/authorize') return null;
   return client;
 }
 
 /** 幂等；仅在浏览器调用。 */
 export function initOpenPanelInBrowser(): void {
-  if (typeof window === 'undefined') return;
+  if (typeof window === 'undefined' || window.location.pathname === '/authorize') return;
   if (client) return;
 
   const cfg = resolveOpenPanelWebConfig();
@@ -132,8 +133,8 @@ export function initOpenPanelInBrowser(): void {
     apiUrl: cfg.apiUrl,
     clientSecret: cfg.clientSecret,
     trackScreenViews: false,
-    trackOutgoingLinks: true,
-    trackAttributes: true,
+    trackOutgoingLinks: false,
+    trackAttributes: false,
   });
 
   if (process.env.NODE_ENV === 'development') {

@@ -4,8 +4,6 @@ import { useTypography } from '@/contexts/TypographyContext';
 import {
   FONT_SIZE_LEVELS,
   FONT_WEIGHT_LEVELS,
-  fontSizeLevelFromIndex,
-  fontWeightLevelFromIndex,
   type FontSizeLevel,
   type FontWeightLevel,
 } from '@/lib/typography';

@@ -24,8 +24,19 @@ bool _payloadTruth(dynamic v) {
 
 /// Converts backend [MessageEnvelope] to Flyer Chat [Message].
 /// [overrideId] is used for optimistic messages (e.g. 'local_$localId') so we can dedupe and show status.
+/// Preserve one text identity across LAN, server fallback, retries and history.
+String chatEnvelopeId(MessageEnvelope msg) {
+  final localId = msg.payload is Map
+      ? (msg.payload as Map)['textId']?.toString()
+      : null;
+  if (msg.type == 'text' && localId != null && localId.isNotEmpty) {
+    return 'text_${Uri.encodeComponent(msg.fromDeviceId)}_${Uri.encodeComponent(localId)}';
+  }
+  return '${msg.ts}_${msg.fromDeviceId}';
+}
+
 Message envelopeToMessage(MessageEnvelope msg, {String? overrideId}) {
-  final id = overrideId ?? '${msg.ts}_${msg.fromDeviceId}';
+  final id = overrideId ?? chatEnvelopeId(msg);
   final createdAt = DateTime.fromMillisecondsSinceEpoch(msg.ts);
   final authorId = msg.fromDeviceId;
   if (msg.type == 'text') {
@@ -51,8 +62,7 @@ Message envelopeToMessage(MessageEnvelope msg, {String? overrideId}) {
     final lanFlag = _payloadTruth(payload?['lan']);
     final webrtcFlag = _payloadTruth(payload?['webrtc']);
     final targetIds = payload?['targetDeviceIds'];
-    final lanByMulticast =
-        targetIds is List && targetIds.isNotEmpty;
+    final lanByMulticast = targetIds is List && targetIds.isNotEmpty;
     String text;
     if (webrtcFlag) {
       text = '$fileName (WebRTC)';

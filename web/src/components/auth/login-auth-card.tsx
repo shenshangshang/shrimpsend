@@ -14,7 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { QRCodeSVG } from 'qrcode.react';
-import { createQrSession, getQrStatus } from '@/lib/api/auth';
+import { createQrSession, getQrStatus, loginByCode, sendVerificationCode } from '@/lib/api/auth';
 import { saveTokens } from '@/lib/api/client';
 import { analyticsTrack } from '@/lib/analytics';
 import { AnalyticsEvents } from '@/lib/analyticsEvents';
@@ -24,9 +24,7 @@ import {
   Eye,
   EyeOff,
   AlertCircle,
-  QrCode,
   Loader2,
-  ArrowLeft,
   CheckCircle2,
   KeyRound,
   ShieldCheck,
@@ -35,7 +33,7 @@ import { LegalDocLinks } from '@/components/auth/legal-doc-links';
 
 const TAG = 'login-card';
 
-type LoginMode = 'password' | 'qr';
+type LoginMode = 'password' | 'qr' | 'code';
 type QrState = 'loading' | 'pending' | 'scanned' | 'confirmed' | 'expired' | 'error';
 
 function getPostAuthRedirect(): string {
@@ -47,9 +45,13 @@ function getPostAuthRedirect(): string {
 
 export function LoginAuthCard() {
   const router = useRouter();
-  const { t } = useI18n();
+  const { t, localeTag } = useI18n(); const zh = localeTag === 'zh_CN';
   const { login, setAuthFromTokens } = useAuth();
-  const [mode, setMode] = useState<LoginMode>('qr');
+  const [mode, setMode] = useState<LoginMode>('code');
+  const [code, setCode] = useState('');
+  const [cooldown, setCooldown] = useState(0);
+  const [codeSending, setCodeSending] = useState(false);
+  useEffect(() => { if (cooldown <= 0) return; const timer = setTimeout(() => setCooldown(c => c - 1), 1000); return () => clearTimeout(timer); }, [cooldown]);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -175,22 +177,27 @@ export function LoginAuthCard() {
   };
 
   return (
-    <Card className="border-border/80 bg-card/92 shadow-xl shadow-black/10 backdrop-blur-xl ring-1 ring-border/45 dark:shadow-black/35 motion-safe:animate-app-fade-up app-stagger-2">
-      <CardContent className="pt-6 sm:pt-7">
+    <Card className="border-0 bg-transparent shadow-none ring-0">
+      <CardContent className="p-0">
         <div className="mb-6 flex flex-col items-center text-center">
           <BrandLogo
-            size={56}
+            size={40}
             alt={t('auth.brandAlt')}
-            className="shadow-lg ring-1 ring-black/5 dark:ring-white/10"
+            className="shadow-none"
             priority
           />
-          <h2 className="font-display mt-3 text-xl font-semibold tracking-tight">{t('common.brandName')}</h2>
+          <h1 className="mt-5 text-2xl font-semibold tracking-tight">{zh ? '登录账号' : 'Sign in'}</h1>
           <p className="mt-1.5 max-w-sm text-sm text-muted-foreground">
-            {mode === 'qr' ? t('auth.cardSubtitleQr') : t('auth.cardTitleLogin')}
+            {zh ? '购买会员、管理设备名额时使用。' : 'Purchase membership and manage device slots.'}
           </p>
         </div>
 
-        {mode === 'password' ? (
+        <div role="group" aria-label={zh ? '登录方式' : 'Sign-in method'} className="mb-6 grid grid-cols-3 rounded-lg bg-muted p-1">{(['code','password','qr'] as const).map(m => <Button key={m} size="sm" variant="ghost" aria-pressed={mode === m} className={mode === m ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground'} onClick={() => { setMode(m); setError(''); }}>{m === 'code' ? (zh ? '验证码' : 'Email code') : m === 'password' ? (zh ? '密码' : 'Password') : (zh ? '扫码' : 'QR code')}</Button>)}</div>
+        {mode === 'code' ? <form className="space-y-4" onSubmit={async e => { e.preventDefault(); setLoading(true); setError(''); try { const tokens = await loginByCode(email, code); saveTokens(tokens); setAuthFromTokens(tokens); router.push(getPostAuthRedirect()); } catch(e) { setError(e instanceof Error ? e.message : 'errors.loginFailed'); } finally { setLoading(false); } }}>
+          <div className="space-y-2"><Label htmlFor="code-email">{t('auth.email')}</Label><Input id="code-email" type="email" value={email} onChange={e => setEmail(e.target.value)} required autoComplete="email" placeholder="you@example.com"/></div>
+          <div className="space-y-2"><Label htmlFor="login-code">{zh ? '邮箱验证码' : 'Email verification code'}</Label><div className="flex gap-2"><Input id="login-code" value={code} onChange={e => setCode(e.target.value)} inputMode="numeric" autoComplete="one-time-code" required maxLength={8}/><Button type="button" variant="outline" disabled={codeSending || cooldown > 0 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)} onClick={async () => { setCodeSending(true); setError(''); try { await sendVerificationCode(email,{type:'LOGIN'}); setCooldown(60); } catch(e) { setError(e instanceof Error ? e.message : 'auth.sendFailed'); } finally { setCodeSending(false); } }}>{cooldown > 0 ? `${cooldown}s` : codeSending ? '…' : (zh ? '获取验证码' : 'Send code')}</Button></div></div>
+          {error && <p role="alert" className="text-sm text-destructive">{formatUiMessage(error,t)}</p>}<Button type="submit" className="w-full" disabled={loading || !code.trim()}>{loading ? <Loader2 size={17} className="animate-spin"/> : (zh ? '登录' : 'Sign in')}</Button><p className="text-center text-xs text-muted-foreground">{zh ? '没有账号？' : 'New here?'} <Link href="/register" className="text-primary">{zh ? '创建账号' : 'Create an account'}</Link></p>
+        </form> : mode === 'password' ? (
           <>
             <form onSubmit={submit} className="space-y-4">
               <div className="space-y-1.5">
@@ -226,7 +233,7 @@ export function LoginAuthCard() {
                     type="button"
                     onClick={() => setShowPassword((v) => !v)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground/60 transition-colors hover:text-muted-foreground"
-                    tabIndex={-1}
+                    aria-label={showPassword ? (zh ? '隐藏密码' : 'Hide password') : (zh ? '显示密码' : 'Show password')}
                   >
                     {showPassword ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
                   </button>
@@ -252,19 +259,6 @@ export function LoginAuthCard() {
               </Link>
             </p>
 
-            <div className="relative my-5">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t" />
-              </div>
-              <div className="relative flex justify-center text-xs">
-                <span className="bg-card px-3 text-muted-foreground">{t('common.or')}</span>
-              </div>
-            </div>
-
-            <Button variant="outline" onClick={() => { setMode('qr'); setError(''); }} className="w-full gap-2">
-              <QrCode className="h-4 w-4" />
-              {t('auth.scanLogin')}
-            </Button>
           </>
         ) : (
           <div className="flex flex-col items-stretch space-y-5 py-1">

@@ -3,17 +3,18 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 import 'dart:math' as math;
-import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/services.dart';
 import 'package:logging/logging.dart';
-import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
 
 import '../services/cancel_token.dart';
+import '../services/android_receive_storage.dart';
 import '../services/mtime_util.dart';
 import '../services/transfer_protocol.dart';
 import '../utils/safe_filename.dart';
+import '../utils/receive_destination.dart';
 import 'lan_url.dart';
 
 final _log = Logger('ultrasend.transfer_worker');
@@ -36,19 +37,23 @@ typedef OnLanReceiveProgress =
       String? senderLocalId,
       String? fileId,
     });
-typedef OnLanReceiveError = void Function(
-  String fileName,
-  String error, {
-  String? messageId,
-  String? senderLocalId,
-  String? fileId,
-});
+typedef OnLanReceiveError =
+    void Function(
+      String fileName,
+      String error, {
+      String? messageId,
+      String? senderLocalId,
+      String? fileId,
+    });
 typedef OnPullSendProgress = void Function(int sent, int total);
-typedef OnLanMessageReceived = void Function(
-  String text,
-  String fromDeviceId,
-  String? fromDeviceName,
-);
+typedef OnLanMessageReceived =
+    void Function(
+      String text,
+      String fromDeviceId,
+      String? fromDeviceName, {
+      String? localId,
+      int? ts,
+    });
 
 // ---------------------------------------------------------------------------
 // Worker ↔ Main Isolate messages
@@ -103,6 +108,11 @@ class _WorkerReady extends _ToMain {
 /// fast instead of waiting forever for [_WorkerReady].
 class _WorkerBindFailed {
   _WorkerBindFailed(this.error);
+  final String error;
+}
+
+class _WorkerFailed extends _ToMain {
+  _WorkerFailed(this.error);
   final String error;
 }
 
@@ -174,10 +184,14 @@ class _MessageReceived extends _ToMain {
     required this.text,
     required this.fromDeviceId,
     this.fromDeviceName,
+    this.localId,
+    this.ts,
   });
   final String text;
   final String fromDeviceId;
   final String? fromDeviceName;
+  final String? localId;
+  final int? ts;
 }
 
 class _PeerRegistered extends _ToMain {
@@ -226,12 +240,13 @@ class _WorkerPullFile {
 // HttpTransferServer — runs N worker Isolates sharing one port
 // ---------------------------------------------------------------------------
 
-typedef OnPeerRegistered = void Function(
-  String deviceId,
-  String name,
-  String lanHttpUrl,
-  String? platform,
-);
+typedef OnPeerRegistered =
+    void Function(
+      String deviceId,
+      String name,
+      String lanHttpUrl,
+      String? platform,
+    );
 
 class HttpTransferServer {
   HttpTransferServer({
@@ -311,6 +326,12 @@ class HttpTransferServer {
       'HttpTransferServer started at $_lanHttpUrl ($workerCount workers)',
     );
     return _lanHttpUrl;
+  }
+
+  void updateDeviceName(String name) {
+    for (final port in _workerPorts) {
+      port.send({'type': 'rename', 'name': name});
+    }
   }
 
   void registerPullFile(
@@ -432,6 +453,8 @@ class HttpTransferServer {
           msg.text,
           msg.fromDeviceId,
           msg.fromDeviceName,
+          localId: msg.localId,
+          ts: msg.ts,
         );
 
       case _PeerRegistered():
@@ -446,15 +469,13 @@ class HttpTransferServer {
         // Re-broadcast across every worker so whichever isolate currently
         // holds the upload stream learns about the cancel without waiting
         // for the read timeout.
-        final relay = _CancelReceive(
-          msg.fileName ?? '',
-          fileId: msg.fileId,
-        );
+        final relay = _CancelReceive(msg.fileName ?? '', fileId: msg.fileId);
         for (final port in _workerPorts) {
           port.send(relay);
         }
 
       case _WorkerReady():
+      case _WorkerFailed():
         break;
     }
   }
@@ -492,8 +513,13 @@ void _workerEntry(List<dynamic> args) async {
   final port = args[2] as int;
   final saveDir = args[3] as String;
   final deviceId = args.length > 4 ? args[4] as String : '';
-  final deviceName = args.length > 5 ? args[5] as String : '';
+  var deviceName = args.length > 5 ? args[5] as String : '';
   final platform = args.length > 6 ? args[6] as String : '';
+  if (args.length > 7 && args[7] != null) {
+    BackgroundIsolateBinaryMessenger.ensureInitialized(
+      args[7] as RootIsolateToken,
+    );
+  }
 
   final pullFiles = <String, _WorkerPullFile>{};
   // Tracks partially received files by fileId → (filePath, receivedBytes).
@@ -523,7 +549,9 @@ void _workerEntry(List<dynamic> args) async {
   mainPort.send(_WorkerReady(commandPort.sendPort, server.port));
 
   commandPort.listen((msg) {
-    if (msg is _RegisterPull) {
+    if (msg is Map && msg['type'] == 'rename') {
+      deviceName = msg['name'] as String;
+    } else if (msg is _RegisterPull) {
       cancelledPullOffers.remove(msg.offerId);
       pullFiles[msg.offerId] = _WorkerPullFile(
         fileName: msg.fileName,
@@ -545,7 +573,7 @@ void _workerEntry(List<dynamic> args) async {
   });
 
   await for (final request in server) {
-    _setCorsHeaders(request.response);
+    _setCorsHeaders(request);
 
     if (request.method == 'OPTIONS') {
       request.response
@@ -680,19 +708,17 @@ void _handleCancelUpload(
     cancelledReceivesByName.add(fileName);
   }
   mainPort.send(_CancelHintFromPeer(fileId: fileId, fileName: fileName));
-  _log.info(
-    'cancel signal received fileId=$fileId fileName=$fileName',
-  );
+  _log.info('cancel signal received fileId=$fileId fileName=$fileName');
   request.response
     ..statusCode = HttpStatus.ok
     ..close();
 }
 
-void _handleTransferStatus(
+Future<void> _handleTransferStatus(
   HttpRequest request,
   Map<String, _PartialReceive> partialReceives,
   String saveDir,
-) {
+) async {
   final fileId = request.uri.queryParameters['fileId'];
   if (fileId == null || fileId.isEmpty) {
     request.response
@@ -706,7 +732,10 @@ void _handleTransferStatus(
   // Multiple worker isolates share the same disk files but have independent
   // in-memory maps, so a stale in-memory entry would return a wrong offset.
   int received = 0;
-  final partialFile = File('$saveDir/.lan_partial_$fileId');
+  final partialFile = File(
+    await AndroidReceiveStorage.lookup('lan:$fileId') ??
+        '$saveDir/.lan_partial_$fileId',
+  );
   if (partialFile.existsSync()) {
     received = partialFile.lengthSync();
   }
@@ -733,20 +762,17 @@ void _handleDeviceInfo(
   String deviceName,
   String platform,
 ) {
-  final body = '{"deviceId":"${_escapeJson(deviceId)}","name":"${_escapeJson(deviceName)}","platform":"${_escapeJson(platform)}"}';
   request.response
     ..statusCode = HttpStatus.ok
-    ..headers.contentType = ContentType('application', 'json')
-    ..write(body)
+    ..headers.contentType = ContentType.json
+    ..write(
+      jsonEncode({
+        'deviceId': deviceId,
+        'name': deviceName,
+        'platform': platform,
+      }),
+    )
     ..close();
-}
-
-String _escapeJson(String s) {
-  return s
-      .replaceAll(r'\', r'\\')
-      .replaceAll('"', r'\"')
-      .replaceAll('\n', r'\n')
-      .replaceAll('\r', r'\r');
 }
 
 Future<void> _handleMessagePost(
@@ -785,11 +811,15 @@ Future<void> _handleMessagePost(
         ..close();
       return;
     }
-    mainPort.send(_MessageReceived(
-      text: text,
-      fromDeviceId: fromDeviceId,
-      fromDeviceName: fromDeviceName,
-    ));
+    mainPort.send(
+      _MessageReceived(
+        text: text,
+        fromDeviceId: fromDeviceId,
+        fromDeviceName: fromDeviceName,
+        localId: (map?['textId'] ?? map?['localId'])?.toString(),
+        ts: (map?['ts'] as num?)?.toInt(),
+      ),
+    );
     request.response
       ..statusCode = HttpStatus.ok
       ..close();
@@ -819,12 +849,14 @@ Future<void> _handleRegisterPeer(HttpRequest request, SendPort mainPort) async {
         ..close();
       return;
     }
-    mainPort.send(_PeerRegistered(
-      deviceId: peerDeviceId,
-      name: peerName.isNotEmpty ? peerName : peerDeviceId,
-      lanHttpUrl: peerLanHttpUrl,
-      platform: peerPlatform,
-    ));
+    mainPort.send(
+      _PeerRegistered(
+        deviceId: peerDeviceId,
+        name: peerName.isNotEmpty ? peerName : peerDeviceId,
+        lanHttpUrl: peerLanHttpUrl,
+        platform: peerPlatform,
+      ),
+    );
     request.response
       ..statusCode = HttpStatus.ok
       ..close();
@@ -836,8 +868,9 @@ Future<void> _handleRegisterPeer(HttpRequest request, SendPort mainPort) async {
   }
 }
 
-void _setCorsHeaders(HttpResponse response) {
-  response.headers
+void _setCorsHeaders(HttpRequest request) {
+  final headers = request.response.headers;
+  headers
     ..set('Access-Control-Allow-Origin', '*')
     ..set('Access-Control-Allow-Methods', 'GET, POST, HEAD, OPTIONS')
     ..set(
@@ -847,7 +880,12 @@ void _setCorsHeaders(HttpResponse response) {
     ..set(
       'Access-Control-Expose-Headers',
       'X-File-Name, X-File-Size, X-Received-Bytes, Content-Range, ${TransferProtocol.headerFileMtimeMs}',
-    );
+    )
+    // Chrome Private / Local Network Access: HTTPS (and some localhost)
+    // pages fetching RFC1918 LAN URLs send a PNA preflight. Without this
+    // header the reverse-pull GET /download is blocked even when POST
+    // /transfer from the same origin already succeeded in older Chrome.
+    ..set('Access-Control-Allow-Private-Network', 'true');
 }
 
 Future<void> _handleUpload(
@@ -875,9 +913,15 @@ Future<void> _handleUpload(
       ..close();
     return;
   }
-  final fileName = Uri.decodeComponent(
-    headers.value('X-File-Name') ?? 'received',
-  );
+  late final String fileName;
+  try {
+    fileName = Uri.decodeComponent(headers.value('X-File-Name') ?? 'received');
+  } catch (_) {
+    request.response
+      ..statusCode = HttpStatus.badRequest
+      ..close();
+    return;
+  }
   final diskName = sanitizeFileNameForLocalStorage(fileName);
   // Sender-supplied per-transfer localId (UUID) when available. We use it as
   // the receiver-side messageId so the chat bubble, the Centrifugo file
@@ -900,6 +944,16 @@ Future<void> _handleUpload(
           headers.value(TransferProtocol.headerResumeOffset) ?? '',
         ) ??
         0;
+    if (fileSize < 0 ||
+        resumeOffset < 0 ||
+        resumeOffset > fileSize ||
+        (fileId != null &&
+            !RegExp(r'^[a-zA-Z0-9_.-]{1,200}$').hasMatch(fileId))) {
+      request.response
+        ..statusCode = HttpStatus.badRequest
+        ..close();
+      return;
+    }
     final senderMtimeMs = parseMtimeMs(
       headers.value(TransferProtocol.headerFileMtimeMs),
     );
@@ -923,12 +977,17 @@ Future<void> _handleUpload(
 
     String partialPath;
     FileMode writeMode;
+    final androidPath = await AndroidReceiveStorage.prepare(
+      'lan:${fileId ?? messageId}',
+      diskName,
+    );
 
     if (fileId != null) {
       partialPath = '$saveDir/.lan_partial_$fileId';
     } else {
       partialPath = '$saveDir/.lan_partial_${_timestampSync()}_$diskName';
     }
+    partialPath = androidPath ?? partialPath;
 
     final partial = fileId != null ? partialReceives[fileId] : null;
     if (partial != null && resumeOffset > 0) {
@@ -949,6 +1008,16 @@ Future<void> _handleUpload(
     // size. Multiple worker isolates may have returned a stale offset, causing
     // the sender to start from the wrong position.
     int received = resumeOffset;
+    final actualOffset = File(partialPath).existsSync()
+        ? File(partialPath).lengthSync()
+        : 0;
+    if (resumeOffset > actualOffset) {
+      request.response
+        ..statusCode = HttpStatus.conflict
+        ..headers.set(TransferProtocol.headerReceivedBytes, actualOffset)
+        ..close();
+      return;
+    }
     if (writeMode == FileMode.append) {
       final partialFile = File(partialPath);
       if (partialFile.existsSync()) {
@@ -1022,22 +1091,28 @@ Future<void> _handleUpload(
                   TransferProtocol.progressReportThreshold ||
               pct >= 100) {
             lastReportedPct = pct;
-            mainPort.send(_ReceiveProgress(
-              fileName,
-              received,
-              fileSize,
-              messageId: messageId,
-              senderLocalId: senderLocalId,
-              fileId: fileId,
-            ));
+            mainPort.send(
+              _ReceiveProgress(
+                fileName,
+                received,
+                fileSize,
+                messageId: messageId,
+                senderLocalId: senderLocalId,
+                fileId: fileId,
+              ),
+            );
           }
         }
       }
     } finally {
-      await iterator.cancel();
+      try {
+        await iterator.cancel();
+      } finally {
+        // Also flush on socket errors: the next resume must see all bytes
+        // already accepted, and the failed request must release its handle.
+        await sink.close();
+      }
     }
-
-    await sink.close();
 
     if (superseded) {
       _log.info('Upload superseded by newer request for fileId=$fileId');
@@ -1053,13 +1128,15 @@ Future<void> _handleUpload(
       // with any in-flight request still draining bytes.
       // Partial file on disk is *intentionally* preserved so a later resume
       // (sender retry or cold start) can pick up from `received`.
-      mainPort.send(_ReceiveError(
-        fileName,
-        'cancelled',
-        messageId: messageId,
-        senderLocalId: senderLocalId,
-        fileId: fileId,
-      ));
+      mainPort.send(
+        _ReceiveError(
+          fileName,
+          'cancelled',
+          messageId: messageId,
+          senderLocalId: senderLocalId,
+          fileId: fileId,
+        ),
+      );
       request.response
         ..statusCode = HttpStatus.ok
         ..close();
@@ -1078,21 +1155,18 @@ Future<void> _handleUpload(
       uploadGeneration?.remove(fileId);
     }
 
-    // One-file-per-directory layout: <saveDir>/<messageId>/<originalName>.
-    // messageId was derived from the sender's localId header (or a fresh UUID
-    // for older peers) at the top of this handler so the chat bubble, the
-    // received_files row and the Centrifugo file publication all share the
-    // same key.
-    final perFileDir = '$saveDir/$messageId';
-    Directory(perFileDir).createSync(recursive: true);
-    final finalPath = _resolveUniquePathSync(perFileDir, fileName);
-    try {
-      File(partialPath).renameSync(finalPath);
-    } catch (_) {
-      File(partialPath).copySync(finalPath);
+    // Partial and final file share a filesystem: completion is a rename,
+    // with no second copy or message-id folder in the user's Downloads.
+    var finalPath = androidPath ?? reserveReceiveDestination(saveDir, diskName);
+    if (androidPath == null) {
       try {
-        File(partialPath).deleteSync();
-      } catch (_) {}
+        File(partialPath).renameSync(finalPath);
+      } catch (_) {
+        File(partialPath).copySync(finalPath);
+        try {
+          File(partialPath).deleteSync();
+        } catch (_) {}
+      }
     }
 
     final finalFile = File(finalPath);
@@ -1108,26 +1182,32 @@ Future<void> _handleUpload(
       }
     }
 
-    mainPort.send(_FileReceived(
-      finalPath,
-      fileName,
-      fromDeviceId: fromDeviceId,
-      messageId: messageId,
-      senderLocalId: senderLocalId,
-      lastModifiedMs: senderMtimeMs,
-    ));
+    finalPath =
+        await AndroidReceiveStorage.complete(finalPath, received) ?? finalPath;
+    mainPort.send(
+      _FileReceived(
+        finalPath,
+        fileName,
+        fromDeviceId: fromDeviceId,
+        messageId: messageId,
+        senderLocalId: senderLocalId,
+        lastModifiedMs: senderMtimeMs,
+      ),
+    );
     request.response
       ..statusCode = HttpStatus.ok
       ..close();
   } catch (e) {
     _log.warning('Upload error: $e');
-    mainPort.send(_ReceiveError(
-      fileName,
-      e.toString(),
-      messageId: messageId,
-      senderLocalId: senderLocalId,
-      fileId: headers.value(TransferProtocol.headerFileId),
-    ));
+    mainPort.send(
+      _ReceiveError(
+        fileName,
+        e.toString(),
+        messageId: messageId,
+        senderLocalId: senderLocalId,
+        fileId: headers.value(TransferProtocol.headerFileId),
+      ),
+    );
     try {
       request.response
         ..statusCode = HttpStatus.internalServerError
@@ -1283,9 +1363,7 @@ Future<void> notifyCancelUpload(
       if (fileName != null && fileName.isNotEmpty)
         'fileName': Uri.encodeComponent(fileName),
     };
-    final qs = query.entries
-        .map((e) => '${e.key}=${e.value}')
-        .join('&');
+    final qs = query.entries.map((e) => '${e.key}=${e.value}').join('&');
     final uri = Uri.parse('$url/cancel?$qs');
     final request = await client.postUrl(uri);
     final response = await request.close().timeout(const Duration(seconds: 3));
@@ -1334,11 +1412,7 @@ Future<int> queryTransferStatus(String url, String fileId) async {
 ///
 /// Must be stable across isolates / cold starts. Dart's `String.hashCode` is
 /// not stable across VM runs, so we use a truncated SHA-1 instead.
-String makeFileId(
-  String fileName,
-  int fileSize, {
-  String? localId,
-}) {
+String makeFileId(String fileName, int fileSize, {String? localId}) {
   final key = (localId != null && localId.trim().isNotEmpty)
       ? '${localId.trim()}|$fileName|$fileSize'
       : '$fileName|$fileSize';
@@ -1390,10 +1464,9 @@ Future<void> sendFileHttpSingle({
   int offset = 0;
   try {
     offset = await queryTransferStatus(url, fileId);
-    if (offset >= fileSize) {
-      onProgress?.call(fileSize, fileSize);
-      return;
-    }
+    // A complete partial still needs the POST to finalize and acknowledge it.
+    // Zero-byte files must also be created on the receiver.
+    if (offset > fileSize) offset = 0;
   } catch (_) {
     offset = 0;
   }
@@ -1491,23 +1564,36 @@ Future<void> sendFileHttpSingle({
   }
 }
 
-/// Probe the receiver via HTTP GET /probe.
+/// Known peers must prove their device identity, not just answer at a saved IP.
+/// An address can be reused after a reinstall or assigned to another device.
 Future<bool> probeHttp(
   String httpUrl, {
   Duration timeout = const Duration(seconds: 5),
+  String? expectedDeviceId,
 }) async {
   final client = HttpClient();
   try {
     client.connectionTimeout = timeout;
-    final uri = Uri.parse('$httpUrl/probe');
-    final request = await client.getUrl(uri);
-    final response = await request.close().timeout(timeout);
-    await response.drain<void>();
-    return response.statusCode == HttpStatus.ok;
+    final expected = expectedDeviceId?.trim();
+    final verifyIdentity = expected != null && expected.isNotEmpty;
+    return await (() async {
+      final uri = Uri.parse(
+        httpUrl,
+      ).replace(path: verifyIdentity ? '/device-info' : '/probe');
+      final request = await client.getUrl(uri);
+      final response = await request.close();
+      if (response.statusCode != HttpStatus.ok) return false;
+      if (!verifyIdentity) {
+        await response.drain<void>();
+        return true;
+      }
+      final body = jsonDecode(await utf8.decoder.bind(response).join());
+      return body is Map && body['deviceId'] == expected;
+    })().timeout(timeout);
   } catch (_) {
     return false;
   } finally {
-    client.close();
+    client.close(force: true);
   }
 }
 
@@ -1599,8 +1685,7 @@ Future<PullFileResult> pullFileHttp({
     final messageId = (senderLocalId != null && senderLocalId.isNotEmpty)
         ? 'lan_recv_pull_$senderLocalId'
         : 'lan_recv_pull_${const Uuid().v4()}';
-    final perFileDir = '$savePath/$messageId';
-    Directory(perFileDir).createSync(recursive: true);
+    Directory(savePath).createSync(recursive: true);
 
     late String filePath;
     late FileMode writeMode;
@@ -1611,7 +1696,10 @@ Future<PullFileResult> pullFileHttp({
       writeMode = FileMode.append;
     } else {
       offset = 0;
-      filePath = _resolveUniquePathSync(perFileDir, diskName);
+      filePath =
+          resumePath ??
+          await AndroidReceiveStorage.prepare('pull:$messageId', diskName) ??
+          reserveReceiveDestination(savePath, diskName);
       writeMode = FileMode.write;
     }
 
@@ -1627,9 +1715,7 @@ Future<PullFileResult> pullFileHttp({
     Future<void> closeSink() async {
       if (sinkClosed) return;
       sinkClosed = true;
-      try {
-        await sink.close();
-      } catch (_) {}
+      await sink.close();
     }
 
     try {
@@ -1651,8 +1737,18 @@ Future<PullFileResult> pullFileHttp({
       // resume from the wrong offset.
       await closeSink();
     }
+    if (fileSize > 0 && received != fileSize) {
+      throw HttpException(
+        'Incomplete transfer: $received/$fileSize bytes',
+        uri: uri,
+      );
+    }
+    if (File(filePath).lengthSync() != received) {
+      throw FileSystemException('Received file size mismatch', filePath);
+    }
     return PullFileResult(
-      filePath: filePath,
+      filePath:
+          await AndroidReceiveStorage.complete(filePath, received) ?? filePath,
       fileName: fileName,
       messageId: messageId,
       lastModifiedMs: pullSenderMtimeMs,
@@ -1670,21 +1766,4 @@ String _timestampSync() {
       '${now.hour.toString().padLeft(2, '0')}'
       '${now.minute.toString().padLeft(2, '0')}'
       '${now.second.toString().padLeft(2, '0')}';
-}
-
-/// Synchronous "resolve unique filename" — kept inline here so isolate code
-/// has no dependency on the main FileStore (which uses path_provider).
-String _resolveUniquePathSync(String dir, String originalName) {
-  final base = originalName.isEmpty ? 'received' : originalName;
-  final candidate = p.join(dir, base);
-  if (!File(candidate).existsSync()) return candidate;
-  final dotIdx = base.lastIndexOf('.');
-  final hasExt = dotIdx > 0 && dotIdx < base.length - 1;
-  final stem = hasExt ? base.substring(0, dotIdx) : base;
-  final ext = hasExt ? base.substring(dotIdx) : '';
-  for (int i = 1; i < 10000; i++) {
-    final next = p.join(dir, '$stem ($i)$ext');
-    if (!File(next).existsSync()) return next;
-  }
-  return p.join(dir, '$stem ${DateTime.now().millisecondsSinceEpoch}$ext');
 }

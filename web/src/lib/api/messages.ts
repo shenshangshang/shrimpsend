@@ -1,12 +1,14 @@
 import { logger } from '../logger';
-import { getApiUrl, TAG, AuthError, getToken, isAuthFailure, withAuthRetry } from './client';
+import { getApiUrl, TAG, AuthError, getToken, getDeviceAccessToken, isAuthFailure, withAuthRetry, fetchWithDeviceAuth } from './client';
+import { DeviceSendRateLimitedError, publishDeviceSendQuota, readQuotaFromResponse } from './deviceSendQuota';
 
 export type MessageEnvelope = {
   type: 'text' | 'file' | 'control' | 'lan_file_offer' | 'lan_pull_probe' | 'lan_pull_probe_result'
-    | 'lan_http_probe' | 'lan_http_probe_result'
+    | 'lan_http_probe' | 'lan_http_probe_result' | 'lan_pull_cancelled'
     | 'webrtc_probe' | 'webrtc_probe_result'
     | 'webrtc_offer' | 'webrtc_answer' | 'webrtc_ice_candidate' | 'webrtc_transfer_cancel'
-    | 'device_roster_patch';
+    | 'device_pair_hello'
+    | 'device_roster_patch' | 'peer_device_patch';
   payload: unknown;
   fromDeviceId: string;
   ts: number;
@@ -22,6 +24,8 @@ export type ChatMessage = MessageEnvelope & {
   _status?: LocalStatus;
   _progress?: number;
   _speed?: string;
+  _phase?: string;
+  _transferType?: 'lan' | 'webrtc' | 's3';
 };
 
 export type MessageHistoryItem = MessageEnvelope & { id: number };
@@ -84,19 +88,36 @@ export async function deleteThreadMessages(threadKey: string): Promise<void> {
 
 export async function sendMessage(data: MessageEnvelope): Promise<void> {
   logger.info(TAG, 'sendMessage type=', data.type, 'fromDeviceId=', data.fromDeviceId);
-  return withAuthRetry(async () => {
-    const token = getToken();
-    if (!token) throw new Error('Not authenticated');
-    const res = await fetch(`${getApiUrl()}/api/messages/send`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ data }),
-    });
-    if (isAuthFailure(res)) throw new AuthError();
-    if (!res.ok) {
-      logger.warn(TAG, 'sendMessage failed', res.status);
-      throw new Error('Failed to send message');
-    }
-    logger.debug(TAG, 'sendMessage ok');
+  if (!data.toDeviceId && data.threadKey?.endsWith('|kind:s3_cloud')) return;
+  const deviceToken = getDeviceAccessToken();
+  if (!deviceToken) throw new Error('Not authenticated');
+  const res = await fetchWithDeviceAuth(`${getApiUrl()}/api/messages/device-send`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data }),
   });
+  const quota = await readQuotaFromResponse(res);
+  if (quota) publishDeviceSendQuota(quota);
+  if (res.status === 429) {
+    logger.warn(TAG, 'sendMessage device-send 429');
+    throw new DeviceSendRateLimitedError(quota ?? { message: { used: 90, limit: 90, remaining: 0, retryAfterMs: 1000 }, signaling: { used: 0, limit: 600, remaining: 600, retryAfterMs: 0 }, kind: 'message', limited: true });
+  }
+  if (!res.ok) {
+    logger.warn(TAG, 'sendMessage device-send failed', res.status);
+    throw new Error('Failed to send message');
+  }
+  logger.debug(TAG, 'sendMessage device-send ok');
+}
+
+export async function pairDevice(peerDeviceId: string): Promise<void> {
+  const deviceToken = getDeviceAccessToken();
+  if (!peerDeviceId || !deviceToken) return;
+  const res = await fetchWithDeviceAuth(`${getApiUrl()}/api/devices/pair`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ peerDeviceId }),
+  });
+  if (!res.ok) {
+    logger.warn(TAG, 'pairDevice failed', res.status);
+  }
 }

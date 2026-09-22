@@ -1,11 +1,10 @@
-import 'dart:io';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/devices.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../providers/auth_provider.dart';
 import '../providers/device_provider.dart';
+import '../utils/runtime_platform.dart';
 import 'link_models.dart';
 import 'link_strategy.dart';
 
@@ -48,17 +47,23 @@ class SelectedConnectionContext {
   final List<SmartLinkKind> chain;
   final DeviceReachDetail reach;
   final bool s3Configured;
+
   /// CUSTOM: presigned HEAD from client; HOSTED: configured only.
   final bool s3Online;
   final bool isLoggedIn;
+
   /// Peer is registered under the current account (not LAN-only external).
   final bool isRegisteredPeer;
 }
 
-/// Account-backed channels (HTTP signaling / WebRTC / S3) require login and a
-/// registered peer. External LAN-discovered devices only support nearby/HTTP direct.
+/// S3 and logged-in HTTP signaling require an account plus a registered peer.
+/// Guest (unsigned-in) peers can still attempt WebRTC via device pairing.
 bool allowsAccountTransferModes(SelectedConnectionContext context) {
   return context.isLoggedIn && context.isRegisteredPeer;
+}
+
+bool allowsGuestWebrtc(SelectedConnectionContext context) {
+  return !context.isLoggedIn && context.peer != null && OhosCapabilities.webrtc;
 }
 
 SelectedConnectionContext? watchSelectedConnectionContext(Ref ref) {
@@ -68,7 +73,7 @@ SelectedConnectionContext? watchSelectedConnectionContext(Ref ref) {
   }
 
   final peer = findDeviceById(ref, selected);
-  final localOs = Platform.operatingSystem;
+  final localOs = RuntimePlatform.osName;
   final isLoggedIn = ref.watch(authProvider).isLoggedIn;
   final isRegisteredPeer = ref
       .watch(myDevicesProvider)
@@ -124,7 +129,11 @@ String connectionPeerLabel(String deviceId, {DeviceDto? device}) {
   return deviceId.length > 12 ? '${deviceId.substring(0, 12)}…' : deviceId;
 }
 
-String connectionModeLabel(SendMode mode, {String? localOs, AppLocalizations? l10n}) {
+String connectionModeLabel(
+  SendMode mode, {
+  String? localOs,
+  AppLocalizations? l10n,
+}) {
   switch (mode) {
     case SendMode.nearby:
       return l10n?.sendModeNearby ?? 'Nearby';
@@ -201,12 +210,7 @@ SendMode resolveSendModeAutoPreferHttp({
   );
   if (visible.isEmpty) return fallback;
 
-  const priority = [
-    SendMode.lan,
-    SendMode.webrtc,
-    SendMode.nearby,
-    SendMode.s3,
-  ];
+  const priority = [SendMode.lan, SendMode.nearby, SendMode.s3];
   for (final mode in priority) {
     for (final c in visible) {
       if (c.mode == mode && c.available) return mode;
@@ -245,8 +249,7 @@ List<ConnectionCandidate> buildConnectionCandidates({
   return out;
 }
 
-/// 未登录或外部设备时 UI 不展示需账号的渠道（WebRTC/S3）；未登录时仅保留「附近」，
-/// 已登录外部设备保留「附近」与 HTTP 直连。
+/// 未登录时保留「附近」与 WebRTC（扫码配对后走信令）；已登录外部设备保留「附近」与 HTTP 直连。
 List<ConnectionCandidate> visibleConnectionCandidatesForUi({
   required List<ConnectionCandidate> candidates,
   required bool isLoggedIn,
@@ -260,7 +263,9 @@ List<ConnectionCandidate> visibleConnectionCandidatesForUi({
         .where((c) => c.mode == SendMode.nearby || c.mode == SendMode.lan)
         .toList();
   }
-  return candidates.where((c) => c.mode == SendMode.nearby).toList();
+  return candidates
+      .where((c) => c.mode == SendMode.nearby || c.mode == SendMode.webrtc)
+      .toList();
 }
 
 List<({SendMode mode, SmartLinkKind kind})> _expandKind(SmartLinkKind kind) {
@@ -295,11 +300,7 @@ List<({SendMode mode, SmartLinkKind kind})> _expandKind(SmartLinkKind kind) {
       );
     case SendMode.lan:
       if (!context.isLoggedIn) {
-        return (
-          available: false,
-          attemptable: false,
-          reason: '登录后可使用',
-        );
+        return (available: false, attemptable: false, reason: '登录后可使用');
       }
       if (!context.isRegisteredPeer) {
         final directOk = context.reach.directHttp;
@@ -314,51 +315,30 @@ List<({SendMode mode, SmartLinkKind kind})> _expandKind(SmartLinkKind kind) {
       return (
         available: lanOk,
         attemptable: true,
-        reason: lanOk
-            ? (pullOnly ? 'HTTP 反向拉取可用' : 'HTTP 直连可用')
-            : 'HTTP 直连不可达',
+        reason: lanOk ? (pullOnly ? 'HTTP 反向拉取可用' : 'HTTP 直连可用') : 'HTTP 直连不可达',
       );
     case SendMode.webrtc:
-      if (!allowsAccountTransferModes(context)) {
+      if (!OhosCapabilities.webrtc) {
         return (
           available: false,
           attemptable: false,
-          reason: '仅支持账号下已注册设备',
+          reason: '当前平台暂不支持 WebRTC',
         );
       }
-      final rtc = context.reach.webrtc;
-      if (rtc == true) {
-        return (available: true, attemptable: true, reason: 'WebRTC 可用');
+      if (!allowsAccountTransferModes(context) && !allowsGuestWebrtc(context)) {
+        return (available: false, attemptable: false, reason: '仅支持账号下已注册设备');
       }
-      if (rtc == false) {
-        return (
-          available: false,
-          attemptable: true,
-          reason: 'WebRTC 信令/ICE 不可达',
-        );
-      }
-      return (available: true, attemptable: true, reason: 'WebRTC 未检测');
+      // Connectivity is no longer pre-probed; keep transfer as a manual attempt.
+      return (available: false, attemptable: true, reason: 'WebRTC 未检测，可尝试');
     case SendMode.s3:
       if (!allowsAccountTransferModes(context)) {
-        return (
-          available: false,
-          attemptable: false,
-          reason: '仅支持账号下已注册设备',
-        );
+        return (available: false, attemptable: false, reason: '仅支持账号下已注册设备');
       }
       if (!context.s3Configured) {
-        return (
-          available: false,
-          attemptable: false,
-          reason: 'S3 未配置',
-        );
+        return (available: false, attemptable: false, reason: 'S3 未配置');
       }
       if (!context.s3Online) {
-        return (
-          available: false,
-          attemptable: false,
-          reason: 'S3 不可用',
-        );
+        return (available: false, attemptable: false, reason: 'S3 不可用');
       }
       return (available: true, attemptable: true, reason: 'S3 可用');
   }

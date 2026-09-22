@@ -17,6 +17,14 @@ class SharePendingCache {
     final root = cacheRoot ?? await FileStore.getCacheDir();
     if (!_isShareStagingPath(path, root)) return;
     await FileStore.deleteFile(path);
+    // The caller may supply a staging root (e.g. an imported share batch).
+    // Clean only its empty app-owned folder, never the user's receive folder.
+    final parent = File(path).parent;
+    if (FileStore.isPathUnderDirectory(parent.path, root) &&
+        await parent.exists() &&
+        await parent.list().isEmpty) {
+      await parent.delete();
+    }
   }
 
   static Future<void> deleteStagingFiles(
@@ -30,7 +38,10 @@ class SharePendingCache {
 
   static bool _isShareStagingPath(String path, String cacheRoot) {
     if (!FileStore.isPathUnderDirectory(path, cacheRoot)) return false;
-    final relative = p.relative(p.normalize(path), from: p.normalize(cacheRoot));
+    final relative = p.relative(
+      p.normalize(path),
+      from: p.normalize(cacheRoot),
+    );
     final firstSegment = relative.split(Platform.pathSeparator).firstOrNull;
     return firstSegment != null && firstSegment.startsWith('share_');
   }

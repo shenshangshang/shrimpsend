@@ -90,6 +90,10 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Keep local development data and signing separate from installed releases.
+            applicationIdSuffix = ".local"
+        }
         release {
             signingConfig = signingConfigs.getByName("release")
             // abiFilters 与 --split-per-abi 冲突，由 Flutter 按 target-platform 配置 splits

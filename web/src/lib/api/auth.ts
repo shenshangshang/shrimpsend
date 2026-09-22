@@ -27,6 +27,12 @@ export async function login(email: string, password: string): Promise<AuthRespon
   return data;
 }
 
+export async function loginByCode(email: string, code: string): Promise<AuthResponse> {
+  const res = await fetch(`${getApiUrl()}/api/auth/login-by-code`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: email.trim().toLowerCase(), code: code.trim(), deviceId: getOrCreateDeviceId(), platform: 'web' }) });
+  if (!res.ok) { const body = await res.json().catch(() => ({})); throw new Error(body.error || 'errors.loginFailed'); }
+  return await res.json() as AuthResponse;
+}
+
 export async function sendVerificationCode(
   email: string,
   opts?: { type?: string },

@@ -26,9 +26,12 @@ class Env {
     defaultValue: 'http://192.168.0.104:9000',
   );
 
-  static const _devCentrifugoWs = String.fromEnvironment(
-    'CENTRIFUGO_WS',
-    defaultValue: 'ws://192.168.0.104:8000/connection/websocket',
+  static const _devWs = String.fromEnvironment(
+    'WUKONGIM_WS',
+    defaultValue: String.fromEnvironment(
+      'CENTRIFUGO_WS',
+      defaultValue: 'ws://192.168.0.104:5200',
+    ),
   );
 
   static const _prodApiXiachuan = String.fromEnvironment(
@@ -36,16 +39,22 @@ class Env {
     defaultValue: EnvSecrets.prodApiCn,
   );
   static const _prodWsXiachuan = String.fromEnvironment(
-    'CENTRIFUGO_WS_PROD_CN',
-    defaultValue: EnvSecrets.prodWsCn,
+    'WUKONGIM_WS_PROD_CN',
+    defaultValue: String.fromEnvironment(
+      'CENTRIFUGO_WS_PROD_CN',
+      defaultValue: EnvSecrets.prodWsCn,
+    ),
   );
   static const _prodApiShrimpsend = String.fromEnvironment(
     'API_URL_PROD_INTL',
     defaultValue: EnvSecrets.prodApiIntl,
   );
   static const _prodWsShrimpsend = String.fromEnvironment(
-    'CENTRIFUGO_WS_PROD_INTL',
-    defaultValue: EnvSecrets.prodWsIntl,
+    'WUKONGIM_WS_PROD_INTL',
+    defaultValue: String.fromEnvironment(
+      'CENTRIFUGO_WS_PROD_INTL',
+      defaultValue: EnvSecrets.prodWsIntl,
+    ),
   );
 
   /// Resolved from [LocaleRegionStore] / prefs before networking.
@@ -58,15 +67,56 @@ class Env {
   }
 
   static String get _prodApiUrlResolved => switch (_prodServiceRegion) {
-        ServiceRegion.mainlandChina => _prodApiXiachuan,
-        ServiceRegion.international => _prodApiShrimpsend,
-      };
+    ServiceRegion.mainlandChina => _prodApiXiachuan,
+    ServiceRegion.international => _prodApiShrimpsend,
+  };
 
-  static String get _prodCentrifugoWsResolved =>
-      switch (_prodServiceRegion) {
-        ServiceRegion.mainlandChina => _prodWsXiachuan,
-        ServiceRegion.international => _prodWsShrimpsend,
-      };
+  static String get _prodCentrifugoWsResolved => switch (_prodServiceRegion) {
+    ServiceRegion.mainlandChina => _mainlandChinaWs(
+      _prodApiXiachuan,
+      _prodWsXiachuan,
+    ),
+    ServiceRegion.international => _prodWsShrimpsend,
+  };
+
+  /// Same-origin WSS on the API host (nginx proxies `/wkws/` to WuKongIM).
+  /// Legacy `ws.<domain>` overrides are ignored so CN clients do not depend on
+  /// a separate websocket subdomain.
+  static String _mainlandChinaWs(String apiUrl, String wsOverride) {
+    if (wsOverride.isNotEmpty && !_isLegacyWsSubdomain(wsOverride)) {
+      return wsOverride;
+    }
+    return websocketEndpointFromHttpApi(apiUrl);
+  }
+
+  static bool _isLegacyWsSubdomain(String wsUrl) {
+    final host = Uri.tryParse(wsUrl)?.host ?? '';
+    return host.startsWith('ws.');
+  }
+
+  /// `https://api.example.com` → `wss://api.example.com/wkws`.
+  static String websocketEndpointFromHttpApi(String apiUrl) {
+    return _connectionEndpointFromHttpApi(apiUrl, 'wkws', asWebsocket: true);
+  }
+
+  static String httpStreamEndpointFromHttpApi(String apiUrl) {
+    return _connectionEndpointFromHttpApi(apiUrl, 'wkws', asWebsocket: false);
+  }
+
+  static String _connectionEndpointFromHttpApi(
+    String apiUrl,
+    String pathSuffix, {
+    required bool asWebsocket,
+  }) {
+    final uri = Uri.parse(apiUrl);
+    final https = uri.scheme == 'https';
+    return Uri(
+      scheme: asWebsocket ? (https ? 'wss' : 'ws') : (https ? 'https' : 'http'),
+      host: uri.host,
+      port: uri.hasPort ? uri.port : null,
+      path: '/$pathSuffix',
+    ).toString();
+  }
 
   /// RevenueCat Test Store 公钥（本地 debug/profile 默认使用）。
   /// 值来自 gitignored [env.secrets.dart] 或 `--dart-define=RC_TEST_STORE_API_KEY`。
@@ -194,7 +244,40 @@ class Env {
       _current == AppEnv.prod ? _prodApiUrlResolved : _devApiUrl;
 
   static String get centrifugoWs =>
-      _current == AppEnv.prod ? _prodCentrifugoWsResolved : _devCentrifugoWs;
+      _current == AppEnv.prod ? _prodCentrifugoWsResolved : _devWs;
+
+  /// Public WuKongIM websocket URL (debug override). Runtime prefers token.websocketUrl.
+  static String get realtimeWs => centrifugoWs;
+
+  /// Phones cannot open `ws://127.0.0.1`. If the token still points at
+  /// loopback, rewrite the host to [apiUrl] and keep the WS port/path.
+  static String rewriteLoopbackRealtimeWs(
+    String websocketUrl, {
+    String? apiUrl,
+  }) {
+    final ws = Uri.tryParse(websocketUrl);
+    if (ws == null || ws.host.isEmpty) return websocketUrl;
+    if (ws.host != '127.0.0.1' && ws.host != 'localhost') return websocketUrl;
+    final api = Uri.tryParse(apiUrl ?? Env.apiUrl);
+    if (api == null || api.host.isEmpty) return websocketUrl;
+    if (api.host == '127.0.0.1' || api.host == 'localhost') return websocketUrl;
+    return ws.replace(host: api.host).toString();
+  }
+
+  /// Public authorization page for the selected deployment; configurable for self hosting.
+  static String get webUrl {
+    const override = String.fromEnvironment('WEB_URL');
+    if (override.isNotEmpty) return override.replaceFirst(RegExp(r'/+$'), '');
+    if (_current == AppEnv.dev) {
+      return Uri.parse(apiUrl)
+          .replace(port: 3000, path: '', query: '', fragment: '')
+          .toString()
+          .replaceFirst(RegExp(r'/+$'), '');
+    }
+    return _prodServiceRegion == ServiceRegion.international
+        ? 'https://shrimpsend.com'
+        : 'https://xiachuan.net';
+  }
 
   static String get label => _current == AppEnv.prod ? '线上' : '测试';
 

@@ -3,20 +3,24 @@ package dev.ultrasend.backend.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import dev.ultrasend.backend.chat.ThreadKeyUtil;
-import dev.ultrasend.backend.centrifugo.CentrifugoPublishService;
+import dev.ultrasend.backend.realtime.RealtimePublisher;
+import dev.ultrasend.backend.entity.Device;
 import dev.ultrasend.backend.entity.Message;
+import dev.ultrasend.backend.realtime.RealtimeEnvelopeTypes;
+import dev.ultrasend.backend.repository.DeviceRepository;
 import dev.ultrasend.backend.repository.MessageRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -26,17 +30,14 @@ public class MessageService {
 
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
-    private static final Set<String> EPHEMERAL_TYPES = Set.of(
-            "lan_file_offer", "lan_pull_probe", "lan_pull_probe_result",
-            "lan_http_probe", "lan_http_probe_result",
-            "webrtc_probe", "webrtc_probe_result",
-            "webrtc_offer", "webrtc_answer", "webrtc_ice_candidate", "webrtc_transfer_cancel");
-
     private final MessageRepository messageRepository;
-    private final CentrifugoPublishService centrifugoPublishService;
+    private final RealtimePublisher realtimePublisher;
+    private final MailboxService mailboxService;
     private final ObjectMapper objectMapper;
     private final MessageCryptoService messageCryptoService;
     private final UserDataEncryptionService userDataEncryption;
+    private final DevicePairingService devicePairingService;
+    private final DeviceRepository deviceRepository;
 
     @Transactional
     public void send(String userId, Object data) {
@@ -53,7 +54,8 @@ public class MessageService {
             if (t != null) type = t.toString();
         }
 
-        boolean ephemeral = type != null && EPHEMERAL_TYPES.contains(type);
+        validateExternalRecipient(uid, data);
+        boolean ephemeral = RealtimeEnvelopeTypes.isEphemeral(type);
         if (!ephemeral) {
             String json;
             try {
@@ -72,9 +74,96 @@ public class MessageService {
             messageRepository.save(msg);
             log.debug("message saved userId={} id={}", userId, msg.getId());
         } else {
-            log.debug("ephemeral message (type={}) not persisted, broadcast only", type);
+            mailboxService.storeIfEphemeral(uid, data);
+            log.debug("ephemeral message (type={}) mailbox + broadcast", type);
         }
-        centrifugoPublishService.publishToUser(userId, data);
+        realtimePublisher.publishToUserBestEffort(userId, data);
+        publishDirectedToExternalDeviceIfNeeded(uid, data);
+    }
+
+    private void validateExternalRecipient(long userId, Object data) {
+        if (!(data instanceof Map<?, ?> map)) return;
+        String to = Objects.toString(map.get("toDeviceId"), "");
+        if (to.isBlank()) return;
+        Device recipient = deviceRepository.findByDeviceId(to).orElse(null);
+        if (recipient != null && recipient.getUser() != null
+                && Objects.equals(recipient.getUser().getId(), userId)) return;
+        String from = Objects.toString(map.get("fromDeviceId"), "");
+        Device sender = deviceRepository.findByDeviceId(from).orElse(null);
+        if (sender == null || sender.getUser() == null
+                || !Objects.equals(sender.getUser().getId(), userId)
+                || !devicePairingService.canSignal(from, to)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "devices are not paired or sender is not owned");
+        }
+    }
+
+    /**
+     * Guest / device-authenticated delivery. Never persists to account chat
+     * history. Signaling envelopes and unsigned-in {@code text} are allowed
+     * between paired (or same-account) peers only.
+     */
+    @Transactional
+    public void sendFromDevice(String fromDeviceId, Object data) {
+        if (!(data instanceof Map<?, ?> rawMap)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid message data");
+        }
+        @SuppressWarnings("unchecked")
+        Map<String, Object> map = new LinkedHashMap<>((Map<String, Object>) rawMap);
+        Object typeObj = map.get("type");
+        String type = typeObj != null ? typeObj.toString() : null;
+        boolean guestText = "text".equals(type);
+        if (!RealtimeEnvelopeTypes.isEphemeral(type) && !guestText && !"file".equals(type) && !"control".equals(type)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "device send only allows signaling envelopes");
+        }
+        String toDeviceId = map.get("toDeviceId") != null ? map.get("toDeviceId").toString() : null;
+        if (toDeviceId == null || toDeviceId.isBlank()) {
+            Object payload = map.get("payload");
+            if (payload instanceof Map<?, ?> p) {
+                Object target = p.get("targetDeviceId");
+                if (target != null) {
+                    toDeviceId = target.toString();
+                    map.put("toDeviceId", toDeviceId);
+                    data = map;
+                }
+            }
+        }
+        if (toDeviceId == null || toDeviceId.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "toDeviceId required");
+        }
+        if (!devicePairingService.canSignal(fromDeviceId, toDeviceId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "devices are not paired");
+        }
+        map.put("fromDeviceId", fromDeviceId);
+        mailboxService.storeIfEphemeral(null, map);
+        realtimePublisher.publishToDeviceBestEffort(toDeviceId, map);
+        log.debug("device send type={} from={} to={}", type, fromDeviceId, toDeviceId);
+    }
+
+    /**
+     * WuKongIM connects as {@code uid=deviceId}. {@link RealtimePublisher#publishToUser}
+     * fans out to the sender account's devices only, so a directed envelope aimed
+     * at a guest / other-account peer never arrives unless we also publish to
+     * that device channel.
+     */
+    void publishDirectedToExternalDeviceIfNeeded(long senderUserId, Object data) {
+        if (!(data instanceof Map<?, ?> map)) {
+            return;
+        }
+        Object toObj = map.get("toDeviceId");
+        if (toObj == null) {
+            return;
+        }
+        String toDeviceId = toObj.toString();
+        if (toDeviceId.isBlank()) {
+            return;
+        }
+        var found = deviceRepository.findByDeviceId(toDeviceId);
+        Device boundTo = found != null ? found.orElse(null) : null;
+        Long boundUid = (boundTo != null && boundTo.getUser() != null) ? boundTo.getUser().getId() : null;
+        if (boundUid != null && boundUid.equals(senderUserId)) {
+            return;
+        }
+        realtimePublisher.publishToDeviceBestEffort(toDeviceId, data);
     }
 
     /** Ensures persisted envelopes carry a canonical {@code threadKey}. */
@@ -187,7 +276,7 @@ public class MessageService {
                 .filter(m -> m != null)
                 .filter(m -> {
                     Object type = m.get("type");
-                    return type == null || !EPHEMERAL_TYPES.contains(type.toString());
+                    return type == null || !RealtimeEnvelopeTypes.isEphemeral(type.toString());
                 })
                 .collect(Collectors.toList());
     }

@@ -16,10 +16,14 @@ String accountPartLoggedIn(String userId) => 'u:$userId';
 
 String accountPartOffline(String offlineUserId) => 'o:$offlineUserId';
 
-String threadKeyOneToOne(String accountPart, String deviceIdA, String deviceIdB) {
+String threadKeyOneToOne(
+  String accountPart,
+  String deviceIdA,
+  String deviceIdB,
+) {
   final a = deviceIdA.compareTo(deviceIdB) <= 0 ? deviceIdA : deviceIdB;
   final b = deviceIdA.compareTo(deviceIdB) <= 0 ? deviceIdB : deviceIdA;
-  return '$accountPart|d1:$a|d2:$b';
+  return 'device|d1:$a|d2:$b';
 }
 
 String threadKeyS3Cloud(String accountPart) =>
@@ -46,6 +50,18 @@ String threadKeyForPeerSelection({
 /// - Else if [toDeviceId] is null and [fromDeviceId] != [myDeviceId]: treat as incoming
 ///   without explicit recipient → 1:1 with sender and this device.
 /// - Else: legacy broadcast bucket (old outbound without [toDeviceId]).
+/// Keep an explicit key only when it belongs to [accountPart]; otherwise
+/// derive locally so guest IM envelopes from another device still land in
+/// this device's 1:1 thread.
+String? localExplicitThreadKey(String accountPart, String? explicit) {
+  if (explicit == null || explicit.isEmpty) return null;
+  if (explicit.startsWith('device|d1:')) return explicit;
+  if (explicit.startsWith('$accountPart|') && !explicit.contains('|d1:')) {
+    return explicit;
+  }
+  return null;
+}
+
 String deriveThreadKeyForStoredMessage({
   required String accountPart,
   required String fromDeviceId,

@@ -1,26 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../api/api.dart';
 import '../../l10n/generated/app_localizations.dart';
 import '../../providers/device_provider.dart';
 import '../../providers/webdav_provider.dart';
 import '../../ui/app_ui.dart';
+import '../../ui/product_scaffold.dart';
 import '../../services/auth_session_controller.dart';
 import 'chat_session_pane_host.dart';
 import 'device_list_panel.dart';
 import 'device_list_panel_width.dart';
 import 'webdav_pane_host.dart';
+import 'transfer_welcome.dart';
 import '../chat/chat_header.dart';
 
 const double _wideBreakpoint = kDeviceListWideBreakpoint;
 const String _keyPanelWidth = 'main_layout_panel_width';
+
 /// Drag hit area centered on the sidebar/chat boundary (does not consume row width).
 const double _kPanelDividerHitWidth = 8;
 
 class MainLayout extends ConsumerStatefulWidget {
-  final Widget Function() chatContentBuilder;
+  final Widget Function(String sessionId) chatContentBuilder;
   final Widget? emptyPlaceholder;
   final bool connected;
   final String deviceName;
@@ -135,14 +137,16 @@ class _MainLayoutState extends ConsumerState<MainLayout> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final isWide = constraints.maxWidth >= _wideBreakpoint;
+        final workspace = ProductWorkspaceScope.maybeOf(context) != null;
+        final totalWidth =
+            constraints.maxWidth +
+            (workspace && MediaQuery.sizeOf(context).width >= _wideBreakpoint
+                ? 72
+                : 0);
+        final isWide = totalWidth >= _wideBreakpoint;
 
         if (isWide) {
-          return _buildWideLayout(
-            context,
-            selectedDeviceId,
-            constraints.maxWidth,
-          );
+          return _buildWideLayout(context, selectedDeviceId, totalWidth);
         } else {
           return _buildNarrowLayout(context, selectedDeviceId);
         }
@@ -170,6 +174,13 @@ class _MainLayoutState extends ConsumerState<MainLayout> {
       children: [
         Row(
           children: [
+            if (ProductWorkspaceScope.maybeOf(context) == null)
+              ProductNavigation(
+                selected: ProductSection.transfer,
+                onTransfer: _clearSelection,
+                onFiles: widget.onFileManager,
+                onSettings: widget.onShowSettings,
+              ),
             SizedBox(
               width: effectiveWidth,
               child: DeviceListPanel(
@@ -194,13 +205,20 @@ class _MainLayoutState extends ConsumerState<MainLayout> {
             Expanded(
               child: ColoredBox(
                 color: colors.surface,
-                child: _buildWideRightPane(context, selectedDeviceId, webDavConnection),
+                child: _buildWideRightPane(
+                  context,
+                  selectedDeviceId,
+                  webDavConnection,
+                ),
               ),
             ),
           ],
         ),
         Positioned(
-          left: effectiveWidth - _kPanelDividerHitWidth / 2,
+          left:
+              (ProductWorkspaceScope.maybeOf(context) == null ? 72 : 0) +
+              effectiveWidth -
+              _kPanelDividerHitWidth / 2,
           top: 0,
           bottom: 0,
           width: _kPanelDividerHitWidth,
@@ -240,22 +258,7 @@ class _MainLayoutState extends ConsumerState<MainLayout> {
       );
     }
 
-    return Column(
-      children: [
-        ChatHeader(
-          isSelectionMode: widget.isSelectionMode,
-          selectedCount: widget.selectedCount,
-          totalCount: widget.totalCount,
-          onExitSelection: widget.onExitSelection,
-          onToggleSelectAll: widget.onToggleSelectAll,
-          onDeleteSelected: widget.onDeleteSelected,
-          onFileManager: widget.onFileManager,
-          onOpenS3Settings: widget.onOpenS3Settings,
-          onSessionDeviceSettings: widget.onSessionDeviceSettings,
-        ),
-        Expanded(child: _buildEmptyState(context)),
-      ],
-    );
+    return _buildEmptyState(context);
   }
 
   Widget _buildDivider(
@@ -334,7 +337,7 @@ class _MainLayoutState extends ConsumerState<MainLayout> {
               onOpenS3Settings: widget.onOpenS3Settings,
               onSessionDeviceSettings: widget.onSessionDeviceSettings,
             ),
-            Expanded(child: widget.chatContentBuilder()),
+            Expanded(child: widget.chatContentBuilder(selectedDeviceId!)),
           ],
         ),
       );
@@ -406,35 +409,6 @@ class _MainLayoutState extends ConsumerState<MainLayout> {
 
   Widget _buildEmptyState(BuildContext context) {
     if (widget.emptyPlaceholder != null) return widget.emptyPlaceholder!;
-    final colors = context.appColors;
-    final theme = Theme.of(context);
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 64,
-            height: 64,
-            decoration: BoxDecoration(
-              color: colors.surfaceMuted,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Icon(
-              LucideIcons.messageSquare,
-              size: 32,
-              color: colors.textTertiary.withValues(alpha: 0.3),
-            ),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          Text(
-            AppLocalizations.of(context).chatPickDeviceToStart,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: colors.textSecondary,
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
-    );
+    return TransferWelcome(deviceId: widget.myDeviceId);
   }
 }

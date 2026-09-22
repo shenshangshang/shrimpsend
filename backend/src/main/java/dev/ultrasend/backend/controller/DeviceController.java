@@ -4,7 +4,10 @@ import dev.ultrasend.backend.dto.DeviceDto;
 import dev.ultrasend.backend.dto.DevicePresenceRequest;
 import dev.ultrasend.backend.dto.DeviceRegisterRequest;
 import dev.ultrasend.backend.dto.DeviceUpdateRequest;
+import dev.ultrasend.backend.dto.PairDeviceRequest;
+import dev.ultrasend.backend.service.DevicePairingService;
 import dev.ultrasend.backend.service.DeviceService;
+import dev.ultrasend.backend.service.InMemoryRateLimiter;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -21,6 +24,8 @@ import java.util.List;
 public class DeviceController {
 
     private final DeviceService deviceService;
+    private final DevicePairingService devicePairingService;
+    private final InMemoryRateLimiter rateLimiter;
 
     @PostMapping
     public ResponseEntity<DeviceDto> register(
@@ -68,6 +73,32 @@ public class DeviceController {
         Long userId = Long.parseLong((String) auth.getPrincipal());
         log.info("device unregister userId={} deviceId={}", userId, deviceId);
         deviceService.unregister(userId, deviceId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/paired/{peer}")
+    public ResponseEntity<Void> unpair(Authentication auth,@PathVariable String peer) {
+        if (auth == null || !AuthRoles.isDevice(auth)) return ResponseEntity.status(401).build();
+        devicePairingService.unpair(AuthRoles.deviceId(auth),peer);
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/paired")
+    public ResponseEntity<List<DeviceDto>> paired(Authentication auth) {
+        if (auth == null || !AuthRoles.isDevice(auth)) return ResponseEntity.status(401).build();
+        return ResponseEntity.ok(devicePairingService.peers(AuthRoles.deviceId(auth)));
+    }
+
+    @PostMapping("/pair")
+    public ResponseEntity<Void> pair(Authentication auth, @Valid @RequestBody PairDeviceRequest req) {
+        if (auth == null || !auth.isAuthenticated() || !AuthRoles.isDevice(auth)) {
+            return ResponseEntity.status(401).build();
+        }
+        String deviceId = AuthRoles.deviceId(auth);
+        if (!rateLimiter.tryAcquire("device-pair:" + deviceId, 30, 60_000L)) {
+            return ResponseEntity.status(429).build();
+        }
+        devicePairingService.pair(deviceId, req.getPeerDeviceId().trim());
         return ResponseEntity.noContent().build();
     }
 }

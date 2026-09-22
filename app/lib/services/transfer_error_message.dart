@@ -1,16 +1,16 @@
 import 'package:dio/dio.dart';
 
 String _dioExceptionTypeLabel(DioExceptionType type) {
-  return switch (type) {
-    DioExceptionType.connectionTimeout => '连接超时',
-    DioExceptionType.sendTimeout => '发送超时',
-    DioExceptionType.receiveTimeout => '接收超时',
-    DioExceptionType.transformTimeout => '转换超时',
-    DioExceptionType.badCertificate => '证书错误',
-    DioExceptionType.badResponse => '响应错误',
-    DioExceptionType.cancel => '已取消',
-    DioExceptionType.connectionError => '连接错误',
-    DioExceptionType.unknown => '网络错误',
+  return switch (type.name) {
+    'connectionTimeout' => '连接超时',
+    'sendTimeout' => '发送超时',
+    'receiveTimeout' => '接收超时',
+    'badCertificate' => '证书错误',
+    'badResponse' => '响应错误',
+    'cancel' => '已取消',
+    'connectionError' => '连接错误',
+    'transformTimeout' => '转换超时',
+    _ => '网络错误',
   };
 }
 

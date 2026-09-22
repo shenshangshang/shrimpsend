@@ -15,7 +15,8 @@ class EnvSecrets {
   /// RevenueCat Google Play 公钥（`goog_` 前缀）。
   static const rcGoogleApiKeyProd = '';
 
-  /// 生产 API / WebSocket（国内 xiachuan 集群）。
+  /// 生产 API（国内 xiachuan 集群）。CN WebSocket 默认与 API 同域
+  /// (`wss://api…/wkws`)；`prodWsCn` 仅作非 `ws.` 子域的覆盖。
   static const prodApiCn = '';
   static const prodWsCn = '';
 

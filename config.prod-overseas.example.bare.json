@@ -25,5 +25,11 @@
   },
   "http_api": {
     "key": "CHANGE_ME_HTTP_API_KEY"
+  },
+  "http_stream": {
+    "enabled": true
+  },
+  "sse": {
+    "enabled": true
   }
 }

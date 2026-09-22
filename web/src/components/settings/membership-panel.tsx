@@ -41,6 +41,12 @@ import {
 import { navigatePaymentTab, openPaymentTabPlaceholder } from '@/lib/openPaymentTab';
 import { cn } from '@/lib/utils';
 import { Sparkles } from 'lucide-react';
+import { DeviceLicenseManager } from '@/components/licenses/DeviceLicenseManager';
+
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/contexts/AuthContext';
+import { OrderHistory } from './OrderHistory';
 
 const TAG = 'membership-panel';
 
@@ -78,9 +84,15 @@ function overseasTierRankFromMe(tierCode: string): number {
 
 export function MembershipPanel() {
   const { t, localeBcp47 } = useI18n();
+  const { accessToken, isReady } = useAuth();
+  const router = useRouter();
+  const zh = localeBcp47.startsWith('zh');
+  const [tab, setTab] = useState('plans');
   const [tiers, setTiers] = useState<MembershipTier[]>([]);
   const [me, setMe] = useState<MembershipMe | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [pendingOrderNo, setPendingOrderNo] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [billing, setBilling] = useState<'MONTHLY' | 'YEARLY'>('YEARLY');
@@ -88,13 +100,19 @@ export function MembershipPanel() {
   const [stripeBusy, setStripeBusy] = useState(false);
 
   useEffect(() => {
-    Promise.all([listMembershipTiers(), fetchMyMembership()])
+    if (!isReady) return;
+    let alive = true;
+    Promise.all([listMembershipTiers(), accessToken ? fetchMyMembership() : Promise.resolve(null)])
       .then(([tierList, my]) => {
+        if (!alive) return;
         setTiers(tierList);
         setMe(my);
+        setLoadFailed(false);
       })
-      .finally(() => setLoading(false));
-  }, []);
+      .catch(() => { if (alive) setLoadFailed(true); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [loadAttempt, accessToken, isReady]);
 
   const membershipViewTracked = useRef(false);
   useEffect(() => {
@@ -151,6 +169,7 @@ export function MembershipPanel() {
   };
 
   const onBuy = async (target: MembershipTier) => {
+    if (!accessToken) { router.push('/login?next=/settings/membership'); return; }
     let alipayTab: Window | null = null;
     try {
       setMessage(null);
@@ -323,6 +342,11 @@ export function MembershipPanel() {
 
   return (
     <div className="space-y-6">
+      <div role="tablist" aria-label={zh ? '会员管理' : 'Membership'} className="flex gap-6 border-b">
+        {[["plans", zh ? "会员套餐" : "Plans"], ["devices", zh ? "设备名额" : "Device slots"], ["orders", zh ? "订单记录" : "Orders"]].map(([id,label]) => <button type="button" role="tab" key={id} aria-selected={tab === id} onClick={() => setTab(id)} className={cn("min-h-11 border-b-2 px-1 text-sm", tab === id ? "border-primary text-primary" : "border-transparent text-muted-foreground")}>{label}</button>)}
+      </div>
+      {tab !== 'plans' && !accessToken ? <div className="space-y-4 py-12 text-center"><p className="text-sm text-muted-foreground">{zh ? '登录购买账号，管理设备名额与订单。' : 'Sign in to manage device slots and orders.'}</p><Link href="/login?next=/settings/membership" className="inline-flex min-h-11 items-center rounded-lg bg-primary px-5 text-sm text-primary-foreground">{zh ? '登录账号' : 'Sign in'}</Link></div> : tab === 'devices' ? <DeviceLicenseManager/> : tab === 'orders' ? <OrderHistory/> : <>
+
       {message && (
         <Alert>
           <AlertDescription>{formatUiMessage(message, t)}</AlertDescription>
@@ -340,7 +364,7 @@ export function MembershipPanel() {
           <CardTitle className="text-base">{t('membership.currentTitle')}</CardTitle>
         </CardHeader>
         <CardContent className="pt-0 text-sm text-muted-foreground">
-          {loading || !me ? (
+          {!accessToken ? <p>{zh ? '购买会员后生成设备授权码。其他设备无需登录账号。' : 'Purchase a plan to generate device authorization codes. Other devices do not need to sign in.'}</p> : loadFailed ? (<div role="alert" className="flex items-center justify-between gap-3"><span>{zh ? '会员信息暂时无法加载，请重试。' : 'Membership details are unavailable. Try again.'}</span><Button variant="outline" disabled={loading} onClick={() => { setLoading(true); setLoadAttempt(n => n + 1); }}>{zh ? '重试' : 'Retry'}</Button></div>) : loading || !me ? (
             t('membership.loading')
           ) : (
             <div className="space-y-2">
@@ -348,7 +372,6 @@ export function MembershipPanel() {
                 <Badge>{me.tierName}</Badge>
                 <span>{t('membership.deviceLimit', { count: me.deviceLimit })}</span>
               </div>
-              <div>{t('membership.devicesBound', { count: me.currentDeviceCount })}</div>
               {me.hostedUploadQuotaBytes != null && me.hostedUploadUsedBytes != null && (
                 <div className="text-xs">
                   Hosted upload: {(me.hostedUploadUsedBytes / (1024 * 1024)).toFixed(1)} /{' '}
@@ -490,7 +513,7 @@ export function MembershipPanel() {
                   className={cn(
                     'relative flex flex-col overflow-hidden border-border/80 transition-shadow',
                     isPro &&
-                      'border-primary/40 bg-gradient-to-b from-primary/[0.07] to-card shadow-lg ring-2 ring-primary/20',
+                      'border-primary bg-accent-soft/40',
                   )}
                 >
                   {isPro && (
@@ -539,7 +562,7 @@ export function MembershipPanel() {
                     <Button
                       disabled={disabled}
                       size="lg"
-                      className={cn('mt-auto w-full font-semibold', isPro && 'shadow-md')}
+                      className={cn('mt-auto w-full font-semibold', isPro && 'shadow-none')}
                       onClick={() => onBuy(tier)}
                     >
                       {primaryLabel}
@@ -606,6 +629,7 @@ export function MembershipPanel() {
             })}
         </div>
       )}
+      </>}
     </div>
   );
 }

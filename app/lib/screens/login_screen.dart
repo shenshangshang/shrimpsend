@@ -6,7 +6,6 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../api/api.dart';
 import '../device_id.dart';
 import '../logger.dart';
-import '../l10n/app_brand.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../preferences/country_cluster.dart';
 import '../preferences/locale_region_store.dart';
@@ -32,10 +31,9 @@ enum _AuthMode { login, register }
 
 enum _LoginMethod { password, code }
 
-class _LoginScreenState extends ConsumerState<LoginScreen>
-    with SingleTickerProviderStateMixin {
+class _LoginScreenState extends ConsumerState<LoginScreen> {
   _AuthMode _authMode = _AuthMode.login;
-  _LoginMethod _loginMethod = _LoginMethod.password;
+  _LoginMethod _loginMethod = _LoginMethod.code;
   bool _obscurePassword = true;
   final _email = TextEditingController();
   final _password = TextEditingController();
@@ -47,25 +45,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   int codeCooldown = 0;
   Timer? _cooldownTimer;
 
-  late final AnimationController _animCtrl;
-  late final Animation<double> _fadeAnim;
-
   bool get _isRegister => _authMode == _AuthMode.register;
 
   @override
   void initState() {
     super.initState();
-    _animCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 600),
-    );
-    _fadeAnim = CurvedAnimation(parent: _animCtrl, curve: Curves.easeOut);
-    _animCtrl.forward();
   }
 
   @override
   void dispose() {
-    _animCtrl.dispose();
     _cooldownTimer?.cancel();
     _email.dispose();
     _password.dispose();
@@ -247,253 +235,98 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     final theme = Theme.of(context);
     final colors = context.appColors;
     final scheme = theme.colorScheme;
-    final isDark = theme.brightness == Brightness.dark;
     final l10n = AppLocalizations.of(context);
-    final localeStore = LocaleRegionStoreScope.maybeOf(context);
-
+    final zh = Localizations.localeOf(context).languageCode == 'zh';
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
         automaticallyImplyLeading: widget.onOfflineMode == null,
-        leading: widget.onOfflineMode != null
-            ? null
-            : IconButton(
-                icon: const Icon(LucideIcons.arrowLeft),
-                onPressed: () {
-                  final nav = Navigator.of(context);
-                  if (nav.canPop()) {
-                    nav.pop();
-                  } else {
-                    nav.pushReplacementNamed('/');
-                  }
-                },
-              ),
-        titleSpacing: AppSpacing.sm,
-        actionsPadding: const EdgeInsets.only(right: AppSpacing.md),
-        title: Padding(
-          padding: EdgeInsets.only(
-            left: widget.onOfflineMode != null ? AppSpacing.lg : 0,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              localeStore == null
-                  ? Text(
-                      l10n.brandNameMainlandChina,
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -0.5,
-                      ),
-                    )
-                  : ValueListenableBuilder<LocaleRegionState>(
-                      valueListenable: localeStore.notifier,
-                      builder: (context, lr, _) {
-                        return Text(
-                          brandDisplayName(context, lr.serviceRegion),
-                          style: theme.textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: -0.5,
-                          ),
-                        );
-                      },
-                    ),
-              Text(
-                _isRegister
-                    ? l10n.loginTitleSubtitleRegister
-                    : l10n.loginTitleSubtitleLogin,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: colors.textSecondary,
-                  fontWeight: FontWeight.normal,
-                ),
-              ),
-            ],
-          ),
+        title: Text(
+          zh ? '返回虾传' : 'ShrimpSend',
+          style: const TextStyle(fontSize: 14),
         ),
         actions: [_buildCountryRegionAction(context, theme, colors, l10n)],
       ),
-      extendBodyBehindAppBar: true,
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          _buildLoginBackground(scheme, colors, isDark),
-          SafeArea(
-            child: LayoutBuilder(
-              builder: (context, viewport) {
-                return FadeTransition(
-                  opacity: _fadeAnim,
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.lg,
-                      vertical: AppSpacing.lg,
-                    ),
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(
-                        minHeight: viewport.maxHeight,
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, viewport) => SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 40),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 400),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Image.asset(
+                        'assets/logo.png',
+                        width: 42,
+                        height: 42,
                       ),
-                      child: Center(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(
-                            maxWidth: AppSize.formMaxWidth,
-                          ),
-                          child: Column(
-                            mainAxisAlignment: widget.onOfflineMode != null
-                                ? MainAxisAlignment.start
-                                : MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              _buildLogoHero(),
-                              const SizedBox(height: AppSpacing.lg),
-                              _buildModeSegment(theme, colors, l10n),
-                              const SizedBox(height: AppSpacing.lg),
-                              _buildFormCard(
-                                theme,
-                                colors,
-                                scheme,
-                                l10n,
-                                isDark,
-                              ),
-                              const SizedBox(height: AppSpacing.xxs),
-                              const LegalDocLinksRow(compact: true),
-                            ],
-                          ),
+                    ),
+                    const SizedBox(height: 24),
+                    Text(
+                      _isRegister
+                          ? (zh ? '创建账号' : 'Create an account')
+                          : (zh ? '登录虾传' : 'Sign in to ShrimpSend'),
+                      style: const TextStyle(
+                        fontSize: 26,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      zh
+                          ? '购买会员、分配设备名额。日常传输无需登录。'
+                          : 'Purchase a membership and manage device slots. Everyday transfers need no account.',
+                      style: TextStyle(
+                        fontSize: 14,
+                        height: 1.7,
+                        color: colors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 28),
+                    _buildFormCard(
+                      theme,
+                      colors,
+                      scheme,
+                      l10n,
+                      theme.brightness == Brightness.dark,
+                    ),
+                    TextButton(
+                      onPressed: loading
+                          ? null
+                          : () => setState(() {
+                              _authMode = _isRegister
+                                  ? _AuthMode.login
+                                  : _AuthMode.register;
+                              _loginMethod = _LoginMethod.code;
+                              error = null;
+                            }),
+                      child: Text(
+                        _isRegister
+                            ? (zh
+                                  ? '已有账号？登录'
+                                  : 'Already have an account? Sign in')
+                            : (zh ? '没有账号？注册' : 'New here? Create an account'),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const LegalDocLinksRow(compact: true),
+                    if (widget.onOfflineMode == null)
+                      TextButton(
+                        onPressed: () => Navigator.of(
+                          context,
+                        ).popUntil((route) => route.isFirst),
+                        child: Text(
+                          zh ? '继续免登录使用' : 'Continue without signing in',
                         ),
                       ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBackgroundOrbs(ColorScheme scheme, bool isDark) {
-    final orbAlpha = isDark ? 0.12 : 0.18;
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        Positioned(
-          top: -100,
-          right: -80,
-          child: Container(
-            width: 280,
-            height: 280,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: RadialGradient(
-                colors: [
-                  scheme.primary.withValues(alpha: orbAlpha),
-                  scheme.primary.withValues(alpha: 0.04),
-                  scheme.primary.withValues(alpha: 0),
-                ],
-                stops: const [0.0, 0.5, 1.0],
+                  ],
+                ),
               ),
             ),
           ),
-        ),
-        Positioned(
-          bottom: -120,
-          left: -100,
-          child: Container(
-            width: 320,
-            height: 320,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: RadialGradient(
-                colors: [
-                  scheme.tertiary.withValues(alpha: orbAlpha * 0.85),
-                  scheme.tertiary.withValues(alpha: 0.03),
-                  scheme.tertiary.withValues(alpha: 0),
-                ],
-                stops: const [0.0, 0.45, 1.0],
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildLoginBackground(
-    ColorScheme scheme,
-    AppThemeColors colors,
-    bool isDark,
-  ) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        _buildBackgroundOrbs(scheme, isDark),
-        Positioned.fill(
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  colors.background.withValues(alpha: isDark ? 0.62 : 0.70),
-                  Colors.transparent,
-                  colors.background.withValues(alpha: isDark ? 0.52 : 0.62),
-                ],
-                stops: const [0.0, 0.48, 1.0],
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildLogoHero() {
-    return Align(
-      alignment: Alignment.center,
-      child: ClipRRect(
-        borderRadius: AppRadius.medium,
-        child: Image.asset(
-          'assets/logo.png',
-          width: 96,
-          height: 96,
-          fit: BoxFit.cover,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildModeSegment(
-    ThemeData theme,
-    AppThemeColors colors,
-    AppLocalizations l10n,
-  ) {
-    return Align(
-      alignment: Alignment.center,
-      child: IntrinsicWidth(
-        child: SegmentedButton<_AuthMode>(
-          showSelectedIcon: false,
-          segments: [
-            ButtonSegment<_AuthMode>(
-              value: _AuthMode.login,
-              label: Text(l10n.loginTabLogin),
-              icon: Icon(LucideIcons.logIn, size: 18),
-            ),
-            ButtonSegment<_AuthMode>(
-              value: _AuthMode.register,
-              label: Text(l10n.loginTabRegister),
-              icon: Icon(LucideIcons.userPlus, size: 18),
-            ),
-          ],
-          selected: {_authMode},
-          onSelectionChanged: (Set<_AuthMode> selected) {
-            setState(() {
-              _authMode = selected.first;
-              error = null;
-              if (_authMode == _AuthMode.login) {
-                _loginMethod = _LoginMethod.password;
-              }
-            });
-          },
         ),
       ),
     );
@@ -507,35 +340,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     bool isDark,
   ) {
     return Card(
-      elevation: isDark ? 1 : 2,
-      shadowColor: scheme.shadow.withValues(alpha: isDark ? 0.42 : 0.14),
-      surfaceTintColor: scheme.surfaceTint.withValues(
-        alpha: isDark ? 0.14 : 0.08,
-      ),
-      shape: RoundedRectangleBorder(
-        borderRadius: AppRadius.large,
-        side: BorderSide(
-          color: colors.borderStrong.withValues(alpha: isDark ? 0.5 : 0.85),
-        ),
-      ),
+      margin: EdgeInsets.zero,
+      elevation: 0,
+      color: Colors.transparent,
+      surfaceTintColor: Colors.transparent,
+      shape: const RoundedRectangleBorder(),
       child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.lg,
-          vertical: AppSpacing.xl,
-        ),
+        padding: EdgeInsets.zero,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              _isRegister ? l10n.loginTabRegister : l10n.loginTabLogin,
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w700,
-                color: colors.textPrimary,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: AppSpacing.md),
             if (_authMode == _AuthMode.login) ...[
               Align(
                 alignment: Alignment.center,
@@ -1124,7 +939,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       if (!mounted || !context.mounted) {
         return;
       }
-      Navigator.of(context).pushNamedAndRemoveUntil('/', (_) => false);
+      Navigator.of(context, rootNavigator: true).pushNamedAndRemoveUntil('/', (_) => false);
       return;
     }
 

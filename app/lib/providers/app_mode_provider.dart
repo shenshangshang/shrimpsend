@@ -1,8 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'auth_provider.dart';
-import 'auth_session_provider.dart';
-import '../services/auth_session_controller.dart';
+import 'realtime_hub_provider.dart';
 
 enum AppMode { online, offline }
 
@@ -19,11 +18,13 @@ final isOnlineModeProvider = Provider<bool>((ref) {
   return ref.watch(appModeProvider) == AppMode.online;
 });
 
-/// 综合未登录、验证中、会话过期、服务器不可达时的离线 fallback（LAN 仍可用）。
+/// Device signaling is independent of billing login. LAN remains usable offline.
+final deviceConnectionProvider = StreamProvider<bool>((ref) async* {
+  final hub = ref.watch(realtimeHubProvider);
+  yield hub.isConnected;
+  yield* hub.connectedChanges;
+});
 final effectiveOfflineModeProvider = Provider<bool>((ref) {
-  final phase = ref.watch(authSessionPhaseProvider);
-  return phase == AuthSessionPhase.unauthenticated ||
-      phase == AuthSessionPhase.validating ||
-      phase == AuthSessionPhase.sessionExpired ||
-      phase == AuthSessionPhase.networkUnavailable;
+  return !(ref.watch(deviceConnectionProvider).valueOrNull ??
+      ref.read(realtimeHubProvider).isConnected);
 });

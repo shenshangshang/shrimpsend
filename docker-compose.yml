@@ -1,31 +1,59 @@
-version: '3.8'
+# Server stack: MySQL + WuKongIM + Spring Boot.
+# Web stays on the host (npm run dev / Next standalone).
+#
+# Local:  ./scripts/start-dev.sh
+# Prod:   ./scripts/deploy.sh
+# Manual: docker compose up -d
 
 services:
   mysql:
     image: mysql:8.0
     ports:
-      - "3306:3306"
+      # Host 3306 is often taken by local MySQL / other compose stacks.
+      - "127.0.0.1:3307:3306"
     environment:
-      MYSQL_ROOT_PASSWORD: root
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-changeme}
       MYSQL_DATABASE: ultrasend
-      MYSQL_USER: ultrasend
-      MYSQL_PASSWORD: ultrasend
+      MYSQL_USER: ${MYSQL_USER:-ultrasend}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-changeme}
     volumes:
       - mysql_data:/var/lib/mysql
-    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+      - ./docker/mysql/init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh:ro
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot"]
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$$MYSQL_ROOT_PASSWORD || exit 1"]
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 20
+    restart: unless-stopped
 
-  centrifugo:
-    image: centrifugo/centrifugo:v5
-    ports:
-      - "8000:8000"
+  wukongim:
+    image: ${WUKONGIM_IMAGE:-registry.cn-shanghai.aliyuncs.com/wukongim/wukongim:v2}
+    environment:
+      - WK_CLUSTER_NODEID=1001
+      - WK_MODE=release
+      - WK_TOKENAUTHON=true
+      - WK_MANAGERTOKEN=${WUKONGIM_MANAGER_TOKEN:-dev-wukongim-manager-token}
+      - WK_EXTERNAL_IP=${WUKONGIM_EXTERNAL_IP:-127.0.0.1}
+      - WK_WEBHOOK_HTTPADDR=${WUKONGIM_WEBHOOK_HTTPADDR:-http://backend:9000/api/wukongim/webhook}
+      - WK_WEBHOOK_BEFORESENDON=true
+      - WK_WEBHOOK_BEFORESEND_HTTPADDR=${WUKONGIM_BEFORE_SEND_URL:-http://backend:9000/api/wukongim/before-send}
+      - WK_WEBHOOK_BEFORESEND_ONTIMEOUT=deny
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q -Y off -O /dev/null --header=\"token:$$WK_MANAGERTOKEN\" http://127.0.0.1:5001/health || exit 1",
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+    restart: unless-stopped
     volumes:
-      - ./config.docker.json:/centrifugo/config.json:ro
-    command: ["centrifugo", "-c", "/centrifugo/config.json"]
+      - wukongim_data:/root/wukongim
+    ports:
+      - "127.0.0.1:5001:5001"
+      - "5200:5200"
 
   backend:
     build:
@@ -33,17 +61,31 @@ services:
       dockerfile: Dockerfile
     ports:
       - "9000:9000"
+    env_file:
+      - ./backend/.env
     environment:
-      CENTRIFUGO_URL: http://centrifugo:8000
-      CENTRIFUGO_HTTP_API_KEY: ${CENTRIFUGO_HTTP_API_KEY:-dev-centrifugo-http-api-key}
-      CENTRIFUGO_TOKEN_HMAC_SECRET: ${CENTRIFUGO_TOKEN_HMAC_SECRET:-dev-centrifugo-hmac-secret-change-me}
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ultrasend?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=UTC
-      SPRING_DATASOURCE_USERNAME: ultrasend
-      SPRING_DATASOURCE_PASSWORD: ultrasend
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-}
+      SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL:-jdbc:mysql://mysql:3306/ultrasend?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true}
+      SPRING_DATASOURCE_USERNAME: ${MYSQL_USER:-ultrasend}
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD:-changeme}
+      REALTIME_BUS: ${REALTIME_BUS:-wukongim}
+      WUKONGIM_API_URL: http://wukongim:5001
+      WUKONGIM_WS_PUBLIC_URL: ${WUKONGIM_WS_PUBLIC_URL:-ws://127.0.0.1:5200}
+      WUKONGIM_MANAGER_TOKEN: ${WUKONGIM_MANAGER_TOKEN:-dev-wukongim-manager-token}
+      WUKONGIM_SYSTEM_UID: ${WUKONGIM_SYSTEM_UID:-ultrasend}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9000/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 40s
+    restart: unless-stopped
     depends_on:
       mysql:
         condition: service_healthy
-      centrifugo:
-        condition: service_started
+      wukongim:
+        condition: service_healthy
+
 volumes:
   mysql_data:
+  wukongim_data:

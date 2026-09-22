@@ -3,7 +3,10 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 
 import '../utils/file_utils.dart';
+import '../utils/safe_filename.dart';
+import '../utils/receive_destination.dart';
 import 'desktop_trash.dart';
+import 'android_receive_storage.dart';
 import 'receive_dir_resolver.dart';
 import 'visible_export_target.dart';
 
@@ -46,30 +49,31 @@ class ReceivedFileInfo {
 
 /// Storage layout:
 ///
-/// **Cache (staging):** `<cacheRoot>/<messageId>/<originalName>`
-/// **Visible export:** flat `<visibleRoot>/<originalName>` (async copy)
+/// Receives use the selected destination directly. The separate cache is only
+/// for outgoing clipboard/share imports and legacy files.
 class FileStore {
   static ReceiveDirResolution? _cachedResolution;
 
-  /// App cache staging root for in-flight / indexed receives.
-  static Future<String> getCacheDir() async {
-    final resolution = await getReceiveDirResolution();
-    return resolution.path;
-  }
+  static Future<String> getCacheDir() => ReceiveDirResolver.resolveCacheDir();
 
-  /// Alias for [getCacheDir] — all receives write to cache first.
-  static Future<String> getReceiveDir() => getCacheDir();
+  static Future<String> getReceiveDir() async =>
+      (await getReceiveDirResolution()).path;
 
   static Future<ReceiveDirResolution> getReceiveDirResolution() async {
     if (_cachedResolution != null) return _cachedResolution!;
 
-    final cachePath = await ReceiveDirResolver.resolveCacheDir();
     final visible = await ReceiveDirResolver.resolveVisibleExportTarget();
+    final receivePath = visible.posixPath;
+    // Document-provider destinations still need their native export adapter.
+    final root = receivePath ?? await ReceiveDirResolver.resolveCacheDir();
+    await ReceiveDirResolver.assertWritableDirectory(root);
     final isCustom = visible.isCustom;
 
     _cachedResolution = ReceiveDirResolution(
-      path: cachePath,
-      kind: ReceiveStorageKind.appCache,
+      path: root,
+      kind: receivePath == null
+          ? ReceiveStorageKind.appCache
+          : ReceiveStorageKind.publicExternal,
       isCustom: isCustom,
       customSafTreeUri: visible.safTreeUri,
       customSafDisplayName: visible.displayName,
@@ -175,12 +179,11 @@ class FileStore {
     required String sourcePath,
     required String directoryPath,
     required String fileName,
-  }) =>
-      exportCopyVerified(
-        sourcePath: sourcePath,
-        directoryPath: directoryPath,
-        fileName: fileName,
-      );
+  }) => exportCopyVerified(
+    sourcePath: sourcePath,
+    directoryPath: directoryPath,
+    fileName: fileName,
+  );
 
   static Future<String> reserveCacheDir(String messageId) async {
     final root = await getCacheDir();
@@ -215,28 +218,26 @@ class FileStore {
     return resolveUniquePath(dir, originalName);
   }
 
-  /// Back-compat alias — writes to cache.
+  /// Flat destination path; receives never enter the outgoing cache.
   static Future<String> buildReceivePath(
     String messageId,
     String originalName,
-  ) =>
-      buildCachePath(messageId, originalName);
+  ) async =>
+      await AndroidReceiveStorage.prepare('receive:$messageId', originalName) ??
+      reserveReceiveDestination(await getReceiveDir(), originalName);
 
   static String buildReceivePathSync(
     String root,
     String messageId,
     String originalName,
-  ) =>
-      buildCachePathSync(root, messageId, originalName);
+  ) => reserveReceiveDestination(root, originalName);
 
-  static Future<String> reserveReceiveDir(String messageId) =>
-      reserveCacheDir(messageId);
+  static Future<String> reserveReceiveDir(String messageId) => getReceiveDir();
 
-  static String reserveReceiveDirSync(String root, String messageId) =>
-      reserveCacheDirSync(root, messageId);
+  static String reserveReceiveDirSync(String root, String messageId) => root;
 
   static String resolveUniquePath(String dir, String originalName) {
-    final base = originalName.isEmpty ? 'received' : originalName;
+    final base = sanitizeFileNameForLocalStorage(originalName);
     final candidate = p.join(dir, base);
     if (!File(candidate).existsSync()) return candidate;
     final ext = p.extension(base);
@@ -326,7 +327,10 @@ class FileStore {
     }
     final parent = file.parent;
     try {
-      if (await parent.exists()) {
+      // Only app-owned cache folders may be removed. Never remove Downloads
+      // or a user's selected destination when its last file is deleted.
+      if (isPathUnderDirectory(parent.path, await getCacheDir()) &&
+          await parent.exists()) {
         final empty = await parent.list().isEmpty;
         if (empty) {
           await parent.delete();

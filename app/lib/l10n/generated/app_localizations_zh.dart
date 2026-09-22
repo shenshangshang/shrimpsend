@@ -211,7 +211,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsMembershipCenter => '会员中心';
 
   @override
-  String get settingsMembershipSubtitleUpgrade => '买断会员，提升可绑定设备数';
+  String get settingsMembershipSubtitleUpgrade => '购买名额，设备免登录授权';
 
   @override
   String settingsMembershipTierName(String tierName) {
@@ -224,13 +224,13 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get settingsNavMyDevices => '我的设备';
+  String get settingsNavMyDevices => '账号登录会话';
 
   @override
   String get settingsNavMyDevicesSubtitleOffline => '登录后管理已绑定设备';
 
   @override
-  String get settingsNavMyDevicesSubtitleOnline => '已绑定的设备';
+  String get settingsNavMyDevicesSubtitleOnline => '管理此账号的登录会话';
 
   @override
   String get settingsNavS3 => 'S3';
@@ -657,7 +657,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsSavePathRestoreFailedToast => '恢复默认路径失败';
 
   @override
-  String get settingsSavePathSafSyncHint => '接收完成后自动保存到此文件夹';
+  String get settingsSavePathSafSyncHint => '接收的文件将保存到此文件夹';
 
   @override
   String get settingsSavePathSafMirrorLabel => '保存文件夹';
@@ -1712,12 +1712,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String membershipTierSummary(String tier, int limit) {
-    return '$tier · 可绑定 $limit 台设备';
+    return '$tier · 可授权 $limit 台设备';
   }
 
   @override
   String membershipBoundDevices(int count) {
-    return '当前已绑定 $count 台';
+    return '当前已授权 $count 台';
   }
 
   @override
@@ -1821,13 +1821,16 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String membershipFeatureDevices(int count) {
-    return '最高 $count 台设备绑定';
+    return '$count 个设备授权名额';
   }
 
   @override
   String membershipFeatureUploadHosted(int gib) {
     return '内置云传输 $gib GiB / 月（上传计量）';
   }
+
+  @override
+  String get membershipFeatureAuthorizedSignaling => '授权设备正常使用不限信令次数';
 
   @override
   String get membershipFeatureWebDav => 'WebDAV 远程存储（不限连接数）';
@@ -2096,7 +2099,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get fileSendS3Intro => '通过 S3 云端中转发送到所有已登录设备，适用于跨网络传输。';
+  String get fileSendS3Intro => '通过 S3 中转发送到选中的已配对设备，适用于跨网络传输。';
 
   @override
   String get fileSendS3ConfigurePrompt => '请先配置 S3 以使用云端发送。';
@@ -2180,7 +2183,8 @@ class AppLocalizationsZh extends AppLocalizations {
   String get devicePanelEmptyNoOtherDevices => '暂无其他设备';
 
   @override
-  String get devicePanelEmptyHintOfflineLan => '确保其他设备在同一局域网内即可开始传输';
+  String get devicePanelEmptyHintOfflineLan =>
+      '扫码或展示配对码即可连接未登录的手机或网页；同一局域网内也可直接互传';
 
   @override
   String get devicePanelEmptyHintOnlineAccount => '在其他设备上登录同一账号即可开始传输';
@@ -2423,7 +2427,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get connectionDiagHelpHttpSignalingBody =>
-      '通过云端消息（Centrifugo）通知对端自检其 HTTP 服务，并将结果回传。\n\n用于确认：即使尚未发现对端局域网地址，只要双方在线，对端 HTTP 服务是否正常，并可能获取或更新其局域网地址。';
+      '通过云端消息通知对端自检其 HTTP 服务，并将结果回传。\n\n用于确认：即使尚未发现对端局域网地址，只要双方在线，对端 HTTP 服务是否正常，并可能获取或更新其局域网地址。';
 
   @override
   String get connectionDiagHelpHttpPullTitle => 'HTTP 反向拉取';
@@ -2547,6 +2551,34 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chatTransferWaitingPeerShort => '等待接收方连接…';
 
   @override
+  String get chatTransferPhaseTryingHttp => '正在尝试局域网 HTTP…';
+
+  @override
+  String get chatTransferPhaseWaitingPull => '正在等待对方从本机拉取…';
+
+  @override
+  String get chatTransferPhaseConnectingWebrtc => '正在连接 WebRTC…';
+
+  @override
+  String get chatTransferPhaseConnectingWebrtcFallback => '局域网未通，正在连接 WebRTC…';
+
+  @override
+  String get chatTransferPhaseTryingS3 => '正在上传到云存储…';
+
+  @override
+  String get chatTransferPhaseTryingS3Fallback => '直连未通，正在改用云存储…';
+
+  @override
+  String chatTransferSendingVia(String channel) {
+    return '$channel 发送中';
+  }
+
+  @override
+  String chatTransferReceivingVia(String channel) {
+    return '$channel 接收中';
+  }
+
+  @override
   String get chatTransferCancelledBare => '已取消';
 
   @override
@@ -2599,8 +2631,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chatScreenRemovePeerTitle => '移除设备';
 
   @override
-  String get chatScreenRemovePeerBody =>
-      '移除后，该设备上的账号将退出登录；若正在使用会立即失效，若未启动则下次打开应用时需重新登录。';
+  String get chatScreenRemovePeerBody => '解除与这台设备的配对。本地文件和会员授权会保留。';
 
   @override
   String get chatScreenConfirmRemoveLabel => '移除';
@@ -2662,7 +2693,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chatScreenSubtitleRemoveThisDevice => '从账号移除本机并退出登录';
 
   @override
-  String get chatScreenSubtitleRemovePeer => '从账号移除当前会话中的设备';
+  String get chatScreenSubtitleRemovePeer => '解除设备配对';
 
   @override
   String get chatScreenPendingFilesMissing => '部分待发文件已不存在，已自动移除';
@@ -2739,6 +2770,45 @@ class AppLocalizationsZh extends AppLocalizations {
   String chatScreenSendFailedWithError(String error) {
     return '发送失败: $error';
   }
+
+  @override
+  String get deviceSendQuotaHint => '本机免费额度';
+
+  @override
+  String deviceSendQuotaMessage(int used, int limit) {
+    return '消息 $used/$limit';
+  }
+
+  @override
+  String deviceSendQuotaSignaling(int used, int limit) {
+    return '信令 $used/$limit';
+  }
+
+  @override
+  String get deviceSendQuotaTitle => '发送过于频繁';
+
+  @override
+  String deviceSendQuotaMessageBody(int used, int limit, int seconds) {
+    return '本分钟文字额度已用完（$used/$limit）。请 $seconds 秒后再试。';
+  }
+
+  @override
+  String deviceSendQuotaSignalingBody(int used, int limit, int seconds) {
+    return '本分钟传输信令额度已用完（$used/$limit）。请 $seconds 秒后再试，或稍后再发文件。';
+  }
+
+  @override
+  String deviceSendQuotaInfoBody(
+    int messageUsed,
+    int messageLimit,
+    int signalingUsed,
+    int signalingLimit,
+  ) {
+    return '当前消息 $messageUsed/$messageLimit，新建连接 $signalingUsed/$signalingLimit。授权本机后，正常使用不扣商业额度。';
+  }
+
+  @override
+  String get deviceSendQuotaGotIt => '知道了';
 
   @override
   String get chatScreenFileMissing => '文件不存在，可能已被删除';
@@ -2981,7 +3051,51 @@ class AppLocalizationsZh extends AppLocalizations {
   String get qrScannerAlignQr => '将二维码对准框内扫描';
 
   @override
-  String get qrScannerUnrecognized => '请扫描虾传登录二维码';
+  String get qrScannerUnrecognized => '请扫描虾传登录或配对二维码';
+
+  @override
+  String get qrScannerPairSuccess => '设备已配对，可以发送文件';
+
+  @override
+  String qrScannerPairFailed(String error) {
+    return '无法配对该设备: $error';
+  }
+
+  @override
+  String get qrScannerLoginRequiresAccount => '扫码登录需要先在本机登录账号';
+
+  @override
+  String get scanToPair => '扫码配对';
+
+  @override
+  String get showPairQr => '显示配对码';
+
+  @override
+  String get pairQrHint => '让对方用虾传 App 或网页扫描此二维码，也可粘贴设备 ID。';
+
+  @override
+  String get copyDeviceId => '复制设备 ID';
+
+  @override
+  String get copiedDeviceId => '已复制设备 ID';
+
+  @override
+  String get pasteDeviceIdHint => '粘贴设备 ID 或配对链接';
+
+  @override
+  String get pasteDeviceIdAction => '添加';
+
+  @override
+  String get peerAdded => '已添加设备';
+
+  @override
+  String get pairSelf => '不能添加本机';
+
+  @override
+  String get pairInvalid => '设备 ID 无效';
+
+  @override
+  String get pairSessionUnavailable => '暂时无法连接服务器，请稍后重试';
 
   @override
   String get qrScannerTorchOn => '打开闪光灯';
@@ -3441,4 +3555,52 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get webdavLocalDownloaded => '已下载';
+
+  @override
+  String get transferWelcomeTitle => '让文件自由来往';
+
+  @override
+  String get transferWelcomeDescription => '不必登录，连接另一台设备就能发送文件、照片或文字。';
+
+  @override
+  String get transferWelcomeConnect => '连接你的第一台设备';
+
+  @override
+  String get transferWelcomeFooter => '优先设备直传 · 中断后可继续';
+
+  @override
+  String get conversationAvailable => '可传输';
+
+  @override
+  String get conversationConnect => '连接';
+
+  @override
+  String get conversationConnectDevice => '连接设备';
+
+  @override
+  String get conversationComposer => '输入文字，或把文件拖到这里';
+
+  @override
+  String get conversationNewline => 'Shift + 回车换行';
+
+  @override
+  String get conversationWelcomeTitle => '选一台设备，开始互传';
+
+  @override
+  String get conversationWelcomeHint => '文件和文字，都在一个会话里。';
+
+  @override
+  String get conversationSaved => '已保存到接收文件夹';
+
+  @override
+  String get conversationSent => '已发送';
+
+  @override
+  String get conversationSearch => '搜索消息';
+
+  @override
+  String get conversationFiles => '文件管理';
+
+  @override
+  String get conversationFile => '文件';
 }

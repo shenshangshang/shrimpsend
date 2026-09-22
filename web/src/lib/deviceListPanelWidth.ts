@@ -2,13 +2,13 @@
 export const DEVICE_LIST_WIDE_BREAKPOINT = 768;
 
 /** Sidebar width at the minimum wide viewport (768px). */
-export const DEVICE_LIST_PANEL_MIN_WIDTH = 240;
+export const DEVICE_LIST_PANEL_MIN_WIDTH = 220;
 
 /** Sidebar width cap on very large screens. */
-export const DEVICE_LIST_PANEL_MAX_WIDTH = 420;
+export const DEVICE_LIST_PANEL_MAX_WIDTH = 264;
 
 /** Fraction of viewport width used for the device list on wide layouts. */
-export const DEVICE_LIST_PANEL_WIDTH_RATIO = 0.28;
+export const DEVICE_LIST_PANEL_WIDTH_RATIO = 0.205;
 
 /**
  * Resolve device-list sidebar width from viewport width.

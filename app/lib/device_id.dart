@@ -1,56 +1,39 @@
-import 'dart:convert';
+import 'dart:async';
 import 'dart:io';
 
-import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:device_info_plus/device_info_plus.dart';
-import 'package:mobile_device_identifier/mobile_device_identifier.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:uuid/uuid.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
-const _keyDeviceId = 'ultrasend_device_id';
+import 'utils/runtime_platform.dart';
+import 'services/device_identity_store.dart';
+import 'services/platform_device_identity.dart';
+
 const _keyDeviceName = 'ultrasend_device_name';
+const pendingDeviceNameKey = 'shrimpsend_pending_device_name';
+final deviceNameChanges = StreamController<String>.broadcast();
 
 String get _platformPrefix {
-  if (Platform.isAndroid) return 'android';
-  if (Platform.isIOS) return 'ios';
-  if (Platform.isWindows) return 'windows';
-  if (Platform.isLinux) return 'linux';
-  if (Platform.isMacOS) return 'macos';
-  return 'unknown';
+  if (kIsWeb) return 'web';
+  return RuntimePlatform.osName;
 }
 
-Future<String?> _getPcDeviceId(DeviceInfoPlugin info) async {
-  if (Platform.isMacOS) {
-    final mac = await info.macOsInfo;
-    return mac.systemGUID;
-  } else if (Platform.isWindows) {
-    final win = await info.windowsInfo;
-    return win.deviceId;
-  } else if (Platform.isLinux) {
-    final linux = await info.linuxInfo;
-    return linux.machineId;
-  }
-  return null;
-}
+Future<DeviceIdentityStore>? _identityStoreFuture;
+Future<DeviceIdentityStore> getDeviceIdentityStore() =>
+    _identityStoreFuture ??= _createIdentityStore();
 
-Future<String> _generateDeviceId() async {
-  final prefix = _platformPrefix;
-  try {
-    String? nativeId;
-    if (Platform.isAndroid || Platform.isIOS) {
-      nativeId = await MobileDeviceIdentifier().getDeviceId();
-    } else {
-      nativeId = await _getPcDeviceId(DeviceInfoPlugin());
-    }
-    if (nativeId != null && nativeId.isNotEmpty) {
-      final hash = md5.convert(utf8.encode(nativeId)).toString();
-      return '${prefix}_$hash';
-    }
-  } catch (_) {
-    // fall through to UUID fallback
-  }
-  return '${prefix}_uuid_${const Uuid().v4()}';
+Future<DeviceIdentityStore> _createIdentityStore() async {
+  final package = await PackageInfo.fromPlatform();
+  const namespace = String.fromEnvironment('DEVICE_ID_NAMESPACE');
+  final scope = '${package.packageName}:$namespace';
+  return DeviceIdentityStore(
+    platform: _platformPrefix,
+    scope: scope,
+    namespace: namespace,
+    vault: SecureDeviceIdentityVault(scope),
+    readPlatformIdentifier: readPlatformDeviceIdentifier,
+  );
 }
 
 Future<String> _generateDeviceName() async {
@@ -76,6 +59,17 @@ Future<String> _generateDeviceName() async {
     } else if (Platform.isLinux) {
       final linux = await info.linuxInfo;
       return linux.prettyName;
+    } else if (RuntimePlatform.isOhos) {
+      try {
+        final data = (await info.deviceInfo).data;
+        final brand = '${data['brand'] ?? data['manufacture'] ?? ''}'.trim();
+        final model =
+            '${data['marketName'] ?? data['productModel'] ?? data['model'] ?? ''}'
+                .trim();
+        final name = '$brand $model'.trim();
+        if (name.isNotEmpty) return name;
+      } catch (_) {}
+      return 'HarmonyOS';
     }
   } catch (_) {
     // fall through to default
@@ -83,23 +77,24 @@ Future<String> _generateDeviceName() async {
   return _platformPrefix;
 }
 
-bool _isLegacyDeviceId(String id) {
-  return id.startsWith('flutter_');
-}
-
 bool _isLegacyDeviceName(String name) {
   return name == 'Flutter';
 }
 
-Future<String> getOrCreateDeviceId() async {
-  final prefs = await SharedPreferences.getInstance();
-  var id = prefs.getString(_keyDeviceId);
-  if (id == null || id.isEmpty || _isLegacyDeviceId(id)) {
-    id = await _generateDeviceId();
-    await prefs.setString(_keyDeviceId, id);
+Future<String> getOrCreateDeviceSecret() async {
+  final store = await getDeviceIdentityStore();
+  if (store.status.value == DeviceIdentityStatus.restartRequired) {
+    throw const DeviceIdentityException('restart_required');
   }
-  return id;
+  return (await store.load()).secret;
 }
+
+Future<String>? _deviceIdFuture;
+Future<String> getOrCreateDeviceId() => _deviceIdFuture ??=
+    getDeviceIdentityStore().then((store) => store.getId()).catchError((Object error) {
+      _deviceIdFuture = null;
+      throw error;
+    });
 
 Future<String> getDeviceName() async {
   final prefs = await SharedPreferences.getInstance();
@@ -113,7 +108,14 @@ Future<String> getDeviceName() async {
 
 Future<void> setDeviceName(String name) async {
   final prefs = await SharedPreferences.getInstance();
-  await prefs.setString(_keyDeviceName, name);
+  final value = name.trim();
+  if (value.isEmpty ||
+      value.length > 80 ||
+      RegExp(r'[\x00-\x1f\x7f-\x9f]').hasMatch(value))
+    throw ArgumentError('Invalid device name');
+  await prefs.setString(_keyDeviceName, value);
+  await prefs.setString(pendingDeviceNameKey, value);
+  deviceNameChanges.add(value);
 }
 
 /// 登录/注册 API 的 `platform` 字段；Web 多台浏览器在后端计 1 台设备。

@@ -1,3 +1,4 @@
+import '../ui/product_scaffold.dart';
 import 'package:feedmatter_flutter_sdk/feedmatter_flutter_sdk.dart' as fm;
 import 'package:feedmatter_flutter_ui/feedmatter_flutter_ui.dart';
 // ignore: implementation_imports
@@ -110,7 +111,8 @@ class _FeedmatterFeedbackScreenState extends State<FeedmatterFeedbackScreen> {
     final l10n = AppLocalizations.of(context);
 
     if (_loadingConfig) {
-      return Scaffold(
+      return ProductScaffold(
+      settingsLocation: '/settings/help',
         backgroundColor: theme.pageBackground,
         appBar: AppBar(
           backgroundColor: theme.surfaceColor,
@@ -148,7 +150,8 @@ class _FeedmatterFeedbackScreenState extends State<FeedmatterFeedbackScreen> {
   Widget _buildHomeShell(BuildContext context, AppLocalizations l10n) {
     final theme = FeedMatterUiTheme.of(context);
 
-    return Scaffold(
+    return ProductScaffold(
+      settingsLocation: '/settings/help',
       backgroundColor: theme.pageBackground,
       appBar: AppBar(
         backgroundColor: theme.surfaceColor,

@@ -61,6 +61,15 @@ public class MembershipController {
         return ResponseEntity.ok(resp);
     }
 
+    @GetMapping("/orders")
+    public ResponseEntity<List<MembershipOrderResponse>> listOrders(Authentication auth) {
+        if (auth == null || auth.getAuthorities().stream().noneMatch(role -> "ROLE_USER".equals(role.getAuthority()))) {
+            return ResponseEntity.status(403).build();
+        }
+        Long userId = Long.parseLong((String) auth.getPrincipal());
+        return ResponseEntity.ok(membershipService.listOrders(userId));
+    }
+
     @GetMapping("/orders/{orderNo}")
     public ResponseEntity<MembershipOrderResponse> getOrder(
             Authentication auth,

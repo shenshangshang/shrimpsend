@@ -9,6 +9,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:provider/provider.dart';
 import '../../shortcut_preferences.dart';
 import '../../l10n/generated/app_localizations.dart';
+import '../../logger.dart';
 import '../../ui/app_ui.dart';
 import '../attachment_picker_sheet.dart';
 import '../pending_files_bar.dart';
@@ -79,16 +80,30 @@ class ChatComposer extends ConsumerStatefulWidget {
 }
 
 class ChatComposerState extends ConsumerState<ChatComposer>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   static const double _panelOptionIconSize = 48;
-  static const double _primaryActionSize = 44;
   final _sizeKey = GlobalKey();
   final _controller = TextEditingController();
   final _focusNode = FocusNode();
   bool _hasText = false;
+  bool _sending = false;
   bool _panelVisible = false;
   SendShortcutMode _sendShortcutMode = sendShortcutModeNotifier.value;
   AttachmentPickerChoice? _pendingPanelChoice;
+
+  /// Tracks when the input most recently gained focus, so we can tell a
+  /// transient (implicit/native) keyboard dismiss apart from a deliberate one.
+  DateTime? _focusGainedAt;
+
+  /// Set before any intentional keyboard dismiss so the transient-hide guard
+  /// never fights a user- or app-initiated dismiss.
+  bool _suppressFocusReassert = false;
+
+  /// Last keyboard inset from [didChangeMetrics]; detects IME hide while focused.
+  double _previousViewInsetBottom = 0;
+
+  /// Last time the guard reopened the keyboard; cooldown avoids reopen loops.
+  DateTime? _lastKeyboardReopenAt;
 
   bool get _isDesktop =>
       Platform.isWindows || Platform.isLinux || Platform.isMacOS;
@@ -121,6 +136,7 @@ class ChatComposerState extends ConsumerState<ChatComposer>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _sendShortcutMode = sendShortcutModeNotifier.value;
     sendShortcutModeNotifier.addListener(_onSendShortcutModeChanged);
     _controller.addListener(_onTextChanged);
@@ -135,6 +151,7 @@ class ChatComposerState extends ConsumerState<ChatComposer>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     sendShortcutModeNotifier.removeListener(_onSendShortcutModeChanged);
     _panelAnimation.removeStatusListener(_onPanelAnimationStatus);
     _panelAnimation.dispose();
@@ -146,6 +163,7 @@ class ChatComposerState extends ConsumerState<ChatComposer>
   }
 
   void unfocus() {
+    _suppressFocusReassert = true;
     _focusNode.unfocus();
   }
 
@@ -180,14 +198,64 @@ class ChatComposerState extends ConsumerState<ChatComposer>
       widget.onExpandDevicePanel!();
       return;
     }
+    _suppressFocusReassert = true;
     _focusNode.unfocus();
     if (_panelVisible) _panelAnimation.reverse();
   }
 
   void _onFocusChange() {
-    if (_focusNode.hasFocus && mounted) {
+    if (!mounted) return;
+    final hasFocus = _focusNode.hasFocus;
+    logChat.fine('composer focus changed hasFocus=$hasFocus');
+    if (hasFocus) {
+      _focusGainedAt = DateTime.now();
+      _suppressFocusReassert = false;
       if (_panelVisible) _panelAnimation.reverse();
     }
+  }
+
+  @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+    if (!mounted) return;
+    final insetBottom = MediaQuery.viewInsetsOf(context).bottom;
+    logChat.fine(
+      'composer metrics insetBottom=$insetBottom hasFocus=${_focusNode.hasFocus}',
+    );
+    if (!_isDesktop &&
+        !_suppressFocusReassert &&
+        _focusNode.hasFocus &&
+        insetBottom == 0 &&
+        _previousViewInsetBottom > 0) {
+      logChat.fine('composer keyboard hidden while focused');
+      _maybeReopenKeyboardAfterTransientHide();
+    }
+    _previousViewInsetBottom = insetBottom;
+  }
+
+  /// Android may hide the soft keyboard while [FocusNode.hasFocus] stays true
+  /// (IME connection dropped during list layout). Re-toggle focus to reopen.
+  void _maybeReopenKeyboardAfterTransientHide() {
+    if (_isDesktop) return;
+    if (_suppressFocusReassert) return;
+    final gainedAt = _focusGainedAt;
+    if (gainedAt == null) return;
+    final now = DateTime.now();
+    if (now.difference(gainedAt) > const Duration(milliseconds: 500)) return;
+    final last = _lastKeyboardReopenAt;
+    if (last != null && now.difference(last) < const Duration(seconds: 3)) {
+      return;
+    }
+    if (!_focusNode.hasFocus) return;
+
+    _lastKeyboardReopenAt = now;
+    logChat.fine('composer transient keyboard hide; reopening IME');
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _suppressFocusReassert) return;
+      if (!_focusNode.hasFocus) return;
+      _focusNode.unfocus();
+      _focusNode.requestFocus();
+    });
   }
 
   void _onTextChanged() {
@@ -211,13 +279,27 @@ class ChatComposerState extends ConsumerState<ChatComposer>
     }
   }
 
-  void _handleSend() {
+  Future<void> _handleSend() async {
+    // Enter from an active IME composition must never dispatch a half-written message.
+    if (_sending ||
+        _controller.value.composing.isValid &&
+            !_controller.value.composing.isCollapsed) {
+      return;
+    }
     final text = _controller.text.trim();
-    if (text.isEmpty) return;
-    widget.onSend(text);
-    _controller.clear();
-    if (_isDesktop) {
-      _focusNode.requestFocus();
+    if (text.isEmpty && widget.pendingFiles.isEmpty) return;
+    setState(() => _sending = true);
+    try {
+      if (widget.pendingFiles.isNotEmpty) widget.onSendPendingFiles();
+      if (text.isNotEmpty) {
+        _controller.clear();
+        await widget.onSend(text);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _sending = false);
+        if (_isDesktop) _focusNode.requestFocus();
+      }
     }
   }
 
@@ -249,6 +331,7 @@ class ChatComposerState extends ConsumerState<ChatComposer>
   }
 
   void _onPlusPressed() {
+    _suppressFocusReassert = true;
     _focusNode.unfocus();
     if (!_isDesktop) widget.onDismissDevicePanel?.call();
     if (_panelVisible) {
@@ -390,141 +473,200 @@ class ChatComposerState extends ConsumerState<ChatComposer>
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (widget.pendingFiles.isNotEmpty)
-                    PendingFilesBar(
-                      files: widget.pendingFiles,
-                      onSend: widget.onSendPendingFiles,
-                      onRemove: widget.onRemovePendingFile,
-                      onClearAll: widget.onClearPendingFiles,
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      MediaQuery.sizeOf(context).width >= 768 ? 32 : 16,
+                      12,
+                      MediaQuery.sizeOf(context).width >= 768 ? 32 : 16,
+                      12 + bottomSafe * (isAttachmentActive ? 0.0 : 1.0),
                     ),
-                  Shortcuts(
-                    shortcuts: _buildSendShortcuts(),
-                    child: Actions(
-                      actions: <Type, Action<Intent>>{
-                        _SendMessageIntent: CallbackAction<_SendMessageIntent>(
-                          onInvoke: (_) {
-                            if (_hasText) _handleSend();
-                            return null;
-                          },
-                        ),
-                      },
-                      child: Padding(
-                        padding: EdgeInsets.only(
-                          left: AppSpacing.xs,
-                          right: 4,
-                          top: AppSpacing.xs,
-                          bottom:
-                              AppSpacing.xs +
-                              bottomSafe * (isAttachmentActive ? 0.0 : 1.0),
-                        ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            Expanded(
-                              child: TextField(
-                                controller: _controller,
-                                focusNode: _focusNode,
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: colors.appBarForeground,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          clipBehavior: Clip.antiAlias,
+                          decoration: BoxDecoration(
+                            color: colors.surface,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: _focusNode.hasFocus
+                                  ? theme.colorScheme.primary.withValues(
+                                      alpha: 0.6,
+                                    )
+                                  : context.appColors.border,
+                            ),
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (widget.pendingFiles.isNotEmpty)
+                                PendingFilesBar(
+                                  files: widget.pendingFiles,
+                                  onSend: widget.onSendPendingFiles,
+                                  onRemove: widget.onRemovePendingFile,
+                                  onClearAll: widget.onClearPendingFiles,
+                                  showSend: false,
                                 ),
-                                minLines: 1,
-                                maxLines: 4,
-                                textInputAction: TextInputAction.newline,
-                                keyboardAppearance: brightness,
-                                decoration: InputDecoration(
-                                  hintText: l10n.composerMessageHint,
-                                  hintStyle: theme.textTheme.bodyMedium
-                                      ?.copyWith(color: colors.inputHint),
-                                  filled: true,
-                                  fillColor: colors.surface,
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: AppSpacing.md,
-                                    vertical: 10,
-                                  ),
-                                  suffixIcon: _hasText
-                                      ? IconButton(
-                                          icon: Icon(
-                                            LucideIcons.x,
-                                            color: colors.muted,
-                                            size: 20,
-                                          ),
-                                          tooltip: l10n.composerClearInputTooltip,
-                                          onPressed: () {
-                                            _controller.clear();
-                                            _focusNode.requestFocus();
+                              Shortcuts(
+                                shortcuts: _buildSendShortcuts(),
+                                child: Actions(
+                                  actions: <Type, Action<Intent>>{
+                                    _SendMessageIntent:
+                                        CallbackAction<_SendMessageIntent>(
+                                          onInvoke: (_) {
+                                            _handleSend();
+                                            return null;
                                           },
-                                        )
-                                      : null,
-                                  border: OutlineInputBorder(
-                                    borderRadius: AppRadius.pill,
-                                    borderSide: BorderSide(
-                                      color: context.appColors.border,
-                                      width: 0.5,
-                                    ),
-                                  ),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderRadius: AppRadius.pill,
-                                    borderSide: BorderSide(
-                                      color: context.appColors.border,
-                                      width: 0.5,
-                                    ),
-                                  ),
-                                  focusedBorder: OutlineInputBorder(
-                                    borderRadius: AppRadius.pill,
-                                    borderSide: BorderSide(
-                                      color: theme.colorScheme.primary
-                                          .withValues(alpha: 0.5),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            SizedBox(
-                              width: _primaryActionSize,
-                              height: _primaryActionSize,
-                              child: IconButton(
-                                padding: EdgeInsets.zero,
-                                icon: AnimatedSwitcher(
-                                  duration: const Duration(milliseconds: 200),
-                                  transitionBuilder: (child, anim) =>
-                                      ScaleTransition(
-                                        scale: anim,
-                                        child: child,
-                                      ),
-                                  child: _hasText
-                                      ? Icon(
-                                          LucideIcons.send,
-                                          key: const ValueKey('send'),
-                                          color: colors.upload,
-                                          size: 24,
-                                        )
-                                      : _isDesktop
-                                      ? Icon(
-                                          LucideIcons.paperclip,
-                                          key: const ValueKey('add_file'),
-                                          color: colors.muted,
-                                          size: 24,
-                                        )
-                                      : Icon(
-                                          LucideIcons.circlePlus,
-                                          key: const ValueKey('add'),
-                                          color: colors.muted,
-                                          size: 26,
                                         ),
+                                  },
+                                  child: TextField(
+                                    controller: _controller,
+                                    focusNode: _focusNode,
+                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                      color: colors.appBarForeground,
+                                      fontSize:
+                                          MediaQuery.sizeOf(context).width >=
+                                              768
+                                          ? 15
+                                          : 16,
+                                      height: 1.6,
+                                    ),
+                                    minLines: 1,
+                                    maxLines: 5,
+                                    textInputAction: TextInputAction.newline,
+                                    keyboardAppearance: brightness,
+                                    decoration: InputDecoration(
+                                      hintText: l10n.conversationComposer,
+                                      hintStyle: theme.textTheme.bodyMedium
+                                          ?.copyWith(
+                                            color:
+                                                context.appColors.textSecondary,
+                                            fontSize:
+                                                MediaQuery.sizeOf(
+                                                      context,
+                                                    ).width >=
+                                                    768
+                                                ? 15
+                                                : 16,
+                                          ),
+                                      filled: false,
+                                      contentPadding: const EdgeInsets.fromLTRB(
+                                        20,
+                                        16,
+                                        20,
+                                        12,
+                                      ),
+                                      border: InputBorder.none,
+                                      enabledBorder: InputBorder.none,
+                                      focusedBorder: InputBorder.none,
+                                    ),
+                                  ),
                                 ),
-                                onPressed: _hasText
-                                    ? _handleSend
-                                    : _isDesktop
-                                    ? () => widget.onAttachmentChoice(
-                                        AttachmentPickerChoice.file,
-                                      )
-                                    : _onPlusPressed,
                               ),
-                            ),
-                          ],
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  12,
+                                  0,
+                                  12,
+                                  12,
+                                ),
+                                child: Row(
+                                  children: [
+                                    TextButton.icon(
+                                      onPressed: _isDesktop
+                                          ? () => widget.onAttachmentChoice(
+                                              AttachmentPickerChoice.file,
+                                            )
+                                          : _onPlusPressed,
+                                      icon: const Icon(
+                                        LucideIcons.paperclip,
+                                        size: 20,
+                                      ),
+                                      label: Text(l10n.conversationFile),
+                                      style: TextButton.styleFrom(
+                                        foregroundColor:
+                                            context.appColors.textSecondary,
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    FilledButton.icon(
+                                      onPressed:
+                                          !_sending &&
+                                              (_hasText ||
+                                                  widget
+                                                      .pendingFiles
+                                                      .isNotEmpty)
+                                          ? _handleSend
+                                          : null,
+                                      icon: const Icon(
+                                        LucideIcons.send,
+                                        size: 16,
+                                      ),
+                                      label: Text(l10n.pendingFilesSend),
+                                      style: FilledButton.styleFrom(
+                                        minimumSize: const Size(92, 40),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
+                        if (_isDesktop)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8, bottom: 12),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: TextButton.icon(
+                                      onPressed: () => Navigator.of(
+                                        context,
+                                      ).pushNamed('/settings/receiving'),
+                                      icon: const Icon(
+                                        LucideIcons.folderDown,
+                                        size: 14,
+                                      ),
+                                      label: Text(
+                                        Localizations.localeOf(
+                                                  context,
+                                                ).languageCode ==
+                                                'zh'
+                                            ? '接收目录'
+                                            : 'Receive folder',
+                                        style: const TextStyle(fontSize: 12),
+                                      ),
+                                      style: TextButton.styleFrom(
+                                        foregroundColor:
+                                            context.appColors.textSecondary,
+                                        padding: EdgeInsets.zero,
+                                        alignment: Alignment.centerLeft,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                Text(
+                                  _sendShortcutMode == SendShortcutMode.enter
+                                      ? '${l10n.shortcutsSendEnter} · ${l10n.conversationNewline}'
+                                      : (Platform.isMacOS
+                                            ? l10n.shortcutsSendModifierMac
+                                            : l10n.shortcutsSendModifier),
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    fontSize: 12,
+                                    color: context.appColors.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                   ClipRect(

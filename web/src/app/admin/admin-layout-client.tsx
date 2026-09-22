@@ -2,7 +2,9 @@
 
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
+import { ArrowLeft, House, Package, UserRound } from 'lucide-react';
+import { BrandLogo } from '@/components/brand/BrandLogo';
 import { useEffect, useState } from 'react';
 import { fetchUserProfile } from '@/lib/api/user';
 import { isAdminEmail } from '@/lib/adminEmails';
@@ -21,12 +23,13 @@ type GateState = 'loading' | 'allowed' | 'forbidden';
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const { accessToken, isReady } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
   const [gate, setGate] = useState<GateState>('loading');
 
   useEffect(() => {
     if (!isReady) return;
     if (!accessToken) {
-      router.replace('/login');
+      router.replace('/login?next=' + encodeURIComponent(pathname));
       return;
     }
     let cancelled = false;
@@ -43,7 +46,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     return () => {
       cancelled = true;
     };
-  }, [isReady, accessToken, router]);
+  }, [isReady, accessToken, router, pathname]);
 
   if (!isReady) {
     return (
@@ -79,5 +82,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     );
   }
 
-  return <>{children}</>;
+  return <div className="admin-shell">
+    <header className="admin-header"><Link href="/admin" className="flex items-center gap-2.5"><BrandLogo size={30} alt="虾传"/><strong className="font-medium">虾传</strong><span className="text-sm text-muted-foreground">后台管理</span></Link><Link href="/settings/account" className="flex items-center gap-2 text-sm"><UserRound size={17}/>管理员</Link></header>
+    <div className="admin-body"><aside className="admin-sidebar"><nav aria-label="后台导航">
+      <Link href="/admin" aria-current={pathname==='/admin'?'page':undefined}><House size={19}/>概览</Link>
+      <Link href="/admin/versions" aria-current={pathname.startsWith('/admin/versions')?'page':undefined}><Package size={19}/>版本管理</Link>
+      <Link href="/chat" className="admin-back"><ArrowLeft size={18}/>返回应用</Link>
+    </nav></aside><main className="admin-content">{children}</main></div>
+  </div>;
 }

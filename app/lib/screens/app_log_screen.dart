@@ -1,3 +1,4 @@
+import '../ui/product_scaffold.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -125,7 +126,8 @@ class _AppLogScreenState extends State<AppLogScreen> {
     final colors = context.appColors;
     final l10n = AppLocalizations.of(context);
 
-    return Scaffold(
+    return ProductScaffold(
+      settingsLocation: '/settings/help',
       appBar: AppBar(
         title: Text(l10n.appLogTitle),
         leading: IconButton(

@@ -303,7 +303,7 @@
       "title": "Debug API environment",
       "badge": "Local dev only",
       "description": "Shown only on LAN-style hosts while running the Next.js dev server. Local debugging is pinned to local service ports.",
-      "hint": "Local Web always uses the current host's :9000 backend and :8000 WebSocket, and no longer connects directly to production APIs. To test overseas membership, Stripe, or hosted storage, run the local backend with the dev-overseas profile."
+      "hint": "Local Web always uses the current host's :9000 backend and :5200 WebSocket, and no longer connects directly to production APIs. To test overseas membership, Stripe, or hosted storage, run the local backend with the dev-overseas profile."
     },
     "navAriaLabel": "Settings sections",
     "sectionGeneral": "General",
@@ -343,7 +343,13 @@
       "webrtcRetryHttp": "WebRTC retry failed — send via HTTP",
       "httpNotSupportedWebPeer": "HTTP is not supported between web clients — use WebRTC or S3",
       "webrtcTryS3": "WebRTC send failed — try S3 mode",
-      "webrtcRetryS3": "WebRTC retry failed — send via S3"
+      "webrtcRetryS3": "WebRTC retry failed — send via S3",
+      "guestTextNeedsLogin": "Sign in to send messages and use cloud transfer",
+      "webrtcTryLogin": "WebRTC send failed. Sign in to use cloud transfer.",
+      "webrtcRetryLogin": "WebRTC retry failed. Sign in to use cloud transfer.",
+      "pairSelf": "That is this browser’s device ID",
+      "pairInvalid": "Enter a valid device ID",
+      "pairFailed": "Could not pair that device"
     },
     "transferBar": {
       "webrtc": "WebRTC",
@@ -395,6 +401,7 @@
       "reasonHttpPullFail": "Reverse pull failed — peer cannot reach this device's HTTP",
       "reasonWebrtcOnline": "Same network — WebRTC can connect directly",
       "reasonWebrtcFail": "WebRTC signaling or ICE unreachable",
+      "reasonWebrtcSkippedLanOk": "WebRTC is not pre-probed; you can still try it when sending",
       "reasonHttpDirectNoUrl": "No LAN address found — cannot test HTTP direct",
       "reasonOfflineCloud": "Offline — cannot run cloud signaling probes",
       "reasonS3LoginRequired": "Sign in required to test S3",
@@ -404,7 +411,7 @@
       "helpHttpDirectTitle": "HTTP LAN direct",
       "helpHttpDirectBody": "This device sends a /probe request directly to the peer's LAN HTTP address without going through the cloud.\n\nConfirms whether the fastest HTTP file path works when a LAN address is known (e.g. via mDNS) and the network is reachable.",
       "helpHttpSignalingTitle": "HTTP signaling",
-      "helpHttpSignalingBody": "Via cloud messages (Centrifugo), asks the peer to self-check its HTTP service and report back.\n\nConfirms peer HTTP health when both sides are online, even before a LAN address is known, and may discover or refresh the LAN URL.",
+      "helpHttpSignalingBody": "Via cloud messages, asks the peer to self-check its HTTP service and report back.\n\nConfirms peer HTTP health when both sides are online, even before a LAN address is known, and may discover or refresh the LAN URL.",
       "helpHttpPullTitle": "HTTP reverse pull",
       "helpHttpPullBody": "Via cloud, asks the peer to reach this device's HTTP service.\n\nConfirms whether the peer can pull files when NAT or asymmetric routing blocks direct HTTP — a fallback when direct LAN HTTP fails.",
       "helpWebrtcTitle": "WebRTC connectivity",
@@ -430,12 +437,24 @@
       "sendModifierEnter": "Send (Ctrl+Enter)",
       "sendModifierEnterMac": "Send (⌘+Enter)",
       "pickFile": "Attach file",
-      "devicePanel": "Devices"
+      "devicePanel": "Devices",
+      "guestPlaceholder": "Write a message…"
     },
     "empty": {
-      "hint": "Send a message or file — synced to all devices",
+      "hint": "Send text or files to the selected device",
+      "guestHint": "Send a message, or choose files to get started.",
       "loadMore": "Load more…",
       "dropHint": "Release to add files"
+    },
+    "quota": {
+      "hint": "This device’s free allowance",
+      "message": "Messages {used}/{limit}",
+      "signaling": "Signaling {used}/{limit}",
+      "title": "Sending too frequently",
+      "messageBody": "This minute's message quota is used up ({used}/{limit}). Try again in {seconds}s.",
+      "signalingBody": "This minute's transfer signaling quota is used up ({used}/{limit}). Try again in {seconds}s, or send the file later.",
+      "infoBody": "Messages {messageUsed}/{messageLimit}; new connections {signalingUsed}/{signalingLimit}. Authorize this device for unlimited normal usage.",
+      "gotIt": "Got it"
     },
     "scrollBottom": "Scroll to bottom",
     "selectToggle": "Select",
@@ -465,14 +484,15 @@
       "sessionClearMessagesDone": "Messages cleared",
       "sessionClearMessagesFailed": "Failed to clear messages",
       "sessionRemoveSelfHint": "Remove this device from your account and sign out.",
-      "sessionRemoveOtherHint": "Remove this device from your account. It will be signed out there.",
+      "sessionRemoveOtherHint": "Disconnect this pair. Membership authorization and local files are kept.",
       "deleteThisDevice": "Remove this device",
       "removeDevice": "Remove device",
       "online": "Online",
       "checking": "Checking…",
       "offline": "Offline",
       "deviceNumber": "Device no.",
-      "toastRemovedSelf": "This device was removed"
+      "toastRemovedSelf": "This device was removed",
+      "peerRemoveConfirm": "Disconnect this paired device? Local files and membership authorization are kept."
     },
     "bubble": {
       "sending": "Sending…",
@@ -486,7 +506,19 @@
       "cancel": "Cancel",
       "sendingEllipsis": "Sending…",
       "cancelled": "Cancelled",
-      "fileFallback": "File"
+      "fileFallback": "File",
+      "channelHttp": "HTTP",
+      "channelWebrtc": "WebRTC",
+      "channelS3": "S3",
+      "phaseTryingHttp": "Trying LAN HTTP…",
+      "phaseWaitingPull": "Waiting for the other device to pull…",
+      "phaseConnectingWebrtc": "Connecting WebRTC…",
+      "phaseConnectingWebrtcFallback": "LAN unavailable, connecting WebRTC…",
+      "phaseTryingS3": "Uploading to cloud storage…",
+      "phaseTryingS3Fallback": "Direct path failed, switching to cloud storage…",
+      "sendingVia": "Sending via {channel}",
+      "receivingVia": "Receiving via {channel}",
+      "receiveFailed": "Receive interrupted. Ask the sender to retry."
     }
   },
   "devices": {
@@ -496,7 +528,7 @@
     "removed": "Device removed",
     "removeFailed": "Could not remove device",
     "nameEmpty": "Name cannot be empty",
-    "title": "Devices",
+    "title": "Account sessions",
     "subtitle": "Manage signed-in devices and this device name",
     "myDevices": "My devices",
     "deviceCount": "{count} device(s)",
@@ -576,8 +608,8 @@
     "permanentDelete": "Delete permanently"
   },
   "membership": {
-    "title": "Membership",
-    "paySuccess": "Payment received — membership is active.",
+    "title": "Device membership",
+    "paySuccess": "Payment successful. Assign your device slots.",
     "orderCreated": "Order created. Complete payment in the new tab.",
     "paymentPopupBlocked": "The browser blocked the payment window. Allow pop-ups for this site and try again.",
     "paymentTabNavigateFailed": "Could not open Alipay in the payment tab. Allow pop-ups and try again.",
@@ -585,8 +617,8 @@
     "orderFailed": "Could not create order",
     "currentTitle": "Membership",
     "loading": "Loading…",
-    "deviceLimit": "Device limit: {count}",
-    "devicesBound": "{count} device(s) linked",
+    "deviceLimit": "{count} authorization slots",
+    "devicesBound": "{count} authorized devices",
     "addonLine": "{packs} add-on pack(s) (+{slots} slots)",
     "tierBadgeAddon": "+{n}",
     "tierBadgeDevices": "{n} devices",
@@ -604,7 +636,7 @@
     "savingsVsMonthlyYear": "Save up to {pct}% vs paying monthly for a year",
     "subscribeStripe": "Subscribe with Stripe",
     "planStripeHint": "Secure checkout · Renews · Cancel anytime",
-    "featureDevices": "Up to {count} linked devices",
+    "featureDevices": "{count} device authorization slots",
     "featureUploadHosted": "{gib} GiB / month hosted upload quota",
     "planPopular": "Popular",
     "pricePerMonthEquiv": "~{price}/mo billed yearly",
@@ -880,6 +912,18 @@
     "settingsTitle": "Settings",
     "emptyTitle": "No other devices",
     "emptyHint": "Sign in on another device with the same account to start transferring",
+    "guestLoginTitle": "Sign in for account devices",
+    "guestLoginHint": "Cloud transfer, history, and your other signed-in devices unlock after sign-in.",
+    "guestLoginCta": "Sign in",
+    "addDeviceTitle": "Add a device",
+    "pairQrHint": "Scan this QR with the ShrimpSend app or another unsigned-in device, or paste a device ID.",
+    "copyDeviceId": "Copy device ID",
+    "copiedDeviceId": "Device ID copied",
+    "copyFailed": "Could not copy",
+    "pasteDeviceIdPlaceholder": "Paste device ID or pair link",
+    "pasteDeviceIdAction": "Add",
+    "peerAdded": "Device added",
+    "pairFailed": "Could not pair that device",
     "s3RelayTitle": "S3 relay",
     "s3Checking": "Checking…",
     "s3NotConfigured": "Not configured",
@@ -888,7 +932,12 @@
     "bottomProbing": "Checking…",
     "bottomOnlineCount": "{count} online",
     "refreshReachTitle": "Refresh reachability",
-    "fileLine": "[File] {fileName}"
+    "fileLine": "[File] {fileName}",
+    "section": "Devices",
+    "ready": "Connect. Send. Done.",
+    "readyHint": "The fastest available route is selected automatically.",
+    "accountOptional": "Purchase or manage device slots",
+    "guestMode": "Using without an account"
   },
   "sendPanel": {
     "title": "Send to",
@@ -906,6 +955,52 @@
     "collapseTitle": "Collapse panel",
     "httpHint": "HTTP direct transfer — same LAN required.",
     "webrtcHint": "WebRTC is peer-to-peer; switch to HTTP if it fails.",
-    "s3Hint": "Upload via S3 — delivers to all signed-in devices."
+    "s3Hint": "Use S3 relay to send to selected paired devices."
+  },
+  "welcome": {
+    "eyebrow": "FROM HERE TO THERE",
+    "title": "A little closer. A lot simpler.",
+    "description": "Send files, photos and text between your devices. No account needed.",
+    "connect": "Connect another device",
+    "scan": "Scan from another device, or paste its device ID",
+    "private": "Direct between devices",
+    "resume": "Resume interrupted transfers",
+    "anything": "Files, photos & text"
+  },
+  "receive": {
+    "folder": "Receive location",
+    "default": "Browser downloads folder",
+    "hint": "Received files go directly to the destination without a second cached copy.",
+    "browserHint": "Change the download location in your browser settings.",
+    "choose": "Choose folder",
+    "reset": "Use default"
+  },
+  "deviceLicense": {
+    "entry": "Device authorization"
+  },
+  "conversation": {
+    "available": "Ready to transfer",
+    "connect": "Connect",
+    "noDevices": "Connect another device to start sharing.",
+    "composer": "Type a message, or drop files here",
+    "file": "Files",
+    "newline": "Shift + Enter for a new line",
+    "emptyThread": "Send a message or drop a file to get started.",
+    "removeFile": "Remove {name}",
+    "membership": "Membership & device slots",
+    "allSettings": "More settings",
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System",
+    "welcomeTitle": "Choose a device to start sharing",
+    "welcomeHint": "Files and messages, together in one conversation.",
+    "connectDevice": "Connect a device",
+    "saved": "Saved to receive folder",
+    "browserDownload": "Sent to browser Downloads",
+    "sent": "Sent",
+    "today": "Today",
+    "general": "This device",
+    "generalHint": "These settings apply to this device and work without signing in.",
+    "accountNeeded": "Sign in to manage your account and membership. Other features work without signing in."
   }
 }

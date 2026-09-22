@@ -1,6 +1,9 @@
 const KEY_ID = 'ultrasend_device_id';
 const KEY_NAME = 'ultrasend_device_name';
-const KEY_PRESENCE_SESSION_ID = 'ultrasend_presence_session_id';
+let presenceSessionId: string | undefined;
+export const DEVICE_NAME_CHANGED = 'shrimpsend-device-name-changed';
+export const PENDING_DEVICE_NAME = 'shrimpsend_pending_device_name';
+const KEY_SECRET = 'ultrasend_device_secret';
 
 function detectBrowser(): string {
   const ua = navigator.userAgent;
@@ -64,6 +67,22 @@ export function generateUUID(): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
+export function getOrCreateDeviceSecret(): string {
+  if (typeof window === 'undefined') return '';
+  let secret = localStorage.getItem(KEY_SECRET);
+  if (!secret || secret.length < 16) {
+    const bytes = new Uint8Array(32);
+    if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+      crypto.getRandomValues(bytes);
+    } else {
+      for (let i = 0; i < 32; i++) bytes[i] = Math.floor(Math.random() * 256);
+    }
+    secret = btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+    localStorage.setItem(KEY_SECRET, secret);
+  }
+  return secret;
+}
+
 export function getOrCreateDeviceId(): string {
   if (typeof window === 'undefined') return '';
   let id = localStorage.getItem(KEY_ID);
@@ -88,15 +107,14 @@ export function getDeviceName(): string {
 
 export function getOrCreatePresenceSessionId(): string {
   if (typeof window === 'undefined') return '';
-  let id = sessionStorage.getItem(KEY_PRESENCE_SESSION_ID);
-  if (!id) {
-    id = generateUUID();
-    sessionStorage.setItem(KEY_PRESENCE_SESSION_ID, id);
-  }
-  return id;
+  return presenceSessionId ??= generateUUID();
 }
 
 export function setDeviceName(name: string): void {
   if (typeof window === 'undefined') return;
-  localStorage.setItem(KEY_NAME, name);
+  const value = name.trim();
+  if (!value || value.length > 80 || /[\u0000-\u001f\u007f-\u009f]/.test(value)) throw new Error('Invalid device name');
+  localStorage.setItem(KEY_NAME, value);
+  localStorage.setItem(PENDING_DEVICE_NAME, value);
+  window.dispatchEvent(new Event(DEVICE_NAME_CHANGED));
 }

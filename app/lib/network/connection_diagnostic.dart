@@ -110,7 +110,6 @@ List<ConnectionDiagnosticStepId> diagnosticStepOrder({
   const cloud = [
     ConnectionDiagnosticStepId.httpSignaling,
     ConnectionDiagnosticStepId.httpPull,
-    ConnectionDiagnosticStepId.webrtc,
   ];
   const fallback = [ConnectionDiagnosticStepId.s3];
 

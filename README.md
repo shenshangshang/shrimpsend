@@ -39,25 +39,25 @@ This repository (**`shrimpsend`**) is the open-source codebase for **ShrimpSend*
 - **No install for recipients** — send directly to browsers and temporary devices when the other side cannot install software.
 - **Resume after disconnects** — large native client ↔ client transfers continue from the interrupted position instead of restarting from 0%.
 - **Works on restrictive networks** — server-assisted relay when hotel Wi‑Fi, campus networks, or carrier NAT block direct reachability.
-- **Breaks through one-way networks** — firewalls and NAT often allow traffic in only one direction (e.g. phone → PC works, PC → phone does not). After sign-in, the server coordinates reachability probes between your devices; if direct HTTP push fails, ShrimpSend automatically **reverse-pulls** the file from the reachable side, or falls back to WebRTC / S3 relay. See [shared/protocol.en.md](shared/protocol.en.md#reverse-pull).
+- **Breaks through one-way networks** — firewalls and NAT often allow traffic in only one direction (e.g. phone → PC works, PC → phone does not). Paired devices use device credentials to coordinate reachability probes; if direct HTTP push fails, ShrimpSend automatically **reverse-pulls** the file from the reachable side, or falls back to WebRTC / S3 relay. See [shared/protocol.en.md](shared/protocol.en.md#reverse-pull).
 - **LAN-first, still built for speed** — prefer direct LAN / WebRTC on the same network; use relay or S3-compatible fallback only when needed.
-- **Real-time sync** — [Centrifugo](https://centrifugal.dev/) pushes updates to every signed-in client on channel `user#<userId>`.
+- **Independent devices** — [WuKongIM](https://github.com/WuKongIM/WuKongIM) carries messages and signaling between paired devices. An account manages purchases and device authorization, without synchronizing private transfer history.
 - **Self-host friendly** — run the full stack on your infrastructure under [AGPL-3.0-or-later](LICENSE); production secrets stay in private ops templates ([docs/SELF_HOST.md](docs/SELF_HOST.md)).
 
 ## Try it in 5 minutes
 
-Bring up MySQL, Centrifugo, and the backend with Docker, then run the web client:
+Bring up MySQL, WuKongIM, the backend and the web client with Docker:
 
 ```bash
 git clone https://github.com/shrimpsend/shrimpsend.git
 cd shrimpsend
-./scripts/setup-local-config.sh   # writes .env + config.docker.json from examples
-docker compose up -d              # MySQL :3306, Centrifugo :8000, backend :9000
-
-cd web && npm ci && npm run dev   # web client on :3000
+./scripts/deploy-docker-local.sh up
+# Local configuration: .env.local-deploy
 ```
 
-Open http://localhost:3000, create an account on your own instance, and add a second device (or a second browser) to send your first message. Full options, troubleshooting, and bare-metal/production paths: [docs/SELF_HOST.md](docs/SELF_HOST.md).
+Open http://localhost:3000/chat and connect a second device (or another browser) with a pairing code or QR code. No account is required for device transfers. Sign in when purchasing membership or managing device authorization. See [local deployment](docs/LOCAL_DOCKER.md) and [production deployment](docs/SELF_HOST.md).
+
+The approved full-page redesign is implemented for Flutter, Web and the public site. [Implementation and validation](docs/testing/2026-09-21-redesign-implementation.md). HarmonyOS is deferred for this iteration.
 
 ## Screenshots
 
@@ -84,11 +84,10 @@ flowchart LR
   subgraph clients [Clients]
     Flutter[Flutter app]
     Web[Next.js web]
-    OHOS[HarmonyOS app_ohos]
   end
   subgraph server [Self_host_stack]
     API[Spring_Boot :9000]
-    RT[Centrifugo :8000]
+    RT[WuKongIM :5200]
     DB[(MySQL 8 :3306)]
     S3[S3 compatible storage]
   end
@@ -104,7 +103,7 @@ flowchart LR
 | Component | Port | Role |
 |-----------|------|------|
 | MySQL 8 | 3306 | Primary database |
-| Centrifugo v6 | 8000 | WebSocket real-time |
+| WuKongIM | 5200 / 5001 | WebSocket real-time (API internal) |
 | Spring Boot backend | 9000 | REST API, auth, S3 orchestration |
 | Next.js web | 3000 | Browser client |
 
@@ -114,8 +113,8 @@ flowchart LR
 
 - **Backend:** Spring Boot (Java 17), MySQL 8
 - **Web:** Next.js (React)
-- **Clients:** Flutter (iOS, Android, macOS, Windows, Linux), HarmonyOS (`app_ohos/`)
-- **Real-time:** Centrifugo
+- **Clients:** Flutter (iOS, Android, macOS, Windows, Linux, HarmonyOS `app/ohos`). Legacy ArkTS `app_ohos/` is frozen.
+- **Real-time:** WuKongIM
 
 ## Deployment
 
@@ -123,42 +122,36 @@ flowchart LR
 
 | Tool | Version / notes |
 |------|-----------------|
-| Java | 17+ |
-| Node.js | 20+ (for `web/`) |
-| [Centrifugo](https://centrifugal.dev/) | Dev: `./scripts/install-centrifugo.sh` (prefers [centrifugo-bins](https://github.com/shrimpsend/centrifugo-bins)); production: `sync-to-build-machine.sh` auto-fetches `scripts/bin/linux/centrifugo` (not in git) |
-| MySQL | 8 |
+| Docker | 24+ (MySQL + WuKongIM + backend via Compose) |
+| Node.js | 20+ (for `web/` on the host) |
+| Java | 17+ only if you run Gradle tests locally |
 | Flutter | Only when building `app/` |
 
-**Before first `./scripts/start-dev.sh`:** run `cd web && npm ci` and `./scripts/install-centrifugo.sh` (or run `./scripts/sync-to-build-machine.sh` earlier to fetch the Linux binary only). The start script picks `scripts/bin/mac/` or `scripts/bin/linux/` by OS.
+**Before first `./scripts/start-dev.sh`:** run `cd web && npm ci`. The start script brings up the Docker server stack, then Web.
 
 ### Local development (China logic)
 
 | Role | Setup | Start / stop |
 |------|--------|--------------|
-| **Maintainers** (private `ops/local/`) | `./scripts/deploy-local.sh` — syncs team config + creates `ultrasend` / `ultrasend_overseas` DBs | `./start-dev.sh` or `./scripts/start-dev.sh` · stop: `./stop-dev.sh` |
+| **Maintainers** (private `ops/local/`) | `./scripts/deploy-local.sh` — syncs team config (DBs created by Compose) | `./scripts/start-dev.sh` · stop: `./scripts/stop-dev.sh` |
 | **Contributors** (examples only) | `./scripts/setup-local-config.sh` — copies `*.example` templates | Same start/stop |
 
-**Contributors only:** create the MySQL database before first start:
-
-```sql
-CREATE DATABASE ultrasend CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-```
-
-Default JDBC: `jdbc:mysql://localhost:3306/ultrasend`, user `root`, password `changeme`. Override via `backend/.env` (`SPRING_DATASOURCE_*`).
+Compose creates `ultrasend` and `ultrasend_overseas` on first MySQL volume init. No host MySQL install.
 
 | Service | URL |
 |---------|-----|
-| Centrifugo | http://localhost:8000 |
-| Backend API | http://localhost:9000 |
-| Web UI | http://localhost:3000 |
+| MySQL | 127.0.0.1:3307 (Docker host port) |
+| WuKongIM | ws://localhost:5200 (API http://127.0.0.1:5001) |
+| Backend API | http://localhost:9000 (docker) |
+| Web UI | http://localhost:3000 (host) |
 
 Logs: `scripts/logs/` · PID file: `scripts/.dev-pids`
 
-Dev scripts live under **`scripts/`** in this repo (not in the private ops repo), so paths to `web/`, `backend/`, and `config.json` resolve correctly. Root `./start-dev.sh` / `./stop-dev.sh` are shortcuts to `scripts/`.
+Dev scripts live under **`scripts/`** in this repo (not in the private ops repo), so paths to `web/`, `backend/`, and `config.json` resolve correctly.
 
 ### Local development (Overseas / ShrimpSend logic)
 
-Same config step as above (`deploy-local.sh` or `setup-local-config.sh`). Maintainers get `ultrasend_overseas` from `deploy-local.sh`.
+Same config step as above (`deploy-local.sh` or `setup-local-config.sh`). Compose creates `ultrasend_overseas`.
 
 ```bash
 ./scripts/start-dev.sh --overseas
@@ -171,38 +164,34 @@ Uses Spring profile `dev-overseas` and database `ultrasend_overseas`. For Stripe
 stripe listen --forward-to localhost:9000/api/membership/stripe/webhook
 ```
 
-Backend-only debugging (no Centrifugo/Web): `backend/scripts/run-dev-overseas.sh`
+Backend-only debugging (no Web): `backend/scripts/run-dev-overseas.sh`
 
-### Production (bare metal)
+### Production (all Docker)
 
-Requires an **ops** config directory synced into this repo. Full steps: [docs/SELF_HOST.md](docs/SELF_HOST.md#production-deployment).
+MySQL, WuKongIM, backend and Web run in containers. Edit one external `.env.production` file; the server does not need host Node or Java.
 
 ```bash
-git clone git@github.com:shrimpsend/shrimpsend.git shrimpsend
-cd shrimpsend
-git clone git@github.com:shrimpsend/public-ops.git ../ops   # samples; replace placeholders for production
-# Maintainers: git clone git@github.com:shrimpsend/ops.git ../ops
-# Optional: export ULTRASEND_OPS_DIR=/path/to/your-ops
-./scripts/deploy.sh          # interactive: git pull, cn vs overseas, build, restart
-./scripts/deploy.sh stop     # stop Centrifugo + backend + Web
+cp .env.production.example .env.production
+chmod 600 .env.production
+# Fill public URLs, database passwords, JWT and encryption keys.
+./scripts/deploy.sh check
+./scripts/deploy.sh up
 ./scripts/deploy.sh status
 ./scripts/deploy.sh logs
 ```
 
-Non-interactive overseas deploy:
+For overseas deployments, set `SPRING_PROFILES_ACTIVE=prod-overseas`, `MYSQL_DATABASE=ultrasend_overseas`, `NEXT_PUBLIC_OPENPANEL_WEB_CLUSTER=intl` and your public URLs in that file. Use `DEPLOY_ENV_FILE` for a file outside the repo. Follow the [migration guide](docs/SELF_HOST.md#migrate-an-existing-installation) before switching an existing stack.
 
-```bash
-SPRING_PROFILE=prod-overseas CLUSTER_LABEL='Overseas (ShrimpSend)' ./scripts/deploy.sh
-```
+Current architecture, recent changes and next priorities: [project status](docs/PROJECT_STATUS.md) (Chinese).
 
-### Docker (optional)
+### Docker (local development)
 
-MySQL + Centrifugo + backend in containers; Web still runs on the host.
+MySQL + WuKongIM + backend in containers; Web still runs on the host (`npm run dev` or Next standalone).
 
 ```bash
 ./scripts/setup-local-config.sh   # or deploy-local for ops/local/docker.env → .env
 docker compose up -d
-./scripts/start-dev.sh            # Web only path if you skip full stack script
+./scripts/start-dev.sh            # 推荐：Docker 服务端 + 宿主机 Web
 ```
 
 See [docs/README.zh-CN.md](docs/README.zh-CN.md) (Chinese, includes troubleshooting) · [docs/SELF_HOST.md](docs/SELF_HOST.md)
@@ -215,7 +204,7 @@ flutter pub get
 flutter run
 # Optional overrides:
 # flutter run --dart-define=API_URL=http://localhost:9000 \
-#   --dart-define=CENTRIFUGO_WS=ws://localhost:8000/connection/websocket
+#   --dart-define=WUKONGIM_WS=ws://localhost:5200
 ```
 
 OpenPanel secrets and analytics: [app/README.md](app/README.md).
@@ -226,8 +215,8 @@ OpenPanel secrets and analytics: [app/README.md](app/README.md).
 |----------|--------|-------|
 | Local (China) | `setup-local-config.sh` or `deploy-local.sh` | `./scripts/start-dev.sh` |
 | Local (Overseas) | same | `./scripts/start-dev.sh --overseas` |
-| Production | `ops/` sync via `deploy.sh` | `./scripts/deploy.sh` |
-| Docker | `.env` + `config.docker.json` | `docker compose up -d` |
+| Production | `.env.production` | `./scripts/deploy.sh` |
+| Docker | `.env` | `docker compose up -d` |
 
 Full guide: [docs/SELF_HOST.md](docs/SELF_HOST.md) · Chinese setup: [docs/README.zh-CN.md](docs/README.zh-CN.md)
 
@@ -248,11 +237,11 @@ Official hosted services (reference only): [shrimpsend.com](https://shrimpsend.c
 shrimpsend/
 ├── backend/          # Spring Boot API
 ├── web/              # Next.js web app
-├── app/              # Flutter clients
-├── app_ohos/         # HarmonyOS
+├── app/              # Flutter (iOS, Android, desktop, HarmonyOS ohos/)
+├── app_ohos/         # Frozen ArkTS HarmonyOS client
 ├── ops/              # Production templates (secrets gitignored)
 ├── shared/           # Protocol notes
-├── config.json       # Centrifugo (generated locally)
+├── config.json       # legacy Centrifugo template (rollback only)
 └── docker-compose.yml
 ```
 
@@ -260,7 +249,7 @@ shrimpsend/
 
 - User registration/login, JWT auth
 - Device registry with unique `deviceId` and display names
-- Real-time messages on `user#<userId>`
+- Real-time control plane on WuKongIM (system uid → personal channel)
 - Text + file messages (S3 presigned upload/download)
 - Per-send choice: all devices (S3) or a specific peer (LAN direct when possible)
 - Browser receive without asking others to install the app

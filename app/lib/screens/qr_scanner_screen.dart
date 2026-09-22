@@ -1,3 +1,4 @@
+import '../api/device_licenses.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -7,8 +8,11 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../api/api.dart';
+import '../device_pair.dart';
+import '../device_pair_hello.dart';
 import '../logger.dart';
 import '../l10n/generated/app_localizations.dart';
+import '../providers/auth_provider.dart';
 import '../providers/device_provider.dart';
 import '../services/analytics/analytics.dart';
 import '../services/analytics/analytics_events.dart';
@@ -22,7 +26,8 @@ final _qrLoginSessionPattern = RegExp(
 );
 
 class QrScannerScreen extends ConsumerStatefulWidget {
-  const QrScannerScreen({super.key});
+  final bool licenseOnly;
+  const QrScannerScreen({super.key, this.licenseOnly = false});
 
   @override
   ConsumerState<QrScannerScreen> createState() => _QrScannerScreenState();
@@ -36,7 +41,7 @@ class _QrScannerScreenState extends ConsumerState<QrScannerScreen> {
   bool _permissionChecked = false;
   bool _permissionNeedsSettings = false;
   DateTime? _lastUnrecognizedHintAt;
-  String? _lastHandledSessionId;
+  String? _lastHandledPayload;
 
   @override
   void initState() {
@@ -125,12 +130,38 @@ class _QrScannerScreenState extends ConsumerState<QrScannerScreen> {
     return null;
   }
 
+  String? _readPairDeviceId(Barcode barcode) {
+    for (final text in _barcodeTextCandidates(barcode)) {
+      final peerId = parseDevicePairUri(text);
+      if (peerId != null) return peerId;
+    }
+    return null;
+  }
+
   void _onBarcodeCapture(BarcodeCapture capture) {
     if (_processing || capture.barcodes.isEmpty) return;
+    if (widget.licenseOnly) {
+      for (final barcode in capture.barcodes) {
+        for (final value in _barcodeTextCandidates(barcode)) {
+          if (licenseQrToken(value) != null) {
+            _processing = true;
+            Navigator.pop(context, value);
+            return;
+          }
+        }
+      }
+      return;
+    }
 
     String? sessionId;
+    String? pairDeviceId;
     var sawOtherQr = false;
     for (final barcode in capture.barcodes) {
+      final pairId = _readPairDeviceId(barcode);
+      if (pairId != null) {
+        pairDeviceId = pairId;
+        break;
+      }
       final parsed = _readQrLoginPayload(barcode);
       if (parsed != null) {
         sessionId = parsed;
@@ -141,9 +172,25 @@ class _QrScannerScreenState extends ConsumerState<QrScannerScreen> {
       }
     }
 
+    if (pairDeviceId != null) {
+      if (_lastHandledPayload == 'pair:$pairDeviceId') return;
+      _lastHandledPayload = 'pair:$pairDeviceId';
+      HapticFeedback.mediumImpact();
+      setState(() => _processing = true);
+      unawaited(_handlePairScan(pairDeviceId));
+      return;
+    }
+
     if (sessionId != null) {
-      if (_lastHandledSessionId == sessionId) return;
-      _lastHandledSessionId = sessionId;
+      if (!ref.read(authProvider).isLoggedIn) {
+        AppToast.show(
+          context,
+          message: AppLocalizations.of(context).qrScannerLoginRequiresAccount,
+        );
+        return;
+      }
+      if (_lastHandledPayload == sessionId) return;
+      _lastHandledPayload = sessionId;
       HapticFeedback.mediumImpact();
       setState(() => _processing = true);
       unawaited(_handleScan(sessionId));
@@ -159,8 +206,7 @@ class _QrScannerScreenState extends ConsumerState<QrScannerScreen> {
     if (!mounted || _processing) return;
     final now = DateTime.now();
     if (_lastUnrecognizedHintAt != null &&
-        now.difference(_lastUnrecognizedHintAt!) <
-            const Duration(seconds: 2)) {
+        now.difference(_lastUnrecognizedHintAt!) < const Duration(seconds: 2)) {
       return;
     }
     _lastUnrecognizedHintAt = now;
@@ -168,6 +214,36 @@ class _QrScannerScreenState extends ConsumerState<QrScannerScreen> {
       context,
       message: AppLocalizations.of(context).qrScannerUnrecognized,
     );
+  }
+
+  Future<void> _handlePairScan(String peerId) async {
+    logAuth.info('qr_scanner scanned pair deviceId=$peerId');
+    final l10n = AppLocalizations.of(context);
+    try {
+      await sendDevicePairHello(peerId);
+      if (!mounted) return;
+      ref
+          .read(pairedPeersProvider.notifier)
+          .upsert(deviceDtoFromPairHello(deviceId: peerId));
+      ref.read(selectedDeviceIdProvider.notifier).select(peerId);
+      AppToast.show(context, message: l10n.qrScannerPairSuccess);
+      Navigator.of(context).pop();
+    } catch (e) {
+      logAuth.warning('qr_scanner pair failed: $e');
+      if (!mounted) return;
+      final raw = e.toString().replaceFirst('Exception: ', '');
+      final message = switch (raw) {
+        'cannot_pair_self' => l10n.pairSelf,
+        'pair_invalid' => l10n.pairInvalid,
+        'device_session_unavailable' => l10n.pairSessionUnavailable,
+        _ => l10n.qrScannerPairFailed(raw),
+      };
+      AppToast.show(context, message: message);
+      setState(() {
+        _processing = false;
+        _lastHandledPayload = null;
+      });
+    }
   }
 
   Future<void> _handleScan(String sessionId) async {
@@ -186,14 +262,14 @@ class _QrScannerScreenState extends ConsumerState<QrScannerScreen> {
       });
       AppToast.show(
         context,
-        message: AppLocalizations.of(context).qrScannerFailed(
-          e.toString().replaceFirst('Exception: ', ''),
-        ),
+        message: AppLocalizations.of(
+          context,
+        ).qrScannerFailed(e.toString().replaceFirst('Exception: ', '')),
       );
       if (mounted) {
         setState(() {
           _processing = false;
-          _lastHandledSessionId = null;
+          _lastHandledPayload = null;
         });
       }
     }
@@ -238,7 +314,7 @@ class _QrScannerScreenState extends ConsumerState<QrScannerScreen> {
           );
           setState(() {
             _processing = false;
-            _lastHandledSessionId = null;
+            _lastHandledPayload = null;
           });
         }
       }
@@ -272,7 +348,7 @@ class _QrScannerScreenState extends ConsumerState<QrScannerScreen> {
     final colors = context.appColors;
     final l10n = AppLocalizations.of(context);
     return Scaffold(
-      appBar: AppBar(title: Text(l10n.qrLoginTitle)),
+      appBar: AppBar(title: Text(widget.licenseOnly ? (Localizations.localeOf(context).languageCode == 'zh' ? '扫码授权' : 'Scan authorization QR') : l10n.qrLoginTitle)),
       body: !_permissionChecked
           ? const Center(child: CircularProgressIndicator())
           : !_permissionGranted

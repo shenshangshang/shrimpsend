@@ -9,33 +9,30 @@ import { X } from 'lucide-react';
 
 export function PendingFilesBar() {
   const { t } = useI18n();
-  const { pendingFiles, setPendingFiles, removePendingFile, handleSendFiles } = useChatContext();
+  const { pendingFiles, setPendingFiles, removePendingFile } = useChatContext();
   const [showManageSheet, setShowManageSheet] = useState(false);
 
   if (pendingFiles.length === 0) return null;
 
   return (
     <>
-      <div className="flex shrink-0 items-center gap-2 border-t border-border/60 bg-card px-4 py-2">
+      <div className="flex shrink-0 items-center gap-2 border-b border-border/60 bg-background/60 px-4 py-3">
         <div className="flex-1 overflow-x-auto min-w-0 scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
           <div className="flex gap-1.5 items-center flex-nowrap">
             {pendingFiles.slice(0, 20).map((f, i) => (
               <span
                 key={i}
-                className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border/60 bg-muted/50 px-2.5 py-1 text-xs backdrop-blur-sm"
+                className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-border/60 bg-card px-2.5 py-1 text-xs "
               >
                 <span className="max-w-[120px] truncate">{f.name}</span>
-                <button type="button" onClick={() => removePendingFile(i)} className="text-muted-foreground hover:text-foreground ml-0.5">&times;</button>
+                <button type="button" aria-label={t('conversation.removeFile', { name: f.name })} onClick={() => removePendingFile(i)} className="ml-0.5 rounded p-1 text-muted-foreground hover:text-foreground"><X className="size-3.5" /></button>
               </span>
             ))}
           </div>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
-          <Button variant="outline" size="sm" onClick={() => setShowManageSheet(true)} className="rounded-full">
+          <Button variant="outline" size="sm" onClick={() => setShowManageSheet(true)} className="rounded-lg">
             {t('chat.managePending', { count: pendingFiles.length })}
-          </Button>
-          <Button size="sm" onClick={handleSendFiles} className="rounded-full">
-            {t('chat.send')}
           </Button>
         </div>
       </div>
@@ -55,6 +52,7 @@ export function PendingFilesBar() {
                 </div>
                 <button
                   type="button"
+                  aria-label={t('conversation.removeFile', { name: f.name })}
                   onClick={() => removePendingFile(i)}
                   className="shrink-0 text-muted-foreground hover:text-destructive p-1"
                 >

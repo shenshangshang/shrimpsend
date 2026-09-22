@@ -1,3 +1,4 @@
+import '../ui/product_scaffold.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -8,9 +9,7 @@ import '../providers/webdav_provider.dart';
 import '../services/webdav_credential_store.dart';
 import '../services/webdav_session.dart';
 import '../ui/app_ui.dart';
-import '../utils/auth_route_guard.dart';
 import '../utils/toast.dart';
-import '../utils/webdav_membership_gate.dart';
 
 class WebDavConnectionScreen extends ConsumerStatefulWidget {
   final int? connectionId;
@@ -22,7 +21,8 @@ class WebDavConnectionScreen extends ConsumerStatefulWidget {
       _WebDavConnectionScreenState();
 }
 
-class _WebDavConnectionScreenState extends ConsumerState<WebDavConnectionScreen> {
+class _WebDavConnectionScreenState
+    extends ConsumerState<WebDavConnectionScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _urlController = TextEditingController();
@@ -54,7 +54,6 @@ class _WebDavConnectionScreenState extends ConsumerState<WebDavConnectionScreen>
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      if (!ensureLoggedInForRoute(context, ref)) return;
       if (_isEdit) {
         _loadMeta();
       } else {
@@ -131,11 +130,15 @@ class _WebDavConnectionScreenState extends ConsumerState<WebDavConnectionScreen>
 
   Future<void> _test() async {
     if (!_formKey.currentState!.validate()) return;
-    if (!_isEdit && _passwordController.text.isEmpty) {
-      AppToast.show(context, message: AppLocalizations.of(context).webdavPasswordRequired);
+    if (!_isEdit &&
+        _usernameController.text.trim().isNotEmpty &&
+        _passwordController.text.isEmpty) {
+      AppToast.show(
+        context,
+        message: AppLocalizations.of(context).webdavPasswordRequired,
+      );
       return;
     }
-    if (!_isEdit && !await ensureCanAddWebDav(context)) return;
     if (!mounted) return;
     setState(() => _testing = true);
     final l10n = AppLocalizations.of(context);
@@ -154,11 +157,15 @@ class _WebDavConnectionScreenState extends ConsumerState<WebDavConnectionScreen>
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    if (!_isEdit && _passwordController.text.isEmpty) {
-      AppToast.show(context, message: AppLocalizations.of(context).webdavPasswordRequired);
+    if (!_isEdit &&
+        _usernameController.text.trim().isNotEmpty &&
+        _passwordController.text.isEmpty) {
+      AppToast.show(
+        context,
+        message: AppLocalizations.of(context).webdavPasswordRequired,
+      );
       return;
     }
-    if (!_isEdit && !await ensureCanAddWebDav(context)) return;
     if (!mounted) return;
     setState(() => _saving = true);
     final l10n = AppLocalizations.of(context);
@@ -187,118 +194,156 @@ class _WebDavConnectionScreenState extends ConsumerState<WebDavConnectionScreen>
     final colors = context.appColors;
     final theme = Theme.of(context);
 
-    return Scaffold(
+    return ProductScaffold(
+      section: ProductSection.files,
+      filesLocation: '/files/connections',
       appBar: AppBar(
-        title: Text(_isEdit ? l10n.webdavEditConnection : l10n.webdavAddConnection),
+        title: Text(
+          _isEdit ? l10n.webdavEditConnection : l10n.webdavAddConnection,
+        ),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(AppSpacing.lg),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    if (_errorMessage != null)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: AppSpacing.md),
-                        child: Text(
-                          _errorMessage!,
-                          style: TextStyle(color: colors.danger),
-                        ),
-                      ),
-                    TextFormField(
-                      controller: _nameController,
-                      decoration: InputDecoration(labelText: l10n.webdavFormName),
-                      validator: (v) =>
-                          v == null || v.trim().isEmpty ? l10n.webdavFormNameRequired : null,
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    TextFormField(
-                      controller: _urlController,
-                      decoration: InputDecoration(labelText: l10n.webdavFormUrl),
-                      keyboardType: TextInputType.url,
-                      onChanged: (_) => setState(() {}),
-                      validator: (v) {
-                        if (v == null || v.trim().isEmpty) {
-                          return l10n.webdavFormUrlRequired;
-                        }
-                        final t = v.trim();
-                        if (!t.startsWith('http://') && !t.startsWith('https://')) {
-                          return l10n.webdavFormUrlInvalid;
-                        }
-                        return null;
-                      },
-                    ),
-                    if (_needsClientApp(_urlController.text)) ...[
-                      const SizedBox(height: AppSpacing.md),
-                      InputDecorator(
-                        decoration: InputDecoration(
-                          labelText: l10n.webdavFormClientApp,
-                          helperText: l10n.webdavFormClientAppHint,
-                        ),
-                        child: Text(
-                          l10n.webdavClientAppZotero,
-                          style: theme.textTheme.bodyLarge,
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: AppSpacing.md),
-                    TextFormField(
-                      controller: _usernameController,
-                      decoration: InputDecoration(labelText: l10n.webdavFormUsername),
-                      validator: (v) =>
-                          v == null || v.trim().isEmpty ? l10n.webdavFormUsernameRequired : null,
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    TextFormField(
-                      controller: _passwordController,
-                      decoration: InputDecoration(
-                        labelText: l10n.webdavFormPassword,
-                        hintText: _isEdit ? l10n.webdavFormPasswordHintEdit : null,
-                        suffixIcon: IconButton(
-                          icon: Icon(
-                            _obscurePassword ? LucideIcons.eyeOff : LucideIcons.eye,
+          : Align(
+              alignment: Alignment.topLeft,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 760),
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(28),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          Localizations.localeOf(context).languageCode == 'zh'
+                              ? '凭据由系统安全存储保管，文件在本机与云端之间直接传输。'
+                              : 'Credentials use secure system storage. Files move directly between this device and your cloud.',
+                          style: TextStyle(
+                            color: colors.textSecondary,
+                            fontSize: 14,
+                            height: 1.6,
                           ),
-                          onPressed: () =>
-                              setState(() => _obscurePassword = !_obscurePassword),
                         ),
-                      ),
-                      obscureText: _obscurePassword,
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    TextFormField(
-                      controller: _rootPathController,
-                      decoration: InputDecoration(labelText: l10n.webdavFormRootPath),
-                    ),
-                    const SizedBox(height: AppSpacing.xl),
-                    OutlinedButton.icon(
-                      onPressed: _testing ? null : _test,
-                      icon: _testing
-                          ? SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: theme.colorScheme.primary,
+                        const SizedBox(height: 24),
+                        if (_errorMessage != null)
+                          Padding(
+                            padding: const EdgeInsets.only(
+                              bottom: AppSpacing.md,
+                            ),
+                            child: Text(
+                              _errorMessage!,
+                              style: TextStyle(color: colors.danger),
+                            ),
+                          ),
+                        TextFormField(
+                          controller: _nameController,
+                          decoration: InputDecoration(
+                            labelText: l10n.webdavFormName,
+                          ),
+                          validator: (v) => v == null || v.trim().isEmpty
+                              ? l10n.webdavFormNameRequired
+                              : null,
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        TextFormField(
+                          controller: _urlController,
+                          decoration: InputDecoration(
+                            labelText: l10n.webdavFormUrl,
+                          ),
+                          keyboardType: TextInputType.url,
+                          onChanged: (_) => setState(() {}),
+                          validator: (v) {
+                            if (v == null || v.trim().isEmpty) {
+                              return l10n.webdavFormUrlRequired;
+                            }
+                            final t = v.trim();
+                            if (!t.startsWith('http://') &&
+                                !t.startsWith('https://')) {
+                              return l10n.webdavFormUrlInvalid;
+                            }
+                            return null;
+                          },
+                        ),
+                        if (_needsClientApp(_urlController.text)) ...[
+                          const SizedBox(height: AppSpacing.md),
+                          InputDecorator(
+                            decoration: InputDecoration(
+                              labelText: l10n.webdavFormClientApp,
+                              helperText: l10n.webdavFormClientAppHint,
+                            ),
+                            child: Text(
+                              l10n.webdavClientAppZotero,
+                              style: theme.textTheme.bodyLarge,
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: AppSpacing.md),
+                        TextFormField(
+                          controller: _usernameController,
+                          decoration: InputDecoration(
+                            labelText: l10n.webdavFormUsername,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        TextFormField(
+                          controller: _passwordController,
+                          decoration: InputDecoration(
+                            labelText: l10n.webdavFormPassword,
+                            hintText: _isEdit
+                                ? l10n.webdavFormPasswordHintEdit
+                                : null,
+                            suffixIcon: IconButton(
+                              icon: Icon(
+                                _obscurePassword
+                                    ? LucideIcons.eyeOff
+                                    : LucideIcons.eye,
                               ),
-                            )
-                          : const Icon(LucideIcons.plugZap, size: 18),
-                      label: Text(l10n.webdavTestConnection),
+                              onPressed: () => setState(
+                                () => _obscurePassword = !_obscurePassword,
+                              ),
+                            ),
+                          ),
+                          obscureText: _obscurePassword,
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        TextFormField(
+                          controller: _rootPathController,
+                          decoration: InputDecoration(
+                            labelText: l10n.webdavFormRootPath,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.xl),
+                        OutlinedButton.icon(
+                          onPressed: _testing ? null : _test,
+                          icon: _testing
+                              ? SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: theme.colorScheme.primary,
+                                  ),
+                                )
+                              : const Icon(LucideIcons.plugZap, size: 18),
+                          label: Text(l10n.webdavTestConnection),
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        FilledButton(
+                          onPressed: _saving ? null : _save,
+                          child: _saving
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : Text(l10n.confirm),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: AppSpacing.sm),
-                    FilledButton(
-                      onPressed: _saving ? null : _save,
-                      child: _saving
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : Text(l10n.confirm),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),

@@ -100,7 +100,9 @@ Future<DeviceDto> updateDevicePresence(
   logApi.info('updateDevicePresence deviceId=$deviceId status=$status');
   return withAuthRetry(() async {
     final r = await http.post(
-      Uri.parse('$apiBaseUrl/api/devices/${Uri.encodeComponent(deviceId)}/presence'),
+      Uri.parse(
+        '$apiBaseUrl/api/devices/${Uri.encodeComponent(deviceId)}/presence',
+      ),
       headers: apiHeaders,
       body: jsonEncode({
         'sessionId': sessionId,
@@ -143,4 +145,28 @@ Future<DeviceDto> updateDevice(
     checkAuthResponse(r, fallback: '更新设备失败');
     return DeviceDto.fromJson(jsonDecode(r.body) as Map<String, dynamic>);
   });
+}
+
+Future<List<DeviceDto>> listPairedDevices() async {
+  if (!hasDeviceAccessToken) return [];
+  final r = await withDeviceAuthRetry(
+    () => http.get(
+      Uri.parse('$apiBaseUrl/api/devices/paired'),
+      headers: deviceApiHeaders,
+    ),
+  );
+  if (r.statusCode != 200) throw Exception('Failed to list paired devices');
+  return (jsonDecode(r.body) as List)
+      .map((e) => DeviceDto.fromJson(e as Map<String, dynamic>))
+      .toList();
+}
+
+Future<void> unpairDevice(String peer) async {
+  final r = await withDeviceAuthRetry(
+    () => http.delete(
+      Uri.parse('$apiBaseUrl/api/devices/paired/${Uri.encodeComponent(peer)}'),
+      headers: deviceApiHeaders,
+    ),
+  );
+  if (r.statusCode != 204) throw Exception('Failed to disconnect device');
 }

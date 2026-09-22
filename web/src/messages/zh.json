@@ -303,7 +303,7 @@
       "title": "调试环境（后端地址）",
       "badge": "仅本地调试",
       "description": "仅在局域网访问且使用开发服务器时显示。本地调试会固定连接本机服务端口。",
-      "hint": "本地 Web 会固定访问当前主机的 :9000 后端和 :8000 WebSocket，不再直连线上 API。要验证海外会员、Stripe 或托管存储，请用本地后端的 dev-overseas 配置启动。"
+      "hint": "本地 Web 会固定访问当前主机的 :9000 后端和 :5200 WebSocket，不再直连线上 API。要验证海外会员、Stripe 或托管存储，请用本地后端的 dev-overseas 配置启动。"
     },
     "navAriaLabel": "设置分类",
     "sectionGeneral": "通用",
@@ -343,7 +343,13 @@
       "webrtcRetryHttp": "WebRTC 重试失败，请切换到 HTTP 模式发送",
       "httpNotSupportedWebPeer": "网页对网页不支持 HTTP 传输，请使用 WebRTC 或 S3",
       "webrtcTryS3": "WebRTC 发送失败，请切换到 S3 模式重试",
-      "webrtcRetryS3": "WebRTC 重试失败，请切换到 S3 模式发送"
+      "webrtcRetryS3": "WebRTC 重试失败，请切换到 S3 模式发送",
+      "guestTextNeedsLogin": "登录后即可发送文字消息并使用云传输",
+      "webrtcTryLogin": "WebRTC 发送失败。登录后可改用云传输。",
+      "webrtcRetryLogin": "WebRTC 重试失败。登录后可改用云传输。",
+      "pairSelf": "这是当前浏览器的设备 ID",
+      "pairInvalid": "请输入有效的设备 ID",
+      "pairFailed": "无法配对该设备"
     },
     "transferBar": {
       "webrtc": "WebRTC",
@@ -395,6 +401,7 @@
       "reasonHttpPullFail": "反向拉取失败，对端无法访问本机 HTTP",
       "reasonWebrtcOnline": "同网段，WebRTC 可直接连通",
       "reasonWebrtcFail": "WebRTC 信令或 ICE 不可达",
+      "reasonWebrtcSkippedLanOk": "WebRTC 不再预检，发送时仍可手动尝试",
       "reasonHttpDirectNoUrl": "未发现局域网地址，无法测试 HTTP 直连",
       "reasonOfflineCloud": "当前离线，无法通过云端信令检测",
       "reasonS3LoginRequired": "需要登录后才可检测 S3",
@@ -404,7 +411,7 @@
       "helpHttpDirectTitle": "HTTP 局域网直连",
       "helpHttpDirectBody": "本机直接向对端的局域网 HTTP 地址发起 /probe 请求，不经过云端服务器。\n\n用于确认：在已知对端局域网地址（如 mDNS 发现）且网络可达时，能否建立最快的 HTTP 文件传输路径。",
       "helpHttpSignalingTitle": "HTTP 信令检测",
-      "helpHttpSignalingBody": "通过云端消息（Centrifugo）通知对端自检其 HTTP 服务，并将结果回传。\n\n用于确认：即使尚未发现对端局域网地址，只要双方在线，对端 HTTP 服务是否正常，并可能获取或更新其局域网地址。",
+      "helpHttpSignalingBody": "通过云端消息通知对端自检其 HTTP 服务，并将结果回传。\n\n用于确认：即使尚未发现对端局域网地址，只要双方在线，对端 HTTP 服务是否正常，并可能获取或更新其局域网地址。",
       "helpHttpPullTitle": "HTTP 反向拉取",
       "helpHttpPullBody": "通过云端通知对端，尝试访问本机的 HTTP 服务。\n\n用于确认：在 NAT 或网络不对称（只能单向连通）时，对端能否反向拉取本机文件。这是 HTTP 直连不可用时的备选传输方向。",
       "helpWebrtcTitle": "WebRTC 连通性",
@@ -430,12 +437,24 @@
       "sendModifierEnter": "发送 (Ctrl+Enter)",
       "sendModifierEnterMac": "发送 (⌘+Enter)",
       "pickFile": "选择文件",
-      "devicePanel": "设备面板"
+      "devicePanel": "设备面板",
+      "guestPlaceholder": "输入消息…"
     },
     "empty": {
-      "hint": "发送一条消息或文件，所有设备实时同步",
+      "hint": "发送文字或文件到选中的设备",
+      "guestHint": "发一段文字，或选择文件开始传输。",
       "loadMore": "加载更多…",
       "dropHint": "松开以添加文件"
+    },
+    "quota": {
+      "hint": "本机免费额度",
+      "message": "消息 {used}/{limit}",
+      "signaling": "信令 {used}/{limit}",
+      "title": "发送过于频繁",
+      "messageBody": "本分钟文字额度已用完（{used}/{limit}）。请 {seconds} 秒后再试。",
+      "signalingBody": "本分钟传输信令额度已用完（{used}/{limit}）。请 {seconds} 秒后再试，或稍后再发文件。",
+      "infoBody": "当前消息 {messageUsed}/{messageLimit}，新建连接 {signalingUsed}/{signalingLimit}。授权本机后，正常使用不扣商业额度。",
+      "gotIt": "知道了"
     },
     "scrollBottom": "回到底部",
     "selectToggle": "选中",
@@ -465,14 +484,15 @@
       "sessionClearMessagesDone": "消息已清空",
       "sessionClearMessagesFailed": "清空消息失败",
       "sessionRemoveSelfHint": "从账号移除本机并退出登录。",
-      "sessionRemoveOtherHint": "从账号移除当前会话中的设备。移除后该设备上的账号将退出登录。",
+      "sessionRemoveOtherHint": "解除设备配对，会员授权和本地文件会保留。",
       "deleteThisDevice": "删除本设备",
       "removeDevice": "移除设备",
       "online": "在线",
       "checking": "检测中…",
       "offline": "离线",
       "deviceNumber": "设备号",
-      "toastRemovedSelf": "已删除本设备"
+      "toastRemovedSelf": "已删除本设备",
+      "peerRemoveConfirm": "解除与这台设备的配对？本地文件和会员授权会保留。"
     },
     "bubble": {
       "sending": "发送中",
@@ -486,7 +506,19 @@
       "cancel": "取消",
       "sendingEllipsis": "发送中…",
       "cancelled": "已取消",
-      "fileFallback": "文件"
+      "fileFallback": "文件",
+      "channelHttp": "HTTP",
+      "channelWebrtc": "WebRTC",
+      "channelS3": "S3",
+      "phaseTryingHttp": "正在尝试局域网 HTTP…",
+      "phaseWaitingPull": "正在等待对方从本机拉取…",
+      "phaseConnectingWebrtc": "正在连接 WebRTC…",
+      "phaseConnectingWebrtcFallback": "局域网未通，正在连接 WebRTC…",
+      "phaseTryingS3": "正在上传到云存储…",
+      "phaseTryingS3Fallback": "直连未通，正在改用云存储…",
+      "sendingVia": "{channel} 发送中",
+      "receivingVia": "{channel} 接收中",
+      "receiveFailed": "接收中断，请让对方重试"
     }
   },
   "devices": {
@@ -496,7 +528,7 @@
     "removed": "已移除设备",
     "removeFailed": "移除失败，请稍后重试",
     "nameEmpty": "设备名称不能为空",
-    "title": "设备",
+    "title": "账号登录会话",
     "subtitle": "管理已登录设备与本机显示名称",
     "myDevices": "我的设备",
     "deviceCount": "共 {count} 台设备",
@@ -576,8 +608,8 @@
     "permanentDelete": "永久删除"
   },
   "membership": {
-    "title": "会员",
-    "paySuccess": "支付成功，会员权益已生效。",
+    "title": "设备会员",
+    "paySuccess": "支付成功，请分配设备授权名额。",
     "orderCreated": "订单已创建，请在新标签页完成支付宝支付。",
     "paymentPopupBlocked": "浏览器拦截了支付窗口，请允许本站弹窗后重试。",
     "paymentTabNavigateFailed": "无法在新标签页打开支付宝，请关闭拦截后重试。",
@@ -585,8 +617,8 @@
     "orderFailed": "下单失败",
     "currentTitle": "当前会员",
     "loading": "加载中…",
-    "deviceLimit": "设备上限 {count} 台",
-    "devicesBound": "当前已绑定 {count} 台设备",
+    "deviceLimit": "可授权 {count} 台",
+    "devicesBound": "当前已授权 {count} 台设备",
     "addonLine": "已增购 {packs} 包（+{slots} 台）",
     "tierBadgeAddon": "+{n} 台",
     "tierBadgeDevices": "{n} 台设备",
@@ -604,7 +636,7 @@
     "savingsVsMonthlyYear": "相较连续按月付满一年，最高省约 {pct}%",
     "subscribeStripe": "Stripe 订阅",
     "planStripeHint": "安全结账 · 自动续订 · 可随时取消",
-    "featureDevices": "{count} 台设备绑定上限",
+    "featureDevices": "{count} 个设备授权名额",
     "featureUploadHosted": "内置云传输 {gib} GiB / 月（上传计量）",
     "planPopular": "推荐",
     "pricePerMonthEquiv": "约合 {price}/月",
@@ -880,6 +912,18 @@
     "settingsTitle": "设置",
     "emptyTitle": "暂无其他设备",
     "emptyHint": "在其他设备上登录同一账号即可开始传输",
+    "guestLoginTitle": "登录后可看账号设备",
+    "guestLoginHint": "云传输、消息历史以及同一账号下的其他设备需登录后使用。",
+    "guestLoginCta": "登录",
+    "addDeviceTitle": "添加设备",
+    "pairQrHint": "用虾传 App 或其他未登录设备扫描此二维码，或粘贴对方设备 ID。",
+    "copyDeviceId": "复制设备 ID",
+    "copiedDeviceId": "已复制设备 ID",
+    "copyFailed": "复制失败",
+    "pasteDeviceIdPlaceholder": "粘贴设备 ID 或配对链接",
+    "pasteDeviceIdAction": "添加",
+    "peerAdded": "已添加设备",
+    "pairFailed": "无法配对该设备",
     "s3RelayTitle": "S3 云端中转",
     "s3Checking": "检测中…",
     "s3NotConfigured": "未配置",
@@ -888,7 +932,12 @@
     "bottomProbing": "检测中…",
     "bottomOnlineCount": "{count} 台在线",
     "refreshReachTitle": "刷新在线状态",
-    "fileLine": "[文件] {fileName}"
+    "fileLine": "[文件] {fileName}",
+    "section": "设备",
+    "ready": "连接设备，即刻开传",
+    "readyHint": "同一网络内优先直传，自动选择可用线路。",
+    "accountOptional": "购买或管理设备名额",
+    "guestMode": "免登录使用中"
   },
   "sendPanel": {
     "title": "发送目标",
@@ -906,6 +955,52 @@
     "collapseTitle": "收起侧栏",
     "httpHint": "通过 HTTP 直连，需同一局域网。",
     "webrtcHint": "WebRTC 不经服务器；失败时可换 HTTP。",
-    "s3Hint": "通过 S3 云端中转，发送到所有已登录设备。"
+    "s3Hint": "通过 S3 中转发送到选中的已配对设备。"
+  },
+  "welcome": {
+    "eyebrow": "从这里，传到那里",
+    "title": "靠近一点，传得更简单。",
+    "description": "不必登录，连接另一台设备就能发送文件、照片或文字。",
+    "connect": "连接另一台设备",
+    "scan": "用另一台设备扫码，或粘贴设备 ID",
+    "private": "设备之间直接传输",
+    "resume": "中断后可继续",
+    "anything": "文件、照片与文字"
+  },
+  "receive": {
+    "folder": "接收位置",
+    "default": "浏览器默认下载目录",
+    "hint": "接收文件直接写入目标目录，不再保存第二份缓存。",
+    "browserHint": "下载目录由浏览器管理，可在浏览器设置中更改。",
+    "choose": "选择文件夹",
+    "reset": "恢复默认"
+  },
+  "deviceLicense": {
+    "entry": "本机授权"
+  },
+  "conversation": {
+    "available": "可传输",
+    "connect": "连接",
+    "noDevices": "连接另一台设备，即可开始互传。",
+    "composer": "输入文字，或把文件拖到这里",
+    "file": "文件",
+    "newline": "Shift + 回车换行",
+    "emptyThread": "发送一段文字，或拖入文件开始传输。",
+    "removeFile": "移除 {name}",
+    "membership": "会员与授权额度",
+    "allSettings": "更多设置",
+    "light": "浅色",
+    "dark": "深色",
+    "system": "跟随系统",
+    "welcomeTitle": "选一台设备，开始互传",
+    "welcomeHint": "文件和文字，都在一个会话里。",
+    "connectDevice": "连接设备",
+    "saved": "已保存到接收文件夹",
+    "browserDownload": "已交给浏览器下载",
+    "sent": "已发送",
+    "today": "今天",
+    "general": "本机设置",
+    "generalHint": "这些设置仅影响当前设备，免登录也能使用。",
+    "accountNeeded": "登录后管理账号与会员，其他功能可以免登录使用。"
   }
 }

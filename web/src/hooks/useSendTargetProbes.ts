@@ -29,6 +29,7 @@ export type DeviceReachDetail = {
 export type DeviceReachEntry = {
   methods: DeviceReachDetail;
   probing: boolean;
+  checkedAt?: number;
 };
 
 const offlineMethods: DeviceReachDetail = {
@@ -70,15 +71,16 @@ function initialReachEntry(): DeviceReachEntry {
   return offlineEntry;
 }
 
-function toProbingEntry(prev?: DeviceReachEntry): DeviceReachEntry {
+function toProbingEntry(prev?: DeviceReachEntry, quiet = false): DeviceReachEntry {
   return {
     methods: prev?.methods ?? offlineMethods,
-    probing: true,
+    probing: quiet && !!prev?.checkedAt ? false : true,
+    checkedAt: prev?.checkedAt,
   };
 }
 
 function toResolvedEntry(methods: DeviceReachDetail): DeviceReachEntry {
-  return { methods, probing: false };
+  return { methods, probing: false, checkedAt: Date.now() };
 }
 
 function buildFromDevicePresence(devices: DeviceDto[]): Record<string, DeviceReachEntry> {
@@ -92,23 +94,23 @@ function mergeReachOnListChange(
   devices: DeviceDto[],
   connected: boolean,
 ): Record<string, DeviceReachEntry> {
-  if (!connected) return buildFromDevicePresence(devices);
+
   const next: Record<string, DeviceReachEntry> = {};
   for (const device of devices) {
-    next[device.deviceId] = device.presenceStatus === 'offline'
-      ? offlineEntry
-      : (prev[device.deviceId] ?? offlineEntry);
+    const old = prev[device.deviceId] ?? offlineEntry;
+    next[device.deviceId] = !connected || device.presenceStatus === 'offline'
+      ? { methods: { ...offlineMethods, directHttp: old.methods.directHttp }, probing: old.probing, checkedAt: old.checkedAt }
+      : old;
   }
   return next;
 }
 
-/** Probe all methods; skips signaling/WebRTC when direct HTTP succeeds. */
+/** Probe HTTP direct + LAN signaling. WebRTC transfer is not pre-probed. */
 async function probeDeviceAllMethods(
   device: DeviceDto,
   nearbyIds: Set<string>,
   onDirectHttpProbe: (url: string) => Promise<boolean>,
   onLanHttpProbe: (deviceId: string) => Promise<{ success: boolean; lanHttpUrl?: string; senderReachable?: boolean }>,
-  onWebRTCProbe: (deviceId: string) => Promise<boolean>,
   { forceFull = false }: { forceFull?: boolean } = {},
 ): Promise<{ methods: DeviceReachDetail; freshLanUrl?: string }> {
   if (!forceFull && shouldSkipAutoProbe(device, nearbyIds)) {
@@ -137,7 +139,6 @@ async function probeDeviceAllMethods(
   }
 
   const results = await Promise.allSettled([
-    Promise.resolve({ ok: false, url: undefined as string | undefined }),
     (async () => {
       const result = await onLanHttpProbe(device.deviceId);
       return {
@@ -146,13 +147,11 @@ async function probeDeviceAllMethods(
         url: result.lanHttpUrl,
       };
     })(),
-    onWebRTCProbe(device.deviceId),
   ]);
 
-  const lanResult = results[1].status === 'fulfilled'
-    ? results[1].value
+  const lanResult = results[0].status === 'fulfilled'
+    ? results[0].value
     : { peerOk: false, pullOk: false, url: undefined as string | undefined };
-  const webrtcOk = results[2].status === 'fulfilled' ? results[2].value : false;
 
   const freshLanUrl = lanResult.url;
   const peerHttpHealthy = lanResult.peerOk;
@@ -163,7 +162,7 @@ async function probeDeviceAllMethods(
       directHttp: false,
       peerHttpHealthy,
       pullReachable,
-      webrtc: webrtcOk,
+      webrtc: null,
       lanSignaling: peerHttpHealthy,
     },
     freshLanUrl,
@@ -176,7 +175,6 @@ export function useSendTargetProbes(
   connected: boolean,
   probeToken: number,
   probeForceAll: boolean,
-  onWebRTCProbe: (targetDeviceId: string) => Promise<boolean>,
   onLanHttpProbe: (
     targetDeviceId: string,
   ) => Promise<{ success: boolean; lanHttpUrl?: string; senderReachable?: boolean }>,
@@ -217,6 +215,10 @@ export function useSendTargetProbes(
   const [probing, setProbing] = useState(false);
 
   const freshLanUrlsRef = useRef<Record<string, string>>({});
+  const probeVersions = useRef<Record<string, number>>({});
+  const inFlight = useRef(new Set<string>());
+  const connectedRef = useRef(connected);
+  connectedRef.current = connected;
   const deviceSnapshotRef = useRef(otherDevices);
   deviceSnapshotRef.current = otherDevices;
   const nearbyIdsRef = useRef(nearbyIds);
@@ -225,6 +227,7 @@ export function useSendTargetProbes(
   myDeviceIdsRef.current = myDeviceIds;
 
   useEffect(() => {
+    for (const id of Object.keys(probeVersions.current)) probeVersions.current[id]++;
     const ids = otherDevices.map((d) => d.deviceId);
     setDeviceReach((prev) => mergeReachOnListChange(prev, otherDevices, connected));
 
@@ -234,11 +237,11 @@ export function useSendTargetProbes(
       if (!allowed.has(k)) delete urls[k];
     }
     freshLanUrlsRef.current = urls;
-  }, [deviceFingerprint, connected, otherDevices]);
+  }, [deviceFingerprint, connected]);
 
   useEffect(() => {
     const cancelledRef = { current: false };
-    if (probeToken === 0 || !connected) {
+    if (probeToken === 0) {
       return () => { cancelledRef.current = true; };
     }
 
@@ -266,7 +269,7 @@ export function useSendTargetProbes(
 
     setDeviceReach((prev) => {
       const next = { ...prev };
-      for (const d of toProbe) next[d.deviceId] = toProbingEntry(prev[d.deviceId]);
+      for (const d of toProbe) next[d.deviceId] = toProbingEntry(prev[d.deviceId], !probeForceAll);
       if (!probeForceAll) {
         for (const d of partition.lazy) next[d.deviceId] = offlineEntry;
       }
@@ -296,19 +299,22 @@ export function useSendTargetProbes(
     };
 
     const probeOne = async (d: DeviceDto, forceFull: boolean) => {
+      if (cancelledRef.current || inFlight.current.has(d.deviceId)) return;
+      const version = (probeVersions.current[d.deviceId] ?? 0) + 1;
+      probeVersions.current[d.deviceId] = version;
+      inFlight.current.add(d.deviceId);
       try {
         const { methods, freshLanUrl } = await probeDeviceAllMethods(
           d,
           nearbyIdsRef.current,
           onDirectHttpProbe,
-          onLanHttpProbe,
-          onWebRTCProbe,
+          connectedRef.current ? onLanHttpProbe : async () => ({ success: false }),
           { forceFull },
         );
-        applyResult(d.deviceId, methods, freshLanUrl);
+        if (probeVersions.current[d.deviceId] === version) applyResult(d.deviceId, methods, freshLanUrl);
       } catch {
-        applyResult(d.deviceId, offlineMethods);
-      }
+        if (probeVersions.current[d.deviceId] === version) applyResult(d.deviceId, offlineMethods);
+      } finally { inFlight.current.delete(d.deviceId); }
     };
 
     void (async () => {
@@ -326,12 +332,15 @@ export function useSendTargetProbes(
     })();
 
     return () => { cancelledRef.current = true; };
-  }, [probeToken, probeForceAll, connected, onWebRTCProbe, onLanHttpProbe, onDirectHttpProbe]);
+  }, [probeToken, probeForceAll, connected, deviceFingerprint, onLanHttpProbe, onDirectHttpProbe]);
 
   const probeSingleDevice = useCallback((deviceId: string) => {
-    if (!connected) return;
+    if (inFlight.current.has(deviceId)) return;
     const device = deviceSnapshotRef.current.find((d) => d.deviceId === deviceId);
     if (!device) return;
+    const version = (probeVersions.current[deviceId] ?? 0) + 1;
+    probeVersions.current[deviceId] = version;
+    inFlight.current.add(deviceId);
 
     setDeviceReach((prev) => ({
       ...prev,
@@ -342,10 +351,11 @@ export function useSendTargetProbes(
         device,
         nearbyIdsRef.current,
         onDirectHttpProbe,
-        onLanHttpProbe,
-        onWebRTCProbe,
+        connectedRef.current ? onLanHttpProbe : async () => ({ success: false }),
         { forceFull: true },
       );
+      inFlight.current.delete(deviceId);
+      if (probeVersions.current[deviceId] !== version || !deviceSnapshotRef.current.some(d => d.deviceId === deviceId)) return;
       if (freshLanUrl) {
         freshLanUrlsRef.current = { ...freshLanUrlsRef.current, [deviceId]: freshLanUrl };
       }
@@ -353,11 +363,12 @@ export function useSendTargetProbes(
         ...prev,
         [deviceId]: toResolvedEntry(methods),
       }));
-    })();
-  }, [connected, onDirectHttpProbe, onLanHttpProbe, onWebRTCProbe]);
+    })().catch(() => { inFlight.current.delete(deviceId); setDeviceReach(prev => ({ ...prev, [deviceId]: offlineEntry })); });
+  }, [connected, onDirectHttpProbe, onLanHttpProbe]);
 
   const applyDeviceReach = useCallback(
     (deviceId: string, entry: DeviceReachEntry, freshLanUrl?: string) => {
+      probeVersions.current[deviceId] = (probeVersions.current[deviceId] ?? 0) + 1;
       if (freshLanUrl) {
         freshLanUrlsRef.current = { ...freshLanUrlsRef.current, [deviceId]: freshLanUrl };
       }

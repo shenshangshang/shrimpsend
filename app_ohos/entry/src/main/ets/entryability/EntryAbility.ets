@@ -5,6 +5,8 @@ import { setAbilityContext } from '../common/AppContext';
 import { setRefreshTokenHandler } from '../network/HttpHelper';
 import { AuthApi } from '../network/AuthApi';
 import { ShareInbox } from '../share/ShareInbox';
+import { ApiSession } from '../network/ApiSession';
+import { RealtimeHub } from '../realtime/RealtimeHub';
 
 const DOMAIN = 0x3201;
 
@@ -57,6 +59,9 @@ export default class EntryAbility extends UIAbility {
 
   onForeground(): void {
     hilog.info(DOMAIN, 'Entry', 'onForeground');
+    if (ApiSession.hasLogin()) {
+      void RealtimeHub.ensureConnected();
+    }
   }
 
   onBackground(): void {

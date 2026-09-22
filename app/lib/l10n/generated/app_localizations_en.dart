@@ -218,7 +218,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsMembershipSubtitleUpgrade =>
-      'Lifetime plans and more devices';
+      'Device slots with no sign-in required';
 
   @override
   String settingsMembershipTierName(String tierName) {
@@ -231,14 +231,15 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get settingsNavMyDevices => 'My devices';
+  String get settingsNavMyDevices => 'Account sessions';
 
   @override
   String get settingsNavMyDevicesSubtitleOffline =>
       'Manage devices after you sign in';
 
   @override
-  String get settingsNavMyDevicesSubtitleOnline => 'Bound devices';
+  String get settingsNavMyDevicesSubtitleOnline =>
+      'Manage sign-in sessions for this account';
 
   @override
   String get settingsNavS3 => 'S3';
@@ -692,7 +693,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsSavePathSafSyncHint =>
-      'Files are saved here automatically after each transfer';
+      'Received files are saved to this folder';
 
   @override
   String get settingsSavePathSafMirrorLabel => 'Save folder';
@@ -1780,12 +1781,12 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String membershipTierSummary(String tier, int limit) {
-    return '$tier · up to $limit devices';
+    return '$tier · $limit device authorization slots';
   }
 
   @override
   String membershipBoundDevices(int count) {
-    return '$count devices bound';
+    return '$count authorized devices';
   }
 
   @override
@@ -1892,13 +1893,17 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String membershipFeatureDevices(int count) {
-    return 'Up to $count linked devices';
+    return '$count device authorization slots';
   }
 
   @override
   String membershipFeatureUploadHosted(int gib) {
     return '$gib GiB / month hosted upload quota';
   }
+
+  @override
+  String get membershipFeatureAuthorizedSignaling =>
+      'Authorized devices have unlimited signaling for normal use';
 
   @override
   String get membershipFeatureWebDav =>
@@ -2185,7 +2190,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get fileSendS3Intro =>
-      'Send via S3 cloud relay to all signed-in devices. Works across networks.';
+      'Use S3 relay to send across networks to selected paired devices.';
 
   @override
   String get fileSendS3ConfigurePrompt =>
@@ -2273,7 +2278,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get devicePanelEmptyHintOfflineLan =>
-      'Make sure other devices are on the same LAN to transfer.';
+      'Scan or show a pair code to connect unsigned-in phones or the web. Same-LAN devices can also transfer directly.';
 
   @override
   String get devicePanelEmptyHintOnlineAccount =>
@@ -2539,7 +2544,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get connectionDiagHelpHttpSignalingBody =>
-      'A cloud message (Centrifugo) asks the peer to self-check its HTTP service and report back.\n\nThis checks whether the peer\'s HTTP service is healthy when you don\'t yet know its LAN address, as long as both sides are online. The result may also include or update the peer\'s LAN URL.';
+      'A cloud message asks the peer to self-check its HTTP service and report back.\n\nThis checks whether the peer\'s HTTP service is healthy when you don\'t yet know its LAN address, as long as both sides are online. The result may also include or update the peer\'s LAN URL.';
 
   @override
   String get connectionDiagHelpHttpPullTitle => 'HTTP reverse pull';
@@ -2669,6 +2674,37 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chatTransferWaitingPeerShort => 'Waiting for peer…';
 
   @override
+  String get chatTransferPhaseTryingHttp => 'Trying LAN HTTP…';
+
+  @override
+  String get chatTransferPhaseWaitingPull =>
+      'Waiting for the other device to pull…';
+
+  @override
+  String get chatTransferPhaseConnectingWebrtc => 'Connecting WebRTC…';
+
+  @override
+  String get chatTransferPhaseConnectingWebrtcFallback =>
+      'LAN unavailable, connecting WebRTC…';
+
+  @override
+  String get chatTransferPhaseTryingS3 => 'Uploading to cloud storage…';
+
+  @override
+  String get chatTransferPhaseTryingS3Fallback =>
+      'Direct path failed, switching to cloud storage…';
+
+  @override
+  String chatTransferSendingVia(String channel) {
+    return 'Sending via $channel';
+  }
+
+  @override
+  String chatTransferReceivingVia(String channel) {
+    return 'Receiving via $channel';
+  }
+
+  @override
   String get chatTransferCancelledBare => 'Cancelled';
 
   @override
@@ -2722,7 +2758,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get chatScreenRemovePeerBody =>
-      'The account on that device will be signed out. If it is in use, access ends immediately; otherwise the next launch will require signing in again.';
+      'Disconnect this paired device. Local files and membership authorization are kept.';
 
   @override
   String get chatScreenConfirmRemoveLabel => 'Remove';
@@ -2786,8 +2822,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Remove this device from your account and sign out';
 
   @override
-  String get chatScreenSubtitleRemovePeer =>
-      'Remove the device in this conversation from your account';
+  String get chatScreenSubtitleRemovePeer => 'Disconnect this device pair';
 
   @override
   String get chatScreenPendingFilesMissing =>
@@ -2877,6 +2912,45 @@ class AppLocalizationsEn extends AppLocalizations {
   String chatScreenSendFailedWithError(String error) {
     return 'Send failed: $error';
   }
+
+  @override
+  String get deviceSendQuotaHint => 'This device’s free allowance';
+
+  @override
+  String deviceSendQuotaMessage(int used, int limit) {
+    return 'Messages $used/$limit';
+  }
+
+  @override
+  String deviceSendQuotaSignaling(int used, int limit) {
+    return 'Signaling $used/$limit';
+  }
+
+  @override
+  String get deviceSendQuotaTitle => 'Sending too frequently';
+
+  @override
+  String deviceSendQuotaMessageBody(int used, int limit, int seconds) {
+    return 'This minute\'s message quota is used up ($used/$limit). Try again in ${seconds}s.';
+  }
+
+  @override
+  String deviceSendQuotaSignalingBody(int used, int limit, int seconds) {
+    return 'This minute\'s transfer signaling quota is used up ($used/$limit). Try again in ${seconds}s, or send the file later.';
+  }
+
+  @override
+  String deviceSendQuotaInfoBody(
+    int messageUsed,
+    int messageLimit,
+    int signalingUsed,
+    int signalingLimit,
+  ) {
+    return 'Messages $messageUsed/$messageLimit; new connections $signalingUsed/$signalingLimit. Authorize this device for unlimited normal usage.';
+  }
+
+  @override
+  String get deviceSendQuotaGotIt => 'Got it';
 
   @override
   String get chatScreenFileMissing =>
@@ -3128,7 +3202,54 @@ class AppLocalizationsEn extends AppLocalizations {
   String get qrScannerAlignQr => 'Align the QR code inside the frame';
 
   @override
-  String get qrScannerUnrecognized => 'Scan a ShrimpSend login QR code';
+  String get qrScannerUnrecognized => 'Scan a ShrimpSend login or pair QR code';
+
+  @override
+  String get qrScannerPairSuccess => 'Device paired. You can send files now.';
+
+  @override
+  String qrScannerPairFailed(String error) {
+    return 'Could not pair this device: $error';
+  }
+
+  @override
+  String get qrScannerLoginRequiresAccount =>
+      'Sign in on this device before scanning a login QR code';
+
+  @override
+  String get scanToPair => 'Scan to pair';
+
+  @override
+  String get showPairQr => 'Show pair code';
+
+  @override
+  String get pairQrHint =>
+      'Have the other device scan this QR with ShrimpSend app or web, or paste a device ID.';
+
+  @override
+  String get copyDeviceId => 'Copy device ID';
+
+  @override
+  String get copiedDeviceId => 'Device ID copied';
+
+  @override
+  String get pasteDeviceIdHint => 'Paste device ID or pair link';
+
+  @override
+  String get pasteDeviceIdAction => 'Add';
+
+  @override
+  String get peerAdded => 'Device added';
+
+  @override
+  String get pairSelf => 'You cannot add this device';
+
+  @override
+  String get pairInvalid => 'Invalid device ID';
+
+  @override
+  String get pairSessionUnavailable =>
+      'Cannot reach the server. Try again shortly.';
 
   @override
   String get qrScannerTorchOn => 'Turn on flashlight';
@@ -3592,4 +3713,55 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get webdavLocalDownloaded => 'Downloaded';
+
+  @override
+  String get transferWelcomeTitle => 'A little closer. A lot simpler.';
+
+  @override
+  String get transferWelcomeDescription =>
+      'Send files, photos and text between your devices. No account needed.';
+
+  @override
+  String get transferWelcomeConnect => 'Connect your first device';
+
+  @override
+  String get transferWelcomeFooter =>
+      'Direct between devices · Resume interrupted transfers';
+
+  @override
+  String get conversationAvailable => 'Ready to transfer';
+
+  @override
+  String get conversationConnect => 'Connect';
+
+  @override
+  String get conversationConnectDevice => 'Connect a device';
+
+  @override
+  String get conversationComposer => 'Type a message, or drop files here';
+
+  @override
+  String get conversationNewline => 'Shift + Enter for a new line';
+
+  @override
+  String get conversationWelcomeTitle => 'Choose a device to start sharing';
+
+  @override
+  String get conversationWelcomeHint =>
+      'Files and messages, together in one conversation.';
+
+  @override
+  String get conversationSaved => 'Saved to receive folder';
+
+  @override
+  String get conversationSent => 'Sent';
+
+  @override
+  String get conversationSearch => 'Search messages';
+
+  @override
+  String get conversationFiles => 'Files';
+
+  @override
+  String get conversationFile => 'Files';
 }

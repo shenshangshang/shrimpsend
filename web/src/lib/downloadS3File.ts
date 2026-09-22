@@ -1,3 +1,4 @@
+import { saveReceivedBlob } from '@/lib/receiveFiles';
 import { S3TransferService } from '@/lib/services/s3Transfer';
 import type { OnTransferProgress } from '@/lib/services/cloudTransfer';
 
@@ -10,13 +11,5 @@ export async function downloadS3FileAsBrowserSave(
   onProgress?: OnTransferProgress,
 ): Promise<void> {
   const result = await cloudTransfer.download(s3Key, onProgress);
-  const blobUrl = URL.createObjectURL(result.blob);
-  try {
-    const a = document.createElement('a');
-    a.href = blobUrl;
-    a.download = fileName || 'download';
-    a.click();
-  } finally {
-    URL.revokeObjectURL(blobUrl);
-  }
+  await saveReceivedBlob(result.blob, fileName || 'download');
 }

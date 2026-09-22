@@ -18,17 +18,17 @@ export const FONT_WEIGHT_LEVELS: FontWeightLevel[] = [
 export function wghtForFontWeightLevel(level: FontWeightLevel): number {
   switch (level) {
     case 'lighter':
-      return 350;
+      return 300;
     case 'light':
-      return 400;
+      return 350;
     case 'normal':
-      return 450;
+      return 400;
     case 'medium':
       return 500;
     case 'semibold':
       return 550;
     default:
-      return 450;
+      return 400;
   }
 }
 

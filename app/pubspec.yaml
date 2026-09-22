@@ -35,7 +35,7 @@ dependencies:
   intl: any
   lucide_icons_flutter: ^3.1.10
   simple_icons: ^16.23.0
-  centrifuge: ^0.18.0
+  web_socket_channel: ^3.0.3
   flutter_chat_core: ^2.0.0
   flutter_chat_ui: ^2.0.0
   http: ^1.2.0
@@ -97,6 +97,7 @@ dependencies:
   # Windows VC runtime DLLs are vendored under windows/vc_redist/x64
   # and copied into Release by app/scripts/package_windows.ps1.
   win32: ^6.3.0
+  win32_registry: ^3.0.3
   openpanel_flutter:
     path: packages/openpanel_flutter
   feedmatter_flutter_sdk:
@@ -117,8 +118,27 @@ dependencies:
   flutter_foreground_task: ^9.2.2
   flutter_local_notifications: ^20.1.0
   local_notifier: ^0.1.6
+  # HarmonyOS federated implementations. Official Flutter skips plugins whose
+  # only native target is ohos; the Harmony SDK registers them. Do **not**
+  # override path_provider / shared_preferences themselves (that would force
+  # TPC forks onto Android/iOS).
+  path_provider_ohos:
+    git:
+      url: https://gitcode.com/CPF-Flutter/flutter_packages.git
+      path: packages/path_provider/path_provider_ohos
+      ref: provider-v2.1.5-ohos-1.0.1
+  shared_preferences_ohos:
+    git:
+      url: https://gitcode.com/openharmony-tpc/flutter_packages.git
+      path: packages/shared_preferences/shared_preferences_ohos
+  url_launcher_ohos:
+    git:
+      url: https://gitcode.com/openharmony-tpc/flutter_packages.git
+      path: packages/url_launcher/url_launcher_ohos
 
 dev_dependencies:
+  integration_test:
+    sdk: flutter
   flutter_test:
     sdk: flutter
 
@@ -151,10 +171,6 @@ flutter:
     - assets/certs/isrg_root_x1.pem
 
   # BEGIN_WINDOWS_FONT
-  fonts:
-    - family: UltrasendWenYuanSansSC
-      fonts:
-        - asset: assets/fonts/windows/WenYuanSansSCVF.ttf
   # END_WINDOWS_FONT
 
 # Tobias 支付宝插件：iOS 回调需配置 url_scheme（不可含下划线）
@@ -178,6 +194,8 @@ msix_config:
   # publisher: CN=REPLACE_WITH_PARTNER_CENTER_PUBLISHER_ID
   install_certificate: true
 
+# HarmonyOS HAP builds do not replace this file. TPC `*_ohos` plugin
+# implementations are extra dependencies above; official platforms ignore them.
 dependency_overrides:
   tray_manager:
     path: packages/tray_manager

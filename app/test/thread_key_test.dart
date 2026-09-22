@@ -8,7 +8,10 @@ void main() {
       threadKeyOneToOne(acc, 'device-b', 'device-a'),
       threadKeyOneToOne(acc, 'device-a', 'device-b'),
     );
-    expect(threadKeyOneToOne(acc, 'device-a', 'device-b'), 'u:42|d1:device-a|d2:device-b');
+    expect(
+      threadKeyOneToOne(acc, 'device-a', 'device-b'),
+      'device|d1:device-a|d2:device-b',
+    );
   });
 
   test('S3 cloud key', () {
@@ -36,6 +39,15 @@ void main() {
         explicitThreadKey: 'custom',
       ),
       'custom',
+    );
+  });
+
+  test('localExplicitThreadKey ignores another account prefix', () {
+    expect(localExplicitThreadKey('o:me', 'o:other|d1:a|d2:b'), isNull);
+    expect(localExplicitThreadKey('o:me', 'o:me|d1:a|d2:b'), isNull);
+    expect(
+      localExplicitThreadKey('u:42', 'device|d1:a|d2:b'),
+      'device|d1:a|d2:b',
     );
   });
 }

@@ -7,6 +7,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../api/webdav.dart';
 
 const _storageKeyPrefix = 'webdav_cred_';
+const _indexKey = 'webdav_cached_connection_ids';
 
 abstract interface class WebDavSecureStorage {
   Future<String?> read({required String key});
@@ -17,7 +18,13 @@ abstract interface class WebDavSecureStorage {
 
 class FlutterWebDavSecureStorage implements WebDavSecureStorage {
   FlutterWebDavSecureStorage([FlutterSecureStorage? storage])
-      : _storage = storage ?? const FlutterSecureStorage();
+    : _storage =
+          storage ??
+          const FlutterSecureStorage(
+            // Desktop distribution does not use Keychain Sharing or an App Group.
+            // The macOS login Keychain works without a provisioning profile.
+            mOptions: MacOsOptions(usesDataProtectionKeychain: false),
+          );
 
   final FlutterSecureStorage _storage;
 
@@ -38,7 +45,7 @@ class FlutterWebDavSecureStorage implements WebDavSecureStorage {
 /// Session cache for WebDAV credentials. Never use SharedPreferences/sqflite.
 class WebDavCredentialStore {
   WebDavCredentialStore._({WebDavSecureStorage? secure})
-      : _secure = secure ?? FlutterWebDavSecureStorage();
+    : _secure = secure ?? FlutterWebDavSecureStorage();
 
   static final WebDavCredentialStore instance = WebDavCredentialStore._();
 
@@ -72,6 +79,12 @@ class WebDavCredentialStore {
 
   Future<void> write(int connectionId, WebDavCredentials creds) async {
     _memory[connectionId] = creds;
+    final rawIds = await _readSecure(_indexKey);
+    final ids = <int>{..._memory.keys};
+    try {
+      ids.addAll((jsonDecode(rawIds ?? '[]') as List).cast<int>());
+    } catch (_) {}
+    await _writeSecure(_indexKey, jsonEncode(ids.toList()));
     await _writeSecure(
       '$_storageKeyPrefix$connectionId',
       jsonEncode(creds.toJson()),
@@ -84,8 +97,17 @@ class WebDavCredentialStore {
   }
 
   Future<void> wipeAll() async {
+    final ids = <int>{..._memory.keys};
+    try {
+      ids.addAll(
+        (jsonDecode(await _readSecure(_indexKey) ?? '[]') as List).cast<int>(),
+      );
+    } catch (_) {}
     _memory.clear();
-    await _deleteAllSecure();
+    for (final id in ids) {
+      await _deleteSecure('$_storageKeyPrefix$id');
+    }
+    await _deleteSecure(_indexKey);
   }
 
   Future<String?> _readSecure(String key) async {
@@ -113,14 +135,6 @@ class WebDavCredentialStore {
     }
   }
 
-  Future<void> _deleteAllSecure() async {
-    try {
-      await _secure.deleteAll();
-    } on PlatformException catch (e) {
-      _logSecureStorageError('deleteAll', e);
-    }
-  }
-
   void _logSecureStorageError(String operation, PlatformException error) {
     debugPrint(
       'WebDavCredentialStore: secure storage $operation failed '
@@ -131,9 +145,6 @@ class WebDavCredentialStore {
 
 String redactWebDavSecrets(String message) {
   var out = message;
-  out = out.replaceAll(
-    RegExp(r'://[^:@/]+:[^@/]+@'),
-    '://***:***@',
-  );
+  out = out.replaceAll(RegExp(r'://[^:@/]+:[^@/]+@'), '://***:***@');
   return out;
 }

@@ -1,0 +1,130 @@
+# Production only. Use scripts/deploy.sh; development keeps docker-compose.yml.
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-ultrasend}
+      MYSQL_USER: ${MYSQL_USER:-ultrasend}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_ROOT_PASSWORD mysqladmin ping -h localhost -uroot --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+  wukongim:
+    image: ${WUKONGIM_IMAGE:-registry.cn-shanghai.aliyuncs.com/wukongim/wukongim:v2}
+    environment:
+      WK_CLUSTER_NODEID: '1001'
+      WK_MODE: release
+      WK_TOKENAUTHON: 'true'
+      WK_MANAGERTOKEN: ${WUKONGIM_MANAGER_TOKEN:?Set WUKONGIM_MANAGER_TOKEN}
+      WK_EXTERNAL_IP: ${WUKONGIM_EXTERNAL_IP:-127.0.0.1}
+      WK_WEBHOOK_HTTPADDR: http://backend:9000/api/wukongim/webhook
+      WK_WEBHOOK_BEFORESENDON: 'true'
+      WK_WEBHOOK_BEFORESEND_HTTPADDR: http://backend:9000/api/wukongim/before-send
+      WK_WEBHOOK_BEFORESEND_ONTIMEOUT: deny
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${WUKONGIM_WS_PORT:-5200}:5200"
+    volumes:
+      - wukongim_data:/root/wukongim
+    healthcheck:
+      test: ["CMD-SHELL", 'wget -q -Y off -O /dev/null --header="token:$$WK_MANAGERTOKEN" http://127.0.0.1:5001/health || exit 1']
+      interval: 10s
+      timeout: 10s
+      retries: 12
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.production
+    env_file:
+      - ${DEPLOY_ENV_FILE:-.env.production}
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
+      SPRING_CONFIG_ADDITIONAL_LOCATION: file:/app/config/production.yml
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-ultrasend}?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: ${MYSQL_USER:-ultrasend}
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}
+      REALTIME_BUS: wukongim
+      WUKONGIM_API_URL: http://wukongim:5001
+      WUKONGIM_WS_PUBLIC_URL: ${WUKONGIM_WS_PUBLIC_URL:?Set WUKONGIM_WS_PUBLIC_URL}
+      WUKONGIM_MANAGER_TOKEN: ${WUKONGIM_MANAGER_TOKEN:?Set WUKONGIM_MANAGER_TOKEN}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?Set JWT_ACCESS_SECRET}
+      DEVICE_LICENSE_SECRET: ${DEVICE_LICENSE_SECRET:?Set a stable independent device license secret}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?Set JWT_REFRESH_SECRET}
+      APP_MESSAGES_ENCRYPTION_KEY_BASE64: ${APP_MESSAGES_ENCRYPTION_KEY_BASE64:?Set message encryption key}
+      APP_USER_DATA_ENCRYPTION_KEK_BASE64: ${APP_USER_DATA_ENCRYPTION_KEK_BASE64:?Set user data encryption key}
+      APP_CORS_ALLOWED_ORIGINS: ${APP_CORS_ALLOWED_ORIGINS:?Set APP_CORS_ALLOWED_ORIGINS}
+    volumes:
+      - ./docker/production.yml:/app/config/production.yml:ro
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${API_PORT:-9000}:9000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9000/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 40s
+    depends_on:
+      mysql:
+        condition: service_healthy
+      wukongim:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+      args:
+        NEXT_PUBLIC_ADMIN_EMAILS: ${NEXT_PUBLIC_ADMIN_EMAILS:-}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
+        NEXT_PUBLIC_OPENPANEL_API_URL: ${NEXT_PUBLIC_OPENPANEL_API_URL:-}
+        NEXT_PUBLIC_OPENPANEL_CLIENT_ID: ${NEXT_PUBLIC_OPENPANEL_CLIENT_ID:-}
+        NEXT_PUBLIC_OPENPANEL_CLIENT_SECRET: ${NEXT_PUBLIC_OPENPANEL_CLIENT_SECRET:-}
+        NEXT_PUBLIC_OPENPANEL_INTL_API_URL: ${NEXT_PUBLIC_OPENPANEL_INTL_API_URL:-}
+        NEXT_PUBLIC_OPENPANEL_INTL_CLIENT_ID: ${NEXT_PUBLIC_OPENPANEL_INTL_CLIENT_ID:-}
+        NEXT_PUBLIC_OPENPANEL_INTL_CLIENT_SECRET: ${NEXT_PUBLIC_OPENPANEL_INTL_CLIENT_SECRET:-}
+        NEXT_PUBLIC_OPENPANEL_WEB_CLUSTER: ${NEXT_PUBLIC_OPENPANEL_WEB_CLUSTER:-cn}
+        NEXT_PUBLIC_SHOW_DEV_API_ENV: ${NEXT_PUBLIC_SHOW_DEV_API_ENV:-}
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-}
+        NEXT_PUBLIC_STRIPE_BILLING: ${NEXT_PUBLIC_STRIPE_BILLING:-live}
+        NEXT_PUBLIC_STRIPE_LIVE_PLUS_MONTHLY: ${NEXT_PUBLIC_STRIPE_LIVE_PLUS_MONTHLY:-}
+        NEXT_PUBLIC_STRIPE_LIVE_PLUS_YEARLY: ${NEXT_PUBLIC_STRIPE_LIVE_PLUS_YEARLY:-}
+        NEXT_PUBLIC_STRIPE_LIVE_PRO_MONTHLY: ${NEXT_PUBLIC_STRIPE_LIVE_PRO_MONTHLY:-}
+        NEXT_PUBLIC_STRIPE_LIVE_PRO_YEARLY: ${NEXT_PUBLIC_STRIPE_LIVE_PRO_YEARLY:-}
+        NEXT_PUBLIC_STRIPE_LIVE_ULTRA_MONTHLY: ${NEXT_PUBLIC_STRIPE_LIVE_ULTRA_MONTHLY:-}
+        NEXT_PUBLIC_STRIPE_LIVE_ULTRA_YEARLY: ${NEXT_PUBLIC_STRIPE_LIVE_ULTRA_YEARLY:-}
+        NEXT_PUBLIC_STRIPE_SANDBOX_PLUS_MONTHLY: ${NEXT_PUBLIC_STRIPE_SANDBOX_PLUS_MONTHLY:-}
+        NEXT_PUBLIC_STRIPE_SANDBOX_PLUS_YEARLY: ${NEXT_PUBLIC_STRIPE_SANDBOX_PLUS_YEARLY:-}
+        NEXT_PUBLIC_STRIPE_SANDBOX_PRO_MONTHLY: ${NEXT_PUBLIC_STRIPE_SANDBOX_PRO_MONTHLY:-}
+        NEXT_PUBLIC_STRIPE_SANDBOX_PRO_YEARLY: ${NEXT_PUBLIC_STRIPE_SANDBOX_PRO_YEARLY:-}
+        NEXT_PUBLIC_STRIPE_SANDBOX_ULTRA_MONTHLY: ${NEXT_PUBLIC_STRIPE_SANDBOX_ULTRA_MONTHLY:-}
+        NEXT_PUBLIC_STRIPE_SANDBOX_ULTRA_YEARLY: ${NEXT_PUBLIC_STRIPE_SANDBOX_ULTRA_YEARLY:-}
+        NEXT_PUBLIC_WEB_BASE_URL: ${NEXT_PUBLIC_WEB_BASE_URL:-}
+        NEXT_PUBLIC_WUKONGIM_WS_URL: ${NEXT_PUBLIC_WUKONGIM_WS_URL:-}
+    environment:
+      API_INTERNAL_URL: http://backend:9000
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${WEB_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/chat').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+  wukongim_data:

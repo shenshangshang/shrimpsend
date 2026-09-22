@@ -1,9 +1,9 @@
+import '../ui/device_name_dialog.dart';
 import 'dart:async';
 import 'dart:io';
 
 import 'package:country_picker/country_picker.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:feedmatter_flutter_ui/feedmatter_flutter_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,14 +12,11 @@ import 'package:path/path.dart' as p;
 import 'package:flutter_desktop_updater/flutter_desktop_updater.dart'
     as desktop_upd;
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:simple_icons/simple_icons.dart';
-import 'package:permission_handler/permission_handler.dart';
 import '../api/api.dart';
 import '../color_theme.dart';
 import '../color_theme_store.dart';
 import '../config/env.dart';
 import '../legal/open_source_urls.dart';
-import '../l10n/app_brand.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../preferences/clipboard_preferences.dart';
 import '../preferences/country_cluster.dart';
@@ -27,35 +24,39 @@ import '../preferences/locale_region_store.dart';
 import '../providers/auth_provider.dart';
 import '../file_save_preferences.dart';
 import '../logger.dart';
-import '../providers/app_mode_provider.dart';
 import '../providers/app_update_provider.dart';
-import '../providers/webdav_provider.dart';
 import '../theme_store.dart';
 import '../ui/app_ui.dart';
+import '../ui/product_scaffold.dart';
+import '../device_id.dart';
+import '../providers/device_provider.dart';
 import '../utils/effective_save_dir_display.dart';
 import '../utils/gallery_permission.dart';
 import '../utils/toast.dart';
-import '../utils/webdav_membership_gate.dart';
-import '../widgets/app_confirm_dialog.dart';
 import '../services/app_update_service.dart';
 import '../services/analytics/analytics.dart';
 import '../services/analytics/analytics_events.dart';
 import '../widgets/app_update_dialog.dart';
 import '../widgets/legal_doc_links_row.dart';
-import '../screens/feedmatter_feedback_screen.dart';
-import '../services/feedmatter_bootstrap.dart';
+import '../screens/product_feedback_screen.dart';
 import '../services/file_store.dart';
 import '../services/receive_dir_resolver.dart';
 import '../services/received_file_dao.dart';
 import '../services/saf_storage_service.dart';
-import '../services/visible_export_target.dart';
 import '../services/windows_launch_at_startup_service.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   /// When true (e.g. mobile home tab), hide back [leading] — no route to pop.
   final bool embedded;
 
-  const SettingsScreen({super.key, this.embedded = false});
+  final String initialTab;
+  final bool help;
+  const SettingsScreen({
+    super.key,
+    this.embedded = false,
+    this.initialTab = 'general',
+    this.help = false,
+  });
 
   @override
   ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
@@ -65,10 +66,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool get _isDesktop =>
       Platform.isWindows || Platform.isMacOS || Platform.isLinux;
 
-  S3StorageMode _s3Mode = S3StorageMode.disabled;
   bool _loading = true;
+  String _localDeviceName = '';
+  late String _activeTab;
   bool _saveToGallery = false;
-  bool _deleteCacheAfterSave = true;
   bool _windowsLaunchAtStartup = false;
   bool _autoCopyReceivedText = true;
   String? _customSaveDir;
@@ -82,18 +83,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   @override
   void initState() {
     super.initState();
+    _activeTab = widget.initialTab;
+    getDeviceName().then((value) {
+      if (mounted) setState(() => _localDeviceName = value);
+    });
     _load();
   }
 
   Future<void> _load() async {
     try {
-      final isLoggedIn = ref.read(authProvider).isLoggedIn;
-      final futures = <Future>[
-        isLoggedIn
-            ? getS3Config().catchError((_) => S3ConfigDetail.disabled())
-            : Future.value(S3ConfigDetail.disabled()),
+      final loggedIn = ref.read(authProvider).isLoggedIn;
+      final values = await Future.wait<dynamic>([
         getSaveToGallery(),
-        getDeleteCacheAfterSave(),
         getAutoCopyReceivedText(),
         Platform.isAndroid ? getCustomSaveTreeUri() : getCustomSaveDir(),
         FileStore.getReceiveDirResolution(),
@@ -101,54 +102,37 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         Platform.isWindows
             ? WindowsLaunchAtStartupService.getEnabledPreference()
             : Future.value(false),
-        isLoggedIn
+        loggedIn
             ? fetchUserProfile()
-                  .then<UserProfile?>((v) => v)
+                  .then<UserProfile?>((value) => value)
                   .catchError((_) => null)
             : Future.value(null),
-        isLoggedIn
+        loggedIn
             ? fetchMyMembership()
-                  .then<MembershipMe?>((v) => v)
+                  .then<MembershipMe?>((value) => value)
                   .catchError((_) => null)
             : Future.value(null),
-      ];
-      final results = await Future.wait(futures);
-      final s3Detail = results[0] as S3ConfigDetail;
-      final saveToGallery = results[1] as bool;
-      final deleteCache = results[2] as bool;
-      final autoCopyReceivedText = results[3] as bool;
-      final customSaveDirOrUri = results[4] as String?;
-      final receiveResolution = results[5] as ReceiveDirResolution;
-      final receiveFallback = results[6] as ReceiveDirFallbackInfo?;
-      final windowsLaunchAtStartup = results[7] as bool;
-      final profile = results[8] as UserProfile?;
-      final membership = results[9] as MembershipMe?;
-      logSettings.info(
-        'settings_screen load S3 mode=${s3Detail.mode.name} saveToGallery=$saveToGallery deleteCache=$deleteCache windowsLaunchAtStartup=$windowsLaunchAtStartup customSave=${customSaveDirOrUri ?? receiveResolution.customSafTreeUri} effectiveSaveDir=${receiveResolution.path} receiveKind=${receiveResolution.kind.name} fallback=${receiveResolution.usedFallback}',
-      );
-      if (mounted) {
-        setState(() {
-          _s3Mode = s3Detail.mode;
-          _saveToGallery = saveToGallery;
-          _deleteCacheAfterSave = deleteCache;
-          _autoCopyReceivedText = autoCopyReceivedText;
-          _windowsLaunchAtStartup = windowsLaunchAtStartup;
-          _customSaveDir = Platform.isAndroid ? null : customSaveDirOrUri;
-          _customSaveTreeUri = receiveResolution.customSafTreeUri ??
-              (Platform.isAndroid ? customSaveDirOrUri : null);
-          _effectiveSaveDir = _formatEffectiveSaveDir(receiveResolution);
-          _receiveDirResolution = receiveResolution;
-          _receiveDirFallback = receiveFallback;
-          _profile = profile;
-          _membership = membership;
-        });
-      }
-    } catch (e) {
-      logSettings.warning('settings_screen load failed: $e');
+      ]);
+      if (!mounted) return;
+      final resolution = values[3] as ReceiveDirResolution;
+      setState(() {
+        _saveToGallery = values[0] as bool;
+        _autoCopyReceivedText = values[1] as bool;
+        _customSaveDir = Platform.isAndroid ? null : values[2] as String?;
+        _customSaveTreeUri =
+            resolution.customSafTreeUri ??
+            (Platform.isAndroid ? values[2] as String? : null);
+        _effectiveSaveDir = _formatEffectiveSaveDir(resolution);
+        _receiveDirResolution = resolution;
+        _receiveDirFallback = values[4] as ReceiveDirFallbackInfo?;
+        _windowsLaunchAtStartup = values[5] as bool;
+        _profile = values[6] as UserProfile?;
+        _membership = values[7] as MembershipMe?;
+      });
+    } catch (error) {
+      logSettings.warning('settings load failed: $error');
     }
-    if (mounted) {
-      setState(() => _loading = false);
-    }
+    if (mounted) setState(() => _loading = false);
   }
 
   EdgeInsets _settingsBodyPadding() {
@@ -156,10 +140,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       AppSpacing.md,
       AppSpacing.xs,
       AppSpacing.md,
-      AppSpacing.lg +
-          (widget.embedded
-              ? AppLayout.floatingBottomBarScrollInset(context)
-              : 0),
+      AppSpacing.lg + (widget.embedded ? 0.0 : 0),
     );
   }
 
@@ -271,986 +252,362 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final theme = Theme.of(context);
     final colors = context.appColors;
     final l10n = AppLocalizations.of(context);
-    final isOffline = ref.watch(effectiveOfflineModeProvider);
-    final isLoggedIn = ref.watch(authProvider).isLoggedIn;
-    final supportsCustomSaveDirPicker =
-        Platform.isAndroid ||
-        Platform.isWindows ||
-        Platform.isMacOS ||
-        Platform.isLinux;
-    final showsSavePathInfo = supportsCustomSaveDirPicker || Platform.isIOS;
-
-    return Scaffold(
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        title: Text(l10n.settingsTitle),
-        leading: widget.embedded
-            ? null
-            : IconButton(
-                icon: const Icon(LucideIcons.arrowLeft),
-                onPressed: () => Navigator.pop(context),
-              ),
-        actions: [
-          if (FeedmatterBootstrap.isInitialized &&
-              FeedmatterBootstrap.feedbackEnabled)
-            TextButton.icon(
-              onPressed: () => unawaited(_openFeedback(context)),
-              icon: Icon(
-                LucideIcons.messageSquarePlus,
-                size: 18,
-                color: theme.colorScheme.primary,
-              ),
-              label: Text(l10n.settingsFeedbackLabel),
-              style: TextButton.styleFrom(
-                foregroundColor: theme.colorScheme.primary,
-                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-              ),
-            ),
-        ],
+    final zh = Localizations.localeOf(context).languageCode == 'zh';
+    final wide = MediaQuery.sizeOf(context).width >= 768;
+    final loggedIn = ref.watch(authProvider).isLoggedIn;
+    final help = widget.help;
+    Widget row(
+      String title,
+      String description,
+      Widget trailing, {
+      VoidCallback? onTap,
+    }) => Container(
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: colors.border)),
       ),
-      body: _loading
-          ? _buildLoadingSkeleton(context)
-          : ListView(
-              padding: _settingsBodyPadding(),
-              children: [
-                Align(
-                  alignment: Alignment.topCenter,
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(
-                      maxWidth: AppSize.contentMaxWidth,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _SectionTitle(
-                          title: l10n.settingsSectionFeatures,
-                          color: colors.textSecondary,
-                        ),
-                        const SizedBox(height: AppSpacing.xs),
-                        _buildCard(
-                          children: [
-                            if (!isLoggedIn)
-                              _buildNavItem(
-                                context: context,
-                                icon: LucideIcons.logIn,
-                                iconBgColor: theme.colorScheme.primary
-                                    .withValues(alpha: 0.12),
-                                iconColor: theme.colorScheme.primary,
-                                title: l10n.settingsNavLogin,
-                                subtitle: l10n.settingsNavLoginSubtitle,
-                                trailing: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: AppSpacing.xs,
-                                    vertical: 3,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: theme
-                                        .colorScheme
-                                        .surfaceContainerHighest,
-                                    borderRadius: AppRadius.small,
-                                  ),
-                                  child: Text(
-                                    l10n.settingsBadgeNotSignedIn,
-                                    style: theme.textTheme.labelSmall?.copyWith(
-                                      color: theme.colorScheme.onSurfaceVariant,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                                onTap: () {
-                                  Navigator.of(context).pushNamed('/login');
-                                },
-                              )
-                            else
-                              _buildNavItem(
-                                context: context,
-                                icon: LucideIcons.circleUserRound,
-                                iconBgColor: theme.colorScheme.primary
-                                    .withValues(alpha: 0.12),
-                                iconColor: theme.colorScheme.primary,
-                                title:
-                                    _profile?.email ??
-                                    l10n.settingsNavPersonalAccount,
-                                subtitle: l10n.settingsNavAccountSubtitle,
-                                onTap: () async {
-                                  await Navigator.pushNamed(
-                                    context,
-                                    '/account',
-                                  );
-                                  _load();
-                                },
-                              ),
-                            if (isLoggedIn) ...[
-                              Divider(
-                                height: 1,
-                                color: colors.border,
-                                indent:
-                                    AppSpacing.md +
-                                    AppSize.settingsIcon +
-                                    AppSpacing.sm,
-                              ),
-                              _buildNavItem(
-                                context: context,
-                                icon: LucideIcons.crown,
-                                iconBgColor:
-                                    (_membership != null &&
-                                        _membership!.tierCode.toUpperCase() !=
-                                            'FREE')
-                                    ? const Color(
-                                        0xFFF59E0B,
-                                      ).withValues(alpha: 0.16)
-                                    : colors.surfaceMuted,
-                                iconColor:
-                                    (_membership != null &&
-                                        _membership!.tierCode.toUpperCase() !=
-                                            'FREE')
-                                    ? const Color(0xFFF59E0B)
-                                    : colors.textSecondary,
-                                title:
-                                    (_membership != null &&
-                                        _membership!.tierCode.toUpperCase() !=
-                                            'FREE')
-                                    ? l10n.settingsMembershipTierName(
-                                        _membership!.tierName,
-                                      )
-                                    : l10n.settingsMembershipCenter,
-                                subtitle:
-                                    (_membership != null &&
-                                        _membership!.tierCode.toUpperCase() !=
-                                            'FREE')
-                                    ? l10n.settingsMembershipDevices(
-                                        _membership!.currentDeviceCount,
-                                        _membership!.deviceLimit,
-                                      )
-                                    : l10n.settingsMembershipSubtitleUpgrade,
-                                onTap: () async {
-                                  await Navigator.pushNamed(
-                                    context,
-                                    '/settings/membership',
-                                  );
-                                  _load();
-                                },
-                              ),
-                              Divider(
-                                height: 1,
-                                color: colors.border,
-                                indent:
-                                    AppSpacing.md +
-                                    AppSize.settingsIcon +
-                                    AppSpacing.sm,
-                              ),
-                              _buildNavItem(
-                                context: context,
-                                icon: LucideIcons.monitorSmartphone,
-                                iconBgColor: AppColorTheme.lavender.accent
-                                    .withValues(alpha: 0.16),
-                                iconColor: AppColorTheme.lavender.accent,
-                                title: l10n.settingsNavMyDevices,
-                                subtitle: isOffline
-                                    ? l10n.settingsNavMyDevicesSubtitleOffline
-                                    : l10n.settingsNavMyDevicesSubtitleOnline,
-                                onTap: () =>
-                                    Navigator.pushNamed(context, '/devices'),
-                              ),
-                              Divider(
-                                height: 1,
-                                color: colors.border,
-                                indent:
-                                    AppSpacing.md +
-                                    AppSize.settingsIcon +
-                                    AppSpacing.sm,
-                              ),
-                              _buildNavItem(
-                                context: context,
-                                icon: LucideIcons.cloud,
-                                iconBgColor: AppColorTheme.s3Color.withValues(
-                                  alpha: 0.14,
-                                ),
-                                iconColor: AppColorTheme.s3Color,
-                                title: l10n.settingsNavS3,
-                                subtitle: l10n.settingsNavS3Subtitle,
-                                trailing: _buildS3StatusBadge(context),
-                                onTap: () async {
-                                  await Navigator.pushNamed(
-                                    context,
-                                    '/settings/s3',
-                                  );
-                                  _load();
-                                },
-                              ),
-                              Divider(
-                                height: 1,
-                                color: colors.border,
-                                indent:
-                                    AppSpacing.md +
-                                    AppSize.settingsIcon +
-                                    AppSpacing.sm,
-                              ),
-                              _buildNavItem(
-                                context: context,
-                                icon: LucideIcons.hardDrive,
-                                iconBgColor: theme.colorScheme.primary
-                                    .withValues(alpha: 0.12),
-                                iconColor: theme.colorScheme.primary,
-                                title: l10n.settingsNavWebDav,
-                                subtitle: _webDavNavSubtitle(l10n, ref),
-                                trailing: _buildWebDavStatusBadge(context, ref),
-                                onTap: () async {
-                                  await Navigator.pushNamed(
-                                    context,
-                                    '/settings/webdav',
-                                  );
-                                  if (mounted) {
-                                    ref
-                                        .read(
-                                          webDavConnectionsProvider.notifier,
-                                        )
-                                        .refresh();
-                                  }
-                                },
-                              ),
-                            ],
-                          ],
-                        ),
-                        const SizedBox(height: AppSpacing.lg),
-                        _SectionTitle(
-                          title: l10n.settingsSectionPreferences,
-                          color: colors.textSecondary,
-                        ),
-                        const SizedBox(height: AppSpacing.xs),
-                        _buildCard(
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(
-                                AppSpacing.md,
-                                AppSpacing.sm,
-                                AppSpacing.md,
-                                AppSpacing.xs,
-                              ),
-                              child: Text(
-                                LocaleRegionStore.countryLocked
-                                    ? l10n.sectionLanguage
-                                    : l10n.sectionLanguageRegion,
-                                style: theme.textTheme.labelLarge?.copyWith(
-                                  color: colors.textSecondary,
-                                ),
-                              ),
-                            ),
-                            ValueListenableBuilder<LocaleRegionState>(
-                              valueListenable: LocaleRegionStoreScope.of(
-                                context,
-                              ).notifier,
-                              builder: (context, lr, _) {
-                                return Column(
-                                  children: [
-                                    ListTile(
-                                      contentPadding:
-                                          const EdgeInsets.symmetric(
-                                            horizontal: AppSpacing.md,
-                                          ),
-                                      title: Text(l10n.fieldLanguage),
-                                      subtitle: Text(
-                                        _languageDisplayLabel(lr.locale, l10n),
-                                      ),
-                                      trailing: const Icon(
-                                        LucideIcons.chevronRight,
-                                      ),
-                                      onTap: () => _pickLanguage(),
-                                    ),
-                                    if (!LocaleRegionStore.countryLocked)
-                                      ListTile(
-                                        contentPadding:
-                                            const EdgeInsets.symmetric(
-                                              horizontal: AppSpacing.md,
-                                            ),
-                                        title: Text(l10n.fieldCountryRegion),
-                                        subtitle: Text(
-                                          _countryDisplayLabel(
-                                            context,
-                                            lr.countryCode,
-                                          ),
-                                        ),
-                                        trailing: const Icon(
-                                          LucideIcons.chevronRight,
-                                        ),
-                                        onTap: () => _pickRegion(),
-                                      ),
-                                  ],
-                                );
-                              },
-                            ),
-                            Divider(height: 1, color: colors.border),
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(
-                                AppSpacing.md,
-                                AppSpacing.sm,
-                                AppSpacing.md,
-                                AppSpacing.xs,
-                              ),
-                              child: Center(
-                                child: Text(
-                                  l10n.settingsThemeLabel,
-                                  style: theme.textTheme.labelLarge?.copyWith(
-                                    color: colors.textSecondary,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(
-                                AppSpacing.md,
-                                0,
-                                AppSpacing.md,
-                                AppSpacing.sm,
-                              ),
-                              child: _ThemeSegment(
-                                store: ThemeStoreScope.of(context),
-                              ),
-                            ),
-                            Divider(height: 1, color: colors.border),
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(
-                                AppSpacing.md,
-                                AppSpacing.sm,
-                                AppSpacing.md,
-                                AppSpacing.xs,
-                              ),
-                              child: Center(
-                                child: Text(
-                                  l10n.settingsColorThemeLabel,
-                                  style: theme.textTheme.labelLarge?.copyWith(
-                                    color: colors.textSecondary,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(
-                                AppSpacing.md,
-                                0,
-                                AppSpacing.md,
-                                AppSpacing.sm,
-                              ),
-                              child: _ColorThemePicker(
-                                store: ColorThemeStoreScope.of(context),
-                              ),
-                            ),
-                            Divider(height: 1, color: colors.border),
-                            ListTile(
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: AppSpacing.md,
-                              ),
-                              leading: Icon(
-                                LucideIcons.type,
-                                color: colors.textSecondary,
-                              ),
-                              title: Text(l10n.settingsNavFonts),
-                              subtitle: Text(l10n.settingsNavFontsSubtitle),
-                              trailing: const Icon(LucideIcons.chevronRight),
-                              onTap: () async {
-                                await Navigator.pushNamed(
-                                  context,
-                                  '/settings/fonts',
-                                );
-                              },
-                            ),
-                            if (_isDesktop) ...[
-                              Divider(height: 1, color: colors.border),
-                              ListTile(
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: AppSpacing.md,
-                                ),
-                                leading: Icon(
-                                  LucideIcons.keyboard,
-                                  color: colors.textSecondary,
-                                ),
-                                title: Text(l10n.settingsNavShortcuts),
-                                subtitle: Text(l10n.settingsNavShortcutsSubtitle),
-                                trailing: const Icon(LucideIcons.chevronRight),
-                                onTap: () async {
-                                  await Navigator.pushNamed(
-                                    context,
-                                    '/settings/shortcuts',
-                                  );
-                                },
-                              ),
-                            ],
-                            Divider(height: 1, color: colors.border),
-                            if (showsSavePathInfo) ...[
-                              ListTile(
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: AppSpacing.md,
-                                ),
-                                onTap: _showReceiveDirFallbackWarning,
-                                title: Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        l10n.settingsFileSavePath,
-                                        style: theme.textTheme.bodyMedium,
-                                      ),
-                                    ),
-                                    if (_shouldShowReceiveDirFallbackWarning)
-                                      Padding(
-                                        padding: const EdgeInsets.only(
-                                          left: AppSpacing.xs,
-                                        ),
-                                        child: Icon(
-                                          LucideIcons.triangleAlert,
-                                          size: 18,
-                                          color: theme.colorScheme.error,
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                                subtitle: Padding(
-                                  padding: const EdgeInsets.only(top: 2),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      if (_savePathKindLabel(l10n) != null)
-                                        Text(
-                                          _savePathKindLabel(l10n)!,
-                                          style: theme.textTheme.labelSmall
-                                              ?.copyWith(
-                                            color: colors.textSecondary,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      if (_savePathKindHint(l10n) != null) ...[
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          _savePathKindHint(l10n)!,
-                                          style: theme.textTheme.labelSmall
-                                              ?.copyWith(
-                                            color: colors.textSecondary,
-                                          ),
-                                        ),
-                                      ],
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        _effectiveSaveDir.isEmpty
-                                            ? l10n.settingsFileSavePathNotSet
-                                            : _effectiveSaveDir,
-                                        maxLines: 4,
-                                        overflow: TextOverflow.ellipsis,
-                                        style:
-                                            theme.textTheme.bodySmall?.copyWith(
-                                          color: colors.textSecondary,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                trailing: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: AppSpacing.xs,
-                                    vertical: 3,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: theme
-                                        .colorScheme
-                                        .surfaceContainerHighest,
-                                    borderRadius: AppRadius.small,
-                                  ),
-                                  child: Text(
-                                    _savePathBadgeLabel(l10n),
-                                    style: theme.textTheme.labelSmall?.copyWith(
-                                      color: theme.colorScheme.onSurfaceVariant,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              if (supportsCustomSaveDirPicker)
-                                Padding(
-                                  padding: const EdgeInsets.fromLTRB(
-                                    AppSpacing.md,
-                                    0,
-                                    AppSpacing.md,
-                                    AppSpacing.sm,
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Expanded(
-                                        child: OutlinedButton(
-                                          onPressed: _selectCustomSaveDir,
-                                          child: Text(l10n.settingsChooseFolder),
-                                        ),
-                                      ),
-                                      const SizedBox(width: AppSpacing.sm),
-                                      Expanded(
-                                        child: TextButton(
-                                          onPressed: _customSaveDir == null &&
-                                                  _customSaveTreeUri == null
-                                              ? null
-                                              : _restoreDefaultSaveDir,
-                                          child: Text(
-                                            l10n.settingsRestoreDefaultPath,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              if (!supportsCustomSaveDirPicker)
-                                const SizedBox(height: AppSpacing.sm),
-                              Divider(height: 1, color: colors.border),
-                            ],
-                            if (Platform.isAndroid || Platform.isIOS) ...[
-                              SwitchListTile(
-                                value: _saveToGallery,
-                                onChanged: (v) async {
-                                  if (v &&
-                                      (Platform.isAndroid || Platform.isIOS)) {
-                                    final granted =
-                                        await requestSaveToGalleryPermission();
-                                    if (!mounted) return;
-                                    if (!context.mounted) return;
-                                    if (!granted) {
-                                      AppToast.show(
-                                        context,
-                                        message:
-                                            l10n.settingsGalleryPermissionToast,
-                                      );
-                                      if (await isSaveToGalleryPermissionBlocked()) {
-                                        if (!context.mounted) return;
-                                        final openSettings =
-                                            await AppConfirmDialog.show(
-                                          context,
-                                          title: l10n.settingsSaveToGalleryTitle,
-                                          content: l10n
-                                              .settingsGalleryPermissionToast,
-                                          confirmLabel:
-                                              l10n.qrScannerOpenSettings,
-                                        );
-                                        if (openSettings) {
-                                          await openAppSettings();
-                                        }
-                                      }
-                                      return;
-                                    }
-                                  }
-                                  await setSaveToGallery(v);
-                                  if (mounted) {
-                                    setState(() => _saveToGallery = v);
-                                  }
-                                  if (v && mounted) {
-                                    await _showSettingsFeatureHintDialog(
-                                      title: l10n.settingsSaveToGalleryTitle,
-                                      content: l10n.settingsSaveToGalleryHintBody,
-                                    );
-                                  }
-                                },
-                                title: Text(
-                                  l10n.settingsSaveToGalleryTitle,
-                                  style: theme.textTheme.bodyMedium,
-                                ),
-                                subtitle: Text(
-                                  l10n.settingsSaveToGallerySubtitle,
-                                  style: theme.textTheme.bodySmall,
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: AppSpacing.md,
-                                ),
-                              ),
-                              Divider(height: 1, color: colors.border),
-                            ],
-                            if (Platform.isWindows) ...[
-                              SwitchListTile(
-                                value: _windowsLaunchAtStartup,
-                                onChanged: (v) async {
-                                  try {
-                                    await WindowsLaunchAtStartupService.setEnabled(
-                                      v,
-                                    );
-                                    if (mounted) {
-                                      setState(
-                                        () => _windowsLaunchAtStartup = v,
-                                      );
-                                    }
-                                  } catch (e) {
-                                    logSettings.warning(
-                                      'set windows launch at startup failed: $e',
-                                    );
-                                    if (!mounted || !context.mounted) return;
-                                    AppToast.show(
-                                      context,
-                                      message: l10n
-                                          .settingsWindowsLaunchAtStartupFailed,
-                                    );
-                                  }
-                                },
-                                title: Text(
-                                  l10n.settingsWindowsLaunchAtStartupTitle,
-                                  style: theme.textTheme.bodyMedium,
-                                ),
-                                subtitle: Text(
-                                  l10n.settingsWindowsLaunchAtStartupSubtitle,
-                                  style: theme.textTheme.bodySmall,
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: AppSpacing.md,
-                                ),
-                              ),
-                              Divider(height: 1, color: colors.border),
-                            ],
-                            SwitchListTile(
-                              value: _deleteCacheAfterSave,
-                              onChanged: (v) async {
-                                await setDeleteCacheAfterSave(v);
-                                if (mounted) {
-                                  setState(() => _deleteCacheAfterSave = v);
-                                }
-                                if (v && mounted) {
-                                  await _showSettingsFeatureHintDialog(
-                                    title: l10n.settingsDeleteCacheAfterSaveTitle,
-                                    content:
-                                        l10n.settingsDeleteCacheAfterSaveHintBody,
-                                  );
-                                }
-                              },
-                              title: Text(
-                                l10n.settingsDeleteCacheAfterSaveTitle,
-                                style: theme.textTheme.bodyMedium,
-                              ),
-                              subtitle: Text(
-                                l10n.settingsDeleteCacheAfterSaveSubtitle,
-                                style: theme.textTheme.bodySmall,
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: AppSpacing.md,
-                              ),
-                            ),
-                            Divider(height: 1, color: colors.border),
-                            SwitchListTile(
-                              value: _autoCopyReceivedText,
-                              onChanged: (v) async {
-                                await setAutoCopyReceivedText(v);
-                                if (mounted) {
-                                  setState(() => _autoCopyReceivedText = v);
-                                }
-                              },
-                              title: Text(
-                                l10n.settingsAutoCopyReceivedTextTitle,
-                                style: theme.textTheme.bodyMedium,
-                              ),
-                              subtitle: Text(
-                                l10n.settingsAutoCopyReceivedTextSubtitle,
-                                style: theme.textTheme.bodySmall,
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: AppSpacing.md,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: AppSpacing.lg),
-                        _SectionTitle(
-                          title: l10n.settingsSectionAbout,
-                          color: colors.textSecondary,
-                        ),
-                        const SizedBox(height: AppSpacing.xs),
-                        _buildCard(
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.all(AppSpacing.md),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      ClipRRect(
-                                        borderRadius: AppRadius.medium,
-                                        child: Image.asset(
-                                          'assets/logo.png',
-                                          width: 72,
-                                          height: 72,
-                                          fit: BoxFit.contain,
-                                        ),
-                                      ),
-                                      const SizedBox(width: AppSpacing.md),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            ValueListenableBuilder<
-                                              LocaleRegionState
-                                            >(
-                                              valueListenable:
-                                                  LocaleRegionStoreScope.of(
-                                                    context,
-                                                  ).notifier,
-                                              builder: (context, lr, _) {
-                                                return Text(
-                                                  brandDisplayName(
-                                                    context,
-                                                    lr.serviceRegion,
-                                                  ),
-                                                  style: theme
-                                                      .textTheme
-                                                      .titleMedium,
-                                                );
-                                              },
-                                            ),
-                                            const SizedBox(
-                                              height: AppSpacing.xxs,
-                                            ),
-                                            Text(
-                                              l10n.aboutTagline,
-                                              style: theme.textTheme.bodyMedium
-                                                  ?.copyWith(
-                                                    color: colors.textSecondary,
-                                                  ),
-                                            ),
-                                            const SizedBox(
-                                              height: AppSpacing.xxs,
-                                            ),
-                                            ref
-                                                .watch(packageInfoProvider)
-                                                .when(
-                                                  data: (info) => Text(
-                                                    l10n.settingsVersionWithBuild(
-                                                      info.version,
-                                                      info.buildNumber,
-                                                    ),
-                                                    style: theme
-                                                        .textTheme
-                                                        .bodySmall
-                                                        ?.copyWith(
-                                                          color: colors
-                                                              .textTertiary,
-                                                        ),
-                                                  ),
-                                                  loading: () => Text(
-                                                    l10n.settingsVersionLoading,
-                                                    style: theme
-                                                        .textTheme
-                                                        .bodySmall
-                                                        ?.copyWith(
-                                                          color: colors
-                                                              .textTertiary,
-                                                        ),
-                                                  ),
-                                                  error: (_, __) => Text(
-                                                    l10n.settingsVersionUnknown,
-                                                    style: theme
-                                                        .textTheme
-                                                        .bodySmall
-                                                        ?.copyWith(
-                                                          color: colors
-                                                              .textTertiary,
-                                                        ),
-                                                  ),
-                                                ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Divider(height: 1, color: colors.border),
-                            const Padding(
-                              padding: EdgeInsets.symmetric(
-                                horizontal: AppSpacing.md,
-                              ),
-                              child: LegalDocLinksRow(compact: true),
-                            ),
-                            Divider(height: 1, color: colors.border),
-                            _buildNavItem(
-                              context: context,
-                              icon: SimpleIcons.github,
-                              iconBgColor: colors.surfaceMuted,
-                              iconColor: colors.textSecondary,
-                              title: l10n.settingsNavSourceCode,
-                              subtitle: l10n.settingsNavSourceCodeSubtitle,
-                              onTap: () =>
-                                  launchExternalUrl(kOpenSourceRepoUrl),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: AppSpacing.sm),
-                        if (_isDesktop)
-                          _buildDesktopUpdateSection(context)
-                        else
-                          ValueListenableBuilder<UpdateState>(
-                            valueListenable: ref
-                                .read(appUpdateServiceProvider)
-                                .state,
-                            builder: (context, updateState, _) =>
-                                _buildUpdateSection(context, updateState),
-                          ),
-                        const SizedBox(height: AppSpacing.sm),
-                        _buildCard(
-                          children: [
-                            _buildNavItem(
-                              context: context,
-                              icon: LucideIcons.history,
-                              iconBgColor: colors.surfaceMuted,
-                              iconColor: colors.textSecondary,
-                              title: l10n.settingsNavVersionHistory,
-                              subtitle: l10n.settingsNavVersionHistorySubtitle,
-                              onTap: () => Navigator.pushNamed(
-                                context,
-                                '/settings/version-history',
-                              ),
-                            ),
-                            Divider(height: 1, color: colors.border),
-                            _buildNavItem(
-                              context: context,
-                              icon: LucideIcons.scrollText,
-                              iconBgColor: colors.surfaceMuted,
-                              iconColor: colors.textSecondary,
-                              title: l10n.settingsNavAppLog,
-                              subtitle: _isDesktop
-                                  ? l10n.settingsNavAppLogSubtitleDesktop
-                                  : l10n.settingsNavAppLogSubtitleMobile,
-                              onTap: () => Navigator.pushNamed(
-                                context,
-                                '/settings/app-log',
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: AppSpacing.lg),
-                      ],
-                    ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(vertical: 10),
+        title: Text(title),
+        subtitle: description.isEmpty
+            ? null
+            : Padding(
+                padding: const EdgeInsets.only(top: 5),
+                child: Text(
+                  description,
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.6,
+                    color: colors.textSecondary,
                   ),
                 ),
+              ),
+        trailing: trailing,
+        onTap: onTap,
+      ),
+    );
+    Widget nav(String title, String description, String route, IconData icon) =>
+        row(
+          title,
+          description,
+          Icon(icon, size: 19, color: colors.textSecondary),
+          onTap: () => openProductRoute(context, route),
+        );
+    final sections = <Widget>[];
+    if (help) {
+      sections.addAll([
+        Row(
+          children: [
+            Image.asset('assets/logo.png', width: 48, height: 48),
+            const SizedBox(width: 16),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  zh ? '虾传' : 'Shrimpsend',
+                  style: theme.textTheme.titleLarge,
+                ),
+                const SizedBox(height: 4),
+                ref
+                    .watch(packageInfoProvider)
+                    .when(
+                      data: (info) => Text(
+                        '${info.version} (${info.buildNumber})',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                      loading: () => const SizedBox.shrink(),
+                      error: (_, __) => const SizedBox.shrink(),
+                    ),
               ],
             ),
+          ],
+        ),
+        const SizedBox(height: 24),
+        if (_isDesktop)
+          _buildDesktopUpdateSection(context)
+        else
+          ValueListenableBuilder<UpdateState>(
+            valueListenable: ref.read(appUpdateServiceProvider).state,
+            builder: (context, value, _) => _buildUpdateSection(context, value),
+          ),
+        nav(
+          zh ? '版本历史' : 'Version history',
+          '',
+          '/settings/version-history',
+          LucideIcons.history,
+        ),
+          row(
+            zh ? '问题反馈' : 'Feedback',
+            zh ? '告诉我们遇到的问题或建议' : 'Share a problem or suggestion',
+            const Icon(LucideIcons.messageSquare, size: 19),
+            onTap: () => unawaited(_openFeedback(context)),
+          ),
+        nav(
+          zh ? '运行日志' : 'Activity log',
+          zh ? '查看和导出本机运行记录' : 'View and export local activity',
+          '/settings/app-log',
+          LucideIcons.fileText,
+        ),
+        row(
+          zh ? '开源代码' : 'Source code',
+          '',
+          const Icon(LucideIcons.externalLink, size: 19),
+          onTap: () => launchExternalUrl(kOpenSourceRepoUrl),
+        ),
+        const SizedBox(height: 24),
+        const LegalDocLinksRow(compact: true),
+      ]);
+    } else if (_activeTab == 'general') {
+      sections.addAll([
+        row(
+          zh ? '设备名称' : 'Device name',
+          _localDeviceName,
+          OutlinedButton(
+            onPressed: _renameLocalDevice,
+            child: Text(zh ? '修改' : 'Edit'),
+          ),
+        ),
+        row(
+          l10n.settingsAutoCopyReceivedTextTitle,
+          l10n.settingsAutoCopyReceivedTextSubtitle,
+          Switch(
+            value: _autoCopyReceivedText,
+            onChanged: (value) async {
+              await setAutoCopyReceivedText(value);
+              if (mounted) setState(() => _autoCopyReceivedText = value);
+            },
+          ),
+        ),
+        nav(
+          zh ? '设备身份' : 'Device identity',
+          zh ? '备份身份，重装后恢复配对与授权' : 'Back up your identity before reinstalling',
+          '/settings/device-identity',
+          LucideIcons.fingerprint,
+        ),
+        if (Platform.isWindows)
+          row(
+            l10n.settingsWindowsLaunchAtStartupTitle,
+            l10n.settingsWindowsLaunchAtStartupSubtitle,
+            Switch(
+              value: _windowsLaunchAtStartup,
+              onChanged: (value) async {
+                try {
+                  await WindowsLaunchAtStartupService.setEnabled(value);
+                  if (mounted) setState(() => _windowsLaunchAtStartup = value);
+                } catch (_) {
+                  if (context.mounted)
+                    AppToast.show(
+                      context,
+                      message: l10n.settingsWindowsLaunchAtStartupFailed,
+                    );
+                }
+              },
+            ),
+          ),
+        const SizedBox(height: 24),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: colors.surfaceMuted,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            zh
+                ? '无需登录即可传输。设备授权只提供本机服务权益，文件和历史始终由各台设备独立保存。'
+                : 'Transfer without signing in. Authorization grants service benefits; each device keeps its own files and history.',
+            style: TextStyle(
+              fontSize: 12,
+              height: 1.8,
+              color: colors.textSecondary,
+            ),
+          ),
+        ),
+        if (!wide) ...[
+          const SizedBox(height: 24),
+          nav(
+            zh ? '本机授权' : 'Authorization',
+            zh ? '输入授权码或扫码' : 'Enter a code or scan',
+            '/authorize',
+            LucideIcons.shieldCheck,
+          ),
+          nav(
+            zh ? '会员与名额' : 'Membership & slots',
+            _membership?.tierName ??
+                (zh ? '一个账号购买，按设备分配' : 'Purchase once and assign device slots'),
+            loggedIn ? '/settings/membership' : '/login',
+            LucideIcons.badgeCheck,
+          ),
+          nav(
+            zh ? '账号' : 'Account',
+            _profile?.email ??
+                (zh ? '登录购买账号' : 'Sign in to your purchasing account'),
+            loggedIn ? '/account' : '/login',
+            LucideIcons.userRound,
+          ),
+          nav(zh ? '帮助' : 'Help', '', '/settings/help', LucideIcons.circleHelp),
+        ],
+      ]);
+    } else if (_activeTab == 'receiving') {
+      sections.addAll([
+        row(
+          l10n.settingsFileSavePath,
+          _effectiveSaveDir,
+          const Icon(LucideIcons.folderDown, size: 24),
+          onTap: _showReceiveDirFallbackWarning,
+        ),
+        const SizedBox(height: 16),
+        Wrap(
+          spacing: 12,
+          runSpacing: 8,
+          children: [
+            if (!Platform.isIOS)
+              OutlinedButton.icon(
+                onPressed: _selectCustomSaveDir,
+                icon: const Icon(LucideIcons.folderOpen, size: 17),
+                label: Text(l10n.settingsChooseFolder),
+              ),
+            TextButton(
+              onPressed: _customSaveDir == null && _customSaveTreeUri == null
+                  ? null
+                  : _restoreDefaultSaveDir,
+              child: Text(l10n.settingsRestoreDefaultPath),
+            ),
+          ],
+        ),
+        const SizedBox(height: 24),
+        Text(
+          zh
+              ? '收到的文件直接保存到目标位置。同名文件自动保留新副本，不覆盖已有文件。'
+              : 'Received files save directly to the destination. Existing files are kept when names conflict.',
+          style: TextStyle(
+            fontSize: 12,
+            height: 1.8,
+            color: colors.textSecondary,
+          ),
+        ),
+        if (Platform.isAndroid || Platform.isIOS)
+          row(
+            l10n.settingsSaveToGalleryTitle,
+            l10n.settingsSaveToGallerySubtitle,
+            Switch(
+              value: _saveToGallery,
+              onChanged: (value) async {
+                if (value && !await requestSaveToGalleryPermission()) {
+                  if (context.mounted)
+                    AppToast.show(
+                      context,
+                      message: l10n.settingsGalleryPermissionToast,
+                    );
+                  return;
+                }
+                await setSaveToGallery(value);
+                if (mounted) setState(() => _saveToGallery = value);
+              },
+            ),
+          ),
+      ]);
+    } else if (_activeTab == 'appearance') {
+      sections.addAll([
+        Text(zh ? '显示模式' : 'Display mode', style: theme.textTheme.titleSmall),
+        const SizedBox(height: 16),
+        _ThemeSegment(store: ThemeStoreScope.of(context)),
+        const SizedBox(height: 32),
+        Text(l10n.settingsColorThemeLabel, style: theme.textTheme.titleSmall),
+        const SizedBox(height: 20),
+        _ColorThemePicker(store: ColorThemeStoreScope.of(context)),
+      ]);
+    } else if (_activeTab == 'language') {
+      sections.add(
+        ValueListenableBuilder<LocaleRegionState>(
+          valueListenable: LocaleRegionStoreScope.of(context).notifier,
+          builder: (context, lr, _) => Column(
+            children: [
+              row(
+                l10n.fieldLanguage,
+                _languageDisplayLabel(lr.locale, l10n),
+                const Icon(LucideIcons.chevronRight, size: 18),
+                onTap: _pickLanguage,
+              ),
+              if (!LocaleRegionStore.countryLocked)
+                row(
+                  l10n.fieldCountryRegion,
+                  _countryDisplayLabel(context, lr.countryCode),
+                  const Icon(LucideIcons.chevronRight, size: 18),
+                  onTap: _pickRegion,
+                ),
+            ],
+          ),
+        ),
+      );
+    }
+    return ProductScaffold(
+      embedded: widget.embedded,
+      settingsLocation: help ? '/settings/help' : '/settings',
+      appBar: AppBar(
+        automaticallyImplyLeading: !wide && !widget.embedded,
+        toolbarHeight: wide ? 80 : 64,
+        titleSpacing: wide ? 36 : 20,
+        title: Text(
+          help ? (zh ? '帮助' : 'Help') : (zh ? '本机设置' : 'Device settings'),
+          style: TextStyle(
+            fontSize: wide ? 24 : 22,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (!help)
+            ProductPreferencesTabs(
+              selected: _activeTab,
+              onChanged: (tab) {
+                if (ProductWorkspaceScope.maybeOf(context) != null ||
+                    tab == 'fonts' || tab == 'shortcuts') {
+                  openProductRoute(context, tab == 'general' ? '/settings' : '/settings/$tab');
+                } else {
+                  setState(() => _activeTab = tab);
+                }
+              },
+            ),
+          Expanded(
+            child: _loading
+                ? _buildLoadingSkeleton(context)
+                : ListView(
+                    padding: EdgeInsets.fromLTRB(
+                      wide ? 36 : 20,
+                      24,
+                      wide ? 36 : 20,
+                      widget.embedded ? 0.0 + 24 : 32,
+                    ),
+                    children: [
+                      Align(
+                        alignment: Alignment.topLeft,
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 780),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: sections,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
+        ],
+      ),
     );
+  }
+
+  Future<void> _renameLocalDevice() async {
+    final value = await showDialog<String>(context: context, builder: (_) => DeviceNameDialog(initialName: _localDeviceName));
+    if (value == null) return;
+    await setDeviceName(value);
+    ref.invalidate(deviceInfoProvider);
+    if (mounted) setState(() => _localDeviceName = value);
   }
 
   Future<void> _openFeedback(BuildContext context) async {
-    await FeedmatterBootstrap.syncUserFromAuth(ref.read(authProvider));
-    if (!context.mounted) return;
-
-    final themeOptions = FeedmatterBootstrap.themeOptionsFrom(context);
-    final lr = LocaleRegionStoreScope.of(context).notifier.value;
-    final uiOptions = FeedMatterUiOptions(
-      theme: themeOptions,
-      showProjectConfigDebugPanel: false,
-      customInfo: {
-        'source': 'settings_appbar',
-        'serviceRegion': Env.prodServiceRegion.name,
-        'appMarket': FeedmatterBootstrap.detectAppMarket(),
-        'locale': lr.locale.toLanguageTag(),
-      },
-      onContentUrlTap: launchExternalUrl,
-      onFaqUrlTap: launchExternalUrl,
-    );
-    FeedMatterThemeScope.push<void>(
-      context,
-      theme: themeOptions,
-      child: FeedmatterFeedbackScreen(options: uiOptions),
-    );
-  }
-
-  Widget _buildS3StatusBadge(BuildContext context) {
-    final theme = Theme.of(context);
-    final colors = context.appColors;
-    final l10n = AppLocalizations.of(context);
-    final Color background;
-    final Color foreground;
-    final String label;
-    switch (_s3Mode) {
-      case S3StorageMode.custom:
-        background = colors.successSurface;
-        foreground = colors.success;
-        label = l10n.settingsS3StatusCustom;
-        break;
-      case S3StorageMode.hosted:
-        final scheme = theme.colorScheme;
-        background = scheme.primary.withValues(alpha: 0.12);
-        foreground = scheme.primary;
-        label = l10n.settingsS3StatusHosted;
-        break;
-      case S3StorageMode.disabled:
-        background = colors.surfaceMuted;
-        foreground = colors.textSecondary;
-        label = l10n.settingsS3StatusNotConfigured;
-        break;
-    }
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.xs,
-        vertical: 3,
-      ),
-      decoration: BoxDecoration(
-        color: background,
-        borderRadius: AppRadius.small,
-      ),
-      child: Text(
-        label,
-        style: theme.textTheme.labelSmall?.copyWith(
-          color: foreground,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-    );
-  }
-
-  String _webDavNavSubtitle(AppLocalizations l10n, WidgetRef ref) {
-    final count = ref.watch(webDavConnectionsProvider).valueOrNull?.length ?? 0;
-    if (count == 0 && !membershipCanAddWebDav(_membership)) {
-      return l10n.settingsWebDavMemberOnly;
-    }
-    return l10n.settingsNavWebDavSubtitle;
-  }
-
-  Widget _buildWebDavStatusBadge(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    final colors = context.appColors;
-    final l10n = AppLocalizations.of(context);
-    final webDavAsync = ref.watch(webDavConnectionsProvider);
-    final count = webDavAsync.valueOrNull?.length ?? 0;
-    final canAddWebDav = membershipCanAddWebDav(_membership);
-
-    final Color background;
-    final Color foreground;
-    final String label;
-    if (count == 0) {
-      if (!canAddWebDav) {
-        background = colors.surfaceMuted;
-        foreground = colors.textSecondary;
-        label = l10n.settingsWebDavMemberOnly;
-      } else {
-        background = colors.surfaceMuted;
-        foreground = colors.textSecondary;
-        label = l10n.settingsWebDavStatusNone;
-      }
-    } else {
-      final scheme = theme.colorScheme;
-      background = scheme.primary.withValues(alpha: 0.12);
-      foreground = scheme.primary;
-      label = l10n.settingsWebDavStatusCount(count);
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.xs,
-        vertical: 3,
-      ),
-      decoration: BoxDecoration(
-        color: background,
-        borderRadius: AppRadius.small,
-      ),
-      child: Text(
-        label,
-        style: theme.textTheme.labelSmall?.copyWith(
-          color: foreground,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-    );
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => const ProductFeedbackScreen()));
   }
 
   String _desktopUpdateSubtitle(AppLocalizations l10n) {
@@ -1683,7 +1040,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       await ref.read(authProvider.notifier).clearAuth();
       await store.restoreState(snapshot);
       if (!mounted) return;
-      Navigator.of(context).pushNamedAndRemoveUntil('/', (_) => false);
+      Navigator.of(context, rootNavigator: true).pushNamedAndRemoveUntil('/', (_) => false);
       return;
     }
 
@@ -1766,92 +1123,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       _receiveDirFallback != null &&
       !_receiveDirFallback!.isEmpty;
 
-  String _savePathBadgeLabel(AppLocalizations l10n) {
-    final resolution = _receiveDirResolution;
-    final visible = resolution?.visibleExportTarget;
-
-    if (visible?.isCustom == true ||
-        resolution?.customSafTreeUri != null ||
-        _customSaveDir != null ||
-        _customSaveTreeUri != null) {
-      return l10n.settingsSavePathBadgeCustom;
-    }
-
-    if (visible != null) {
-      return switch (visible.kind) {
-        VisibleExportKind.downloads => l10n.settingsSavePathBadgeDefault,
-        VisibleExportKind.documents => l10n.settingsSavePathKindAppDocuments,
-        VisibleExportKind.customDir => l10n.settingsSavePathBadgeCustom,
-        VisibleExportKind.safTree => l10n.settingsSavePathBadgeCustom,
-      };
-    }
-
-    if (resolution == null) return l10n.settingsSavePathBadgeDefault;
-    if (resolution.usedFallback) {
-      return l10n.settingsSavePathKindAppCache;
-    }
-    if (resolution.kind == ReceiveStorageKind.appDocuments) {
-      return l10n.settingsSavePathKindAppDocuments;
-    }
-    if (resolution.kind == ReceiveStorageKind.appExternal) {
-      return l10n.settingsSavePathKindAppExternal;
-    }
-    if (resolution.kind == ReceiveStorageKind.appCache) {
-      return l10n.settingsSavePathKindAppCache;
-    }
-    return l10n.settingsSavePathKindExternal;
-  }
-
-  String? _savePathKindLabel(AppLocalizations l10n) {
-    return l10n.settingsSavePathSafMirrorLabel;
-  }
-
-  String? _savePathKindHint(AppLocalizations l10n) {
-    return l10n.settingsSavePathSafSyncHint;
-  }
-
-  Future<void> _showSettingsFeatureHintDialog({
-    required String title,
-    required String content,
-  }) async {
-    if (!mounted) return;
-    final l10n = AppLocalizations.of(context);
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) {
-        final theme = Theme.of(ctx);
-        final colors = ctx.appColors;
-        return AlertDialog(
-          backgroundColor: colors.surface,
-          shape: RoundedRectangleBorder(borderRadius: AppRadius.large),
-          titlePadding: AppDialog.titlePadding,
-          contentPadding: AppDialog.confirmContentPadding,
-          actionsPadding: AppDialog.actionsPadding,
-          title: Text(title),
-          content: Text(
-            content,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: colors.textSecondary,
-              height: 1.4,
-            ),
-          ),
-          actions: [
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text(l10n.settingsSavePathFallbackDialogOk),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
   Future<void> _showReceiveDirFallbackWarning() async {
     if (!_shouldShowReceiveDirFallbackWarning || !mounted) return;
     final l10n = AppLocalizations.of(context);
     final fallback = _receiveDirFallback!;
     final resolution = _receiveDirResolution!;
-  await showDialog<void>(
+    await showDialog<void>(
       context: context,
       builder: (ctx) {
         final theme = Theme.of(ctx);
@@ -2027,29 +1304,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         );
       }
     }
-  }
-}
-
-class _SectionTitle extends StatelessWidget {
-  final String title;
-  final Color color;
-
-  const _SectionTitle({required this.title, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(left: AppSpacing.xxs),
-      child: Text(
-        title,
-        style: theme.textTheme.labelSmall?.copyWith(
-          color: color,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 0.4,
-        ),
-      ),
-    );
   }
 }
 

@@ -2,7 +2,9 @@
 
 This is a condensed English overview of the ShrimpSend / 虾传 transfer protocol for readers who do not read Chinese. The full, authoritative specification lives in [shared/protocol.md](protocol.md); when the two disagree, the Chinese document wins.
 
-ShrimpSend moves data between a user's own devices. It picks the best available path at send time and degrades gracefully when the network is hostile, rather than failing the transfer. The paths, in order of preference, are: HTTP direct push on the LAN, HTTP reverse pull, WebRTC peer-to-peer, and S3-compatible relay.
+ShrimpSend moves data between a user's own devices. Users pick a destination device, not a transport. At send time the client probes paths in speed order and uses the first one that can transfer: HTTP direct push on the LAN, HTTP reverse pull, WebRTC peer-to-peer, then S3-compatible relay. There is no session-level mode picker.
+
+Web browsers have no LAN HTTP server, so direction is fixed: Web → App is HTTP push only; App → Web is HTTP reverse pull only; Web → Web skips HTTP. Guest (unsigned-in) sessions use the same HTTP direction rules; S3 remains login-only.
 
 ## Why a multi-path protocol
 
@@ -33,6 +35,8 @@ The sender posts the file body directly to the receiver:
 When direct push fails because the receiver cannot accept inbound connections, the protocol flips direction: the reachable side exposes the file and the other side pulls it.
 
 - `GET /download?offerId=...` serves the file.
+- The sender publishes a directed `lan_file_offer` (envelope `toDeviceId` required) so the browser can learn the pull URL. Guest `device-send` rejects offers without it; logged-in fan-out does not reach guest Web.
+- LAN HTTP CORS includes `Access-Control-Allow-Private-Network: true` so Chrome Private / Local Network Access preflights succeed.
 - `Range: bytes=start-` requests are honored and answered with `206 Partial Content` and a `Content-Range` header, so an interrupted pull resumes instead of restarting.
 
 After sign-in, the server coordinates reachability probes between the two devices and decides whether to push or pull, so this is automatic rather than a manual user choice.
@@ -41,7 +45,7 @@ After sign-in, the server coordinates reachability probes between the two device
 
 When neither HTTP path works directly but a peer connection can still be negotiated, ShrimpSend uses WebRTC.
 
-- Signaling messages travel over Centrifugo: `webrtc_offer`, `webrtc_answer`, `webrtc_ice_candidate`, and `webrtc_transfer_cancel`.
+- Signaling messages travel over the realtime control plane: `webrtc_offer`, `webrtc_answer`, `webrtc_ice_candidate`, and `webrtc_transfer_cancel`.
 - A `control` DataChannel carries JSON control messages; each file gets its own `file-{fileId}` DataChannel transferred in 16 KB chunks.
 - Control messages cover the full lifecycle: `file_start`, `file_end`, `file_ack`, `progress` (for end-to-end flow control), `file_resume_request` / `file_resume_accept` (for resume), and `session_complete`.
 - Resume flow: the receiver checks for a partially received temp file after `file_start`, sends `file_resume_request` with the bytes it already has, and the sender replies `file_resume_accept` with the offset to continue from. The receiver flushes partial data to a temp file roughly every 2 MB.
@@ -61,4 +65,14 @@ S3 is a fallback path, not a replacement for LAN transfer. It keeps delivery rel
 
 ## Real-time sync
 
-Centrifugo pushes updates to every signed-in client on the channel `user#<userId>`, which is also how WebRTC signaling and device/conversation state propagate across a user's devices in real time.
+WuKongIM pushes updates to every signed-in device of the same account, which is also how WebRTC signaling and device/conversation state propagate in real time.
+
+## 2026-09 device authorization and transport identity
+
+Billing accounts own device service slots. Transport uses the installation's `device_access` JWT from `/api/realtime/device-session`; activation codes are never bearer tokens.
+
+Both `/api/messages/device-send` and the compatibility `/api/messages/send` URL require device authentication. Mailbox access is scoped to the authenticated device. An account JWT cannot send as or obtain realtime access for another installation.
+
+New peer threads use `device|d1:<lower-sorted ID>|d2:<higher-sorted ID>`. Pairing is independent of licensing. `GET /api/devices/paired` lists pairs and `DELETE /api/devices/paired/{peer}` disconnects one pair without revoking its license.
+
+`GET /api/device-licenses/me` reports the local grant. `POST /api/device-licenses/redeem` consumes `code` (six characters, purchaser approval required) or `qrToken` (high-entropy, single use). See [implementation and deployment](../docs/DEVICE_LICENSES.md).

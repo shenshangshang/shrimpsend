@@ -12,10 +12,7 @@ import 'visible_export_target.dart';
 
 const _table = 'received_files';
 
-enum ReceivedFileSortBy {
-  createdAt,
-  modified,
-}
+enum ReceivedFileSortBy { createdAt, modified }
 
 class ReceivedFileRecord {
   final String messageId;
@@ -65,28 +62,28 @@ class ReceivedFileRecord {
   });
 
   String get readablePath => FileStore.resolveReadablePath(
-        cachePath: cachePath,
-        visiblePath: visiblePath,
-        absPath: absPath,
-      );
+    cachePath: cachePath,
+    visiblePath: visiblePath,
+    absPath: absPath,
+  );
 
   ReceivedFileInfo toInfo() => ReceivedFileInfo(
-        messageId: messageId,
-        path: readablePath,
-        displayName: fileName,
-        protocol: protocol ?? 'unknown',
-        size: size,
-        modified: mtime,
-        createdAt: createdAt,
-        category: category,
-        threadKey: threadKey,
-        s3Key: s3Key,
-        fromDeviceId: fromDeviceId,
-        cachePath: cachePath,
-        visiblePath: visiblePath,
-        exportStatus: exportStatus,
-        gallerySaved: gallerySaved,
-      );
+    messageId: messageId,
+    path: readablePath,
+    displayName: fileName,
+    protocol: protocol ?? 'unknown',
+    size: size,
+    modified: mtime,
+    createdAt: createdAt,
+    category: category,
+    threadKey: threadKey,
+    s3Key: s3Key,
+    fromDeviceId: fromDeviceId,
+    cachePath: cachePath,
+    visiblePath: visiblePath,
+    exportStatus: exportStatus,
+    gallerySaved: gallerySaved,
+  );
 
   static ExportStatus _parseExportStatus(String? raw) {
     if (raw == null || raw.isEmpty) return ExportStatus.pending;
@@ -120,8 +117,9 @@ class ReceivedFileRecord {
       absPath: row['abs_path'] as String,
       size: (row['size'] as int?) ?? 0,
       mtime: DateTime.fromMillisecondsSinceEpoch((row['mtime'] as int?) ?? 0),
-      createdAt:
-          DateTime.fromMillisecondsSinceEpoch((row['created_at'] as int?) ?? 0),
+      createdAt: DateTime.fromMillisecondsSinceEpoch(
+        (row['created_at'] as int?) ?? 0,
+      ),
       category: category,
       protocol: row['protocol'] as String?,
       s3Key: row['s3_key'] as String?,
@@ -212,7 +210,8 @@ class ReceivedFileDao {
         : now;
 
     final effectiveCache = cachePath ?? absPath;
-    final status = exportStatus ??
+    final status =
+        exportStatus ??
         (existing.isEmpty
             ? ExportStatus.pending
             : ReceivedFileRecord._parseExportStatus(
@@ -224,37 +223,34 @@ class ReceivedFileDao {
       absPath: absPath,
     );
 
-    await _db.insert(
-      _table,
-      {
-        'message_id': messageId,
-        'user_id': userId,
-        'thread_key': threadKey,
-        'dir_name': dirName,
-        'file_name': fileName,
-        'abs_path': effectiveAbs,
-        'protocol': protocol,
-        'category': category,
-        'size': sz,
-        'mtime': mt == 0 ? now : mt,
-        'created_at': createdAt,
-        's3_key': s3Key,
-        'from_device_id': fromDeviceId,
-        'deleted': 0,
-        'cache_path': effectiveCache,
-        'visible_path': visiblePath,
-        'export_status': status.name,
-        'export_target': exportTarget?.name,
-        'gallery_saved': (gallerySaved ??
-                (existing.isNotEmpty &&
-                    ((existing.first['gallery_saved'] as int?) ?? 0) == 1))
-            ? 1
-            : 0,
-        'export_error': exportError,
-        'exported_at': exportedAt?.millisecondsSinceEpoch,
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await _db.insert(_table, {
+      'message_id': messageId,
+      'user_id': userId,
+      'thread_key': threadKey,
+      'dir_name': dirName,
+      'file_name': fileName,
+      'abs_path': effectiveAbs,
+      'protocol': protocol,
+      'category': category,
+      'size': sz,
+      'mtime': mt == 0 ? now : mt,
+      'created_at': createdAt,
+      's3_key': s3Key,
+      'from_device_id': fromDeviceId,
+      'deleted': 0,
+      'cache_path': effectiveCache,
+      'visible_path': visiblePath,
+      'export_status': status.name,
+      'export_target': exportTarget?.name,
+      'gallery_saved':
+          (gallerySaved ??
+              (existing.isNotEmpty &&
+                  ((existing.first['gallery_saved'] as int?) ?? 0) == 1))
+          ? 1
+          : 0,
+      'export_error': exportError,
+      'exported_at': exportedAt?.millisecondsSinceEpoch,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
     _notifyChanged();
   }
 
@@ -269,14 +265,13 @@ class ReceivedFileDao {
     String? cachePath,
     bool clearCachePath = false,
   }) async {
-    final data = <String, Object?>{
-      'export_status': exportStatus.name,
-    };
+    final data = <String, Object?>{'export_status': exportStatus.name};
     if (visiblePath != null) data['visible_path'] = visiblePath;
     if (exportTarget != null) data['export_target'] = exportTarget.name;
     if (gallerySaved != null) data['gallery_saved'] = gallerySaved ? 1 : 0;
     if (exportError != null) data['export_error'] = exportError;
-    if (exportStatus == ExportStatus.done || exportStatus == ExportStatus.failed) {
+    if (exportStatus == ExportStatus.done ||
+        exportStatus == ExportStatus.failed) {
       data['exported_at'] = DateTime.now().millisecondsSinceEpoch;
     }
     if (absPath != null) data['abs_path'] = absPath;
@@ -292,7 +287,9 @@ class ReceivedFileDao {
     _notifyChanged();
   }
 
-  Future<List<ReceivedFileRecord>> listPendingExports({int limit = 2000}) async {
+  Future<List<ReceivedFileRecord>> listPendingExports({
+    int limit = 2000,
+  }) async {
     final rows = await _db.query(
       _table,
       where:
@@ -342,6 +339,7 @@ class ReceivedFileDao {
     int offset = 0,
     int limit = 50,
     String? category,
+    List<String>? categories,
     String? threadKey,
     String? query,
     ReceivedFileSortBy sortBy = ReceivedFileSortBy.createdAt,
@@ -355,12 +353,18 @@ class ReceivedFileDao {
       whereParts.add('category = ?');
       args.add(category);
     }
+    if (categories != null && categories.isNotEmpty) {
+      whereParts.add(
+        'category IN (${List.filled(categories.length, '?').join(',')})',
+      );
+      args.addAll(categories);
+    }
     if (threadKey != null && threadKey.isNotEmpty) {
       whereParts.add('thread_key = ?');
       args.add(threadKey);
     }
     if (query != null && query.isNotEmpty) {
-      whereParts.add('file_name LIKE ?');
+      whereParts.add("file_name LIKE ? ESCAPE '\\'");
       args.add('%${_escapeLike(query)}%');
     }
     final orderColumn = sortBy == ReceivedFileSortBy.modified
@@ -427,11 +431,7 @@ class ReceivedFileDao {
   }
 
   Future<void> removeByMessageId(String messageId) async {
-    await _db.delete(
-      _table,
-      where: 'message_id = ?',
-      whereArgs: [messageId],
-    );
+    await _db.delete(_table, where: 'message_id = ?', whereArgs: [messageId]);
     _notifyChanged();
   }
 
@@ -465,9 +465,7 @@ class ReceivedFileDao {
       whereArgs: [newMessageId],
     );
 
-    final data = <String, Object?>{
-      'message_id': newMessageId,
-    };
+    final data = <String, Object?>{'message_id': newMessageId};
     if (userId != null) data['user_id'] = userId;
     if (threadKey != null) data['thread_key'] = threadKey;
     if (fromDeviceId != null) data['from_device_id'] = fromDeviceId;
@@ -636,13 +634,15 @@ class ReceivedFileDao {
         row['export_status'] as String?,
       );
 
-      final indexedCachePath =
-          cachePath != null && cachePath.isNotEmpty ? cachePath : absPath;
+      final indexedCachePath = cachePath != null && cachePath.isNotEmpty
+          ? cachePath
+          : absPath;
       if (!FileStore.isPathUnderDirectory(indexedCachePath, normRoot)) {
         continue;
       }
 
-      final visiblePosix = visiblePath != null &&
+      final visiblePosix =
+          visiblePath != null &&
           visiblePath.isNotEmpty &&
           !visiblePath.startsWith('content://') &&
           File(visiblePath).existsSync();
@@ -659,10 +659,7 @@ class ReceivedFileDao {
               );
         await _db.update(
           _table,
-          {
-            'cache_path': null,
-            'abs_path': nextAbs,
-          },
+          {'cache_path': null, 'abs_path': nextAbs},
           where: 'message_id = ?',
           whereArgs: [messageId],
         );
@@ -699,8 +696,9 @@ class ReceivedFileDao {
       final fileName = row['file_name'] as String;
       final size = row['size'] as int?;
 
-      final indexedCachePath =
-          cachePath != null && cachePath.isNotEmpty ? cachePath : absPath;
+      final indexedCachePath = cachePath != null && cachePath.isNotEmpty
+          ? cachePath
+          : absPath;
       final hasCacheUnderRoot = FileStore.isPathUnderDirectory(
         indexedCachePath,
         cacheRoot,
@@ -722,7 +720,8 @@ class ReceivedFileDao {
         }
       }
 
-      final visiblePosix = visiblePath != null &&
+      final visiblePosix =
+          visiblePath != null &&
           visiblePath.isNotEmpty &&
           !visiblePath.startsWith('content://') &&
           File(visiblePath).existsSync();
@@ -739,10 +738,7 @@ class ReceivedFileDao {
               );
         await _db.update(
           _table,
-          {
-            'cache_path': null,
-            'abs_path': nextAbs,
-          },
+          {'cache_path': null, 'abs_path': nextAbs},
           where: 'message_id = ?',
           whereArgs: [messageId],
         );

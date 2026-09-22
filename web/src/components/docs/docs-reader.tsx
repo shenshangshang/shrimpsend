@@ -6,15 +6,13 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { Components } from 'react-markdown';
 import type { ComponentType, ReactNode } from 'react';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useI18n } from '@/contexts/I18nContext';
-import { localizedDocsHref, localizedHomeHref, parseDocsPathname, type LocalePath } from '@/lib/i18nRouting';
-import { getClientReleaseDownloadUrl } from '@/lib/clientReleaseDownload';
+import { localizedDocsHref, parseDocsPathname, type LocalePath } from '@/lib/i18nRouting';
 import { SiteFooter } from '@/components/landing/SiteFooter';
 import { SiteNav } from '@/components/landing/SiteNav';
-import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { BookOpen, Download, FileText, Globe2, Mail, ScrollText, Settings2, ShieldCheck } from 'lucide-react';
+import { BookOpen, Mail, ScrollText, Settings2, ShieldCheck } from 'lucide-react';
 import type { DocsDocId, DocsHeading, DocsMarkdownSource, DocsRegion, S3SectionId } from '@/lib/docsConfig';
 import { s3SectionsForRegion } from '@/lib/docsConfig';
 import { DocsCodeBlock } from '@/components/docs/docs-code-block';
@@ -25,7 +23,7 @@ type DocsImageManifest = Record<string, { width: number; height: number }>;
 const docImageSizes = docsImageManifest as DocsImageManifest;
 
 const docImageClassName =
-  'mx-auto block h-auto w-auto max-w-[min(100%,42rem)] rounded-2xl border border-white/10 bg-black/10 object-contain shadow-sm';
+  'mx-auto block h-auto w-auto max-w-[min(100%,42rem)] rounded-xl border border-border bg-muted object-contain shadow-sm';
 
 function DocsMarkdownImage({ src, alt, ...props }: React.ComponentProps<'img'>) {
   const srcStr = typeof src === 'string' ? src : undefined;
@@ -63,7 +61,7 @@ function DocsMarkdownImage({ src, alt, ...props }: React.ComponentProps<'img'>) 
   );
 }
 
-const docItems: Array<{ id: DocsDocId; labelKey: string; icon: ComponentType<{ className?: string }> }> = [
+const docItems: Array<{ id: DocsDocId; labelKey: string; icon: ComponentType<{ className?: string; size?: number }> }> = [
   { id: 'intro', labelKey: 'docs.nav.intro', icon: BookOpen },
   { id: 's3', labelKey: 'docs.nav.s3', icon: Settings2 },
   { id: 'privacy', labelKey: 'docs.nav.privacy', icon: ShieldCheck },
@@ -111,12 +109,12 @@ function paragraphIsImageOnly(node: unknown): boolean {
 
 const markdownComponents: Components = {
   h1: ({ children, ...props }) => (
-    <h1 className="mb-5 scroll-mt-24 text-3xl font-bold tracking-tight text-foreground sm:text-4xl" {...props}>
+    <h1 className="mb-5 scroll-mt-24 text-[26px] font-semibold tracking-tight text-foreground" {...props}>
       {children}
     </h1>
   ),
   h2: ({ children, ...props }) => (
-    <h2 id={slugifyHeading(headingText(children))} className="mb-3 mt-9 scroll-mt-24 text-2xl font-semibold tracking-tight text-foreground" {...props}>
+    <h2 id={slugifyHeading(headingText(children))} className="mb-3 mt-9 scroll-mt-24 text-xl font-semibold tracking-tight text-foreground" {...props}>
       {children}
     </h2>
   ),
@@ -161,26 +159,26 @@ const markdownComponents: Components = {
     </a>
   ),
   blockquote: ({ children, ...props }) => (
-    <blockquote className="mb-4 rounded-2xl border border-primary/20 bg-primary/[0.08] px-4 py-3 text-sm text-muted-foreground" {...props}>
+    <blockquote className="mb-4 rounded-xl border border-primary/20 bg-primary/[0.08] px-4 py-3 text-sm text-muted-foreground" {...props}>
       {children}
     </blockquote>
   ),
-  hr: (props) => <hr className="my-8 border-white/10" {...props} />,
+  hr: (props) => <hr className="my-8 border-border" {...props} />,
   table: ({ children, ...props }) => (
-    <div className="mb-4 overflow-x-auto rounded-2xl border border-white/10">
+    <div className="mb-4 overflow-x-auto rounded-xl border border-border">
       <table className="w-full min-w-[560px] border-collapse text-left text-sm" {...props}>
         {children}
       </table>
     </div>
   ),
-  thead: ({ children, ...props }) => <thead className="bg-white/[0.06] text-foreground" {...props}>{children}</thead>,
+  thead: ({ children, ...props }) => <thead className="bg-muted text-foreground" {...props}>{children}</thead>,
   th: ({ children, ...props }) => (
-    <th className="border-b border-white/10 px-3 py-2 font-semibold" {...props}>
+    <th className="border-b border-border px-3 py-2 font-semibold" {...props}>
       {children}
     </th>
   ),
   td: ({ children, ...props }) => (
-    <td className="border-b border-white/10 px-3 py-2 align-top text-foreground/88" {...props}>
+    <td className="border-b border-border px-3 py-2 align-top text-foreground/88" {...props}>
       {children}
     </td>
   ),
@@ -188,7 +186,7 @@ const markdownComponents: Components = {
   code: ({ className, children, ...props }) => {
     const isFenced = Boolean(className?.startsWith('language-'));
     if (isFenced) return <code className={className} {...props}>{children}</code>;
-    return <code className="rounded bg-white/[0.08] px-1 py-0.5 font-mono text-[0.85em]" {...props}>{children}</code>;
+    return <code className="rounded bg-muted px-1 py-0.5 font-mono text-[0.85em]" {...props}>{children}</code>;
   },
   pre: ({ children, ...props }) => (
     <DocsCodeBlock {...props}>{children}</DocsCodeBlock>
@@ -210,14 +208,14 @@ export function DocsReader({
   localePath: LocalePath;
   region: DocsRegion;
 }) {
-  const { t } = useI18n();
+  const { t, localeTag } = useI18n();
+  const zh = localeTag.startsWith('zh');
+  const [query, setQuery] = useState('');
   const pathname = usePathname();
   const routeFromPath = useMemo(() => parseDocsPathname(pathname), [pathname]);
   const activeDoc = routeFromPath?.doc ?? initialDoc;
   const activeS3Section = routeFromPath?.s3Section ?? initialS3Section ?? doc.section;
   const activeItem = docItems.find((item) => item.id === activeDoc) ?? docItems[0]!;
-  const ActiveIcon = activeItem.icon;
-  const releaseHref = getClientReleaseDownloadUrl();
   const s3Sections = useMemo(() => s3SectionsForRegion(region), [region]);
   const isS3Active = activeDoc === 's3';
 
@@ -227,169 +225,30 @@ export function DocsReader({
     ? `${t(activeItem.labelKey)} · ${t(s3SectionLabelKeys[activeS3Section])}`
     : t(activeItem.labelKey);
 
-  return (
-    <main className="landing-shell min-h-dvh text-foreground">
-      <SiteNav active="docs" />
-
-      <div className="mx-auto grid w-full max-w-[1440px] gap-6 px-5 pb-8 lg:grid-cols-[260px_minmax(0,1fr)_260px] lg:px-8">
-        <aside className="hidden lg:block">
-          <div className="sticky top-5 space-y-5">
-            <nav className="landing-glass-card rounded-3xl p-3" aria-label={t('docs.nav.label')}>
-              <p className="px-3 py-2 font-mono text-[10px] uppercase tracking-[0.24em] text-muted-foreground">
-                {region === 'overseas' ? t('docs.nav.regionOverseas') : t('docs.nav.regionMainland')}
-              </p>
-              <div className="space-y-1">
-                {docItems.map(({ id, labelKey, icon: Icon }) => (
-                  <div key={id}>
-                    <Link
-                      href={localizedDocsHref(localePath, id)}
-                      className={cn(
-                        'flex w-full items-center gap-2.5 rounded-2xl px-3 py-2 text-left text-sm transition-colors',
-                        activeDoc === id
-                          ? 'bg-primary/12 text-foreground ring-1 ring-primary/20'
-                          : 'text-muted-foreground hover:bg-white/[0.06] hover:text-foreground',
-                      )}
-                    >
-                      <Icon className="size-4 text-primary/80" />
-                      {t(labelKey)}
-                    </Link>
-                    {id === 's3' && isS3Active ? (
-                      <div className="ml-2 mt-1 space-y-0.5 border-l border-white/10 pl-2">
-                        {s3Sections.map((sectionId) => (
-                          <Link
-                            key={sectionId}
-                            href={localizedDocsHref(localePath, 's3', sectionId)}
-                            className={cn(
-                              'block rounded-xl px-3 py-1.5 text-xs transition-colors',
-                              isS3Active && activeS3Section === sectionId
-                                ? 'bg-primary/10 font-medium text-foreground'
-                                : 'text-muted-foreground hover:bg-white/[0.06] hover:text-foreground',
-                            )}
-                          >
-                            {t(s3SectionLabelKeys[sectionId])}
-                          </Link>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            </nav>
-
-            <div className="landing-glass-card rounded-3xl p-4">
-              <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-muted-foreground">{t('docs.nav.actions')}</p>
-              <div className="mt-3 space-y-2">
-                <a href={releaseHref} target="_blank" rel="noopener noreferrer" className={cn(buttonVariants(), 'h-10 w-full rounded-2xl')}>
-                  <Download className="size-4" />
-                  {t('landing.downloadPrimary')}
-                </a>
-                <Link href="/chat" className={cn(buttonVariants(), 'h-10 w-full rounded-2xl')}>
-                  <Globe2 className="size-4" />
-                  {t('landing.openApp')}
-                </Link>
-                <Link href={localizedHomeHref(localePath)} className={cn(buttonVariants({ variant: 'outline' }), 'h-10 w-full rounded-2xl bg-white/[0.04]')}>
-                  <FileText className="size-4" />
-                  {t('docs.nav.backHome')}
-                </Link>
-              </div>
-            </div>
-          </div>
-        </aside>
-
-        <div className="min-w-0">
-          <div className="mb-4 flex gap-2 overflow-x-auto pb-1 lg:hidden">
-            {docItems.map(({ id, labelKey }) => (
-              <Link
-                key={id}
-                href={localizedDocsHref(localePath, id)}
-                className={cn(
-                  'shrink-0 rounded-full border px-3 py-1.5 text-sm',
-                  activeDoc === id ? 'border-primary/40 bg-primary/12 text-foreground' : 'border-white/10 text-muted-foreground',
-                )}
-              >
-                {t(labelKey)}
-              </Link>
-            ))}
-          </div>
-
-          {isS3Active ? (
-            <div className="mb-4 flex gap-2 overflow-x-auto pb-1 lg:hidden">
-              {s3Sections.map((sectionId) => (
-                <Link
-                  key={sectionId}
-                  href={localizedDocsHref(localePath, 's3', sectionId)}
-                  className={cn(
-                    'shrink-0 rounded-full border px-3 py-1.5 text-xs',
-                    activeS3Section === sectionId
-                      ? 'border-primary/40 bg-primary/12 text-foreground'
-                      : 'border-white/10 text-muted-foreground',
-                  )}
-                >
-                  {t(s3SectionLabelKeys[sectionId])}
-                </Link>
-              ))}
-            </div>
-          ) : null}
-
-          <div className="mb-4 grid grid-cols-2 gap-2 lg:hidden">
-            <a href={releaseHref} target="_blank" rel="noopener noreferrer" className={cn(buttonVariants(), 'h-10 rounded-2xl')}>
-              <Download className="size-4" />
-              {t('landing.downloadPrimary')}
-            </a>
-            <Link href="/chat" className={cn(buttonVariants({ variant: 'outline' }), 'h-10 rounded-2xl bg-white/[0.04]')}>
-              <Globe2 className="size-4" />
-              {t('landing.openApp')}
-            </Link>
-          </div>
-
-          <article className="docs-markdown landing-glass-card rounded-[2rem] p-6 sm:p-8">
-            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/[0.08] px-3 py-1.5 text-xs font-medium text-primary">
-              <ActiveIcon className="size-3.5" />
-              {badgeLabel}
-            </div>
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-              {doc.source}
-            </ReactMarkdown>
-          </article>
-        </div>
-
-        <aside className="hidden xl:block">
-          <div className="sticky top-5 space-y-5">
-            <div className="landing-glass-card rounded-3xl p-4">
-              <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-muted-foreground">
-                {t('docs.index.title')}
-              </p>
-              <div className="mt-3 space-y-2">
-                {headings.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">{t('docs.index.empty')}</p>
-                ) : (
-                  headings.map((heading) => (
-                    <a
-                      key={heading.id}
-                      href={`#${heading.id}`}
-                      className={cn(
-                        'block text-sm text-muted-foreground transition-colors hover:text-foreground',
-                        heading.depth === 3 && 'pl-3 text-xs',
-                      )}
-                    >
-                      {heading.title}
-                    </a>
-                  ))
-                )}
-              </div>
-            </div>
-
-            <div className="landing-glass-card rounded-3xl p-4">
-              <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-muted-foreground">{t('docs.index.current')}</p>
-              <p className="mt-2 text-sm font-medium text-foreground">{badgeLabel}</p>
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                {region === 'overseas' ? t('docs.index.overseasOnly') : t('docs.index.mainlandOnly')}
-              </p>
-            </div>
-          </div>
-        </aside>
-      </div>
-      <SiteFooter />
+  const visibleItems = docItems.filter(item => !query || t(item.labelKey).toLowerCase().includes(query.toLowerCase()) || item.id === activeDoc);
+  const visibleHeadings = headings.filter(item => !query || item.title.toLowerCase().includes(query.toLowerCase()));
+  return <div className="public-site">
+    <SiteNav active="docs" />
+    <main className="public-docs">
+      <aside className="public-docs-sidebar"><div>
+        <h2>{zh ? '使用文档' : 'Documentation'}</h2>
+        <input type="search" aria-label={zh ? '搜索文档目录' : 'Search documentation headings'} placeholder={zh ? '搜索文档目录' : 'Search headings'} value={query} onChange={e => setQuery(e.target.value)} />
+        <nav aria-label={t('docs.nav.label')}>
+          {visibleItems.map(({id,labelKey,icon:Icon})=><div key={id}>
+            <Link href={localizedDocsHref(localePath,id)} aria-current={activeDoc===id?'page':undefined}><Icon size={16}/>{t(labelKey)}</Link>
+            {id==='s3' && isS3Active && <div className="docs-subnav">{s3Sections.map(sectionId=><Link key={sectionId} href={localizedDocsHref(localePath,'s3',sectionId)} aria-current={activeS3Section===sectionId?'page':undefined}>{t(s3SectionLabelKeys[sectionId])}</Link>)}</div>}
+            {id===activeDoc && !isS3Active && <div className="docs-subnav">{visibleHeadings.filter(h=>h.depth===2).map(h=><a key={h.id} href={`#${h.id}`}>{h.title}</a>)}</div>}
+          </div>)}
+        </nav>
+        {query && visibleHeadings.length===0 && <p className="text-xs text-muted-foreground p-3">{zh?'当前文档没有匹配的章节':'No matching sections in this document.'}</p>}
+      </div></aside>
+      <article className="docs-markdown">
+        <div className="docs-breadcrumb">{zh?'使用文档':'Documentation'} / <span>{badgeLabel}</span></div>
+        {isS3Active && <nav className="flex gap-2 overflow-x-auto mb-5 lg:hidden" aria-label="S3">{s3Sections.map(id=><Link className="shrink-0 rounded-lg px-3 py-2 text-xs bg-muted" key={id} href={localizedDocsHref(localePath,'s3',id)}>{t(s3SectionLabelKeys[id])}</Link>)}</nav>}
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>{doc.source}</ReactMarkdown>
+      </article>
+      <aside className="public-docs-toc"><div><h2>{t('docs.index.title')}</h2>{visibleHeadings.map(h=><a key={h.id} href={`#${h.id}`} className={cn(h.depth===3&&'nested')}>{h.title}</a>)}</div></aside>
     </main>
-  );
+    <SiteFooter/>
+  </div>;
 }

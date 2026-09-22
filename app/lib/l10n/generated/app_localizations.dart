@@ -497,7 +497,7 @@ abstract class AppLocalizations {
   /// No description provided for @settingsMembershipSubtitleUpgrade.
   ///
   /// In en, this message translates to:
-  /// **'Lifetime plans and more devices'**
+  /// **'Device slots with no sign-in required'**
   String get settingsMembershipSubtitleUpgrade;
 
   /// No description provided for @settingsMembershipTierName.
@@ -515,7 +515,7 @@ abstract class AppLocalizations {
   /// No description provided for @settingsNavMyDevices.
   ///
   /// In en, this message translates to:
-  /// **'My devices'**
+  /// **'Account sessions'**
   String get settingsNavMyDevices;
 
   /// No description provided for @settingsNavMyDevicesSubtitleOffline.
@@ -527,7 +527,7 @@ abstract class AppLocalizations {
   /// No description provided for @settingsNavMyDevicesSubtitleOnline.
   ///
   /// In en, this message translates to:
-  /// **'Bound devices'**
+  /// **'Manage sign-in sessions for this account'**
   String get settingsNavMyDevicesSubtitleOnline;
 
   /// No description provided for @settingsNavS3.
@@ -1329,7 +1329,7 @@ abstract class AppLocalizations {
   /// No description provided for @settingsSavePathSafSyncHint.
   ///
   /// In en, this message translates to:
-  /// **'Files are saved here automatically after each transfer'**
+  /// **'Received files are saved to this folder'**
   String get settingsSavePathSafSyncHint;
 
   /// No description provided for @settingsSavePathSafMirrorLabel.
@@ -3273,13 +3273,13 @@ abstract class AppLocalizations {
   /// No description provided for @membershipTierSummary.
   ///
   /// In en, this message translates to:
-  /// **'{tier} · up to {limit} devices'**
+  /// **'{tier} · {limit} device authorization slots'**
   String membershipTierSummary(String tier, int limit);
 
   /// No description provided for @membershipBoundDevices.
   ///
   /// In en, this message translates to:
-  /// **'{count} devices bound'**
+  /// **'{count} authorized devices'**
   String membershipBoundDevices(int count);
 
   /// No description provided for @membershipAddonLine.
@@ -3435,7 +3435,7 @@ abstract class AppLocalizations {
   /// No description provided for @membershipFeatureDevices.
   ///
   /// In en, this message translates to:
-  /// **'Up to {count} linked devices'**
+  /// **'{count} device authorization slots'**
   String membershipFeatureDevices(int count);
 
   /// No description provided for @membershipFeatureUploadHosted.
@@ -3443,6 +3443,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{gib} GiB / month hosted upload quota'**
   String membershipFeatureUploadHosted(int gib);
+
+  /// No description provided for @membershipFeatureAuthorizedSignaling.
+  ///
+  /// In en, this message translates to:
+  /// **'Authorized devices have unlimited signaling for normal use'**
+  String get membershipFeatureAuthorizedSignaling;
 
   /// No description provided for @membershipFeatureWebDav.
   ///
@@ -3903,7 +3909,7 @@ abstract class AppLocalizations {
   /// No description provided for @fileSendS3Intro.
   ///
   /// In en, this message translates to:
-  /// **'Send via S3 cloud relay to all signed-in devices. Works across networks.'**
+  /// **'Use S3 relay to send across networks to selected paired devices.'**
   String get fileSendS3Intro;
 
   /// No description provided for @fileSendS3ConfigurePrompt.
@@ -4071,7 +4077,7 @@ abstract class AppLocalizations {
   /// No description provided for @devicePanelEmptyHintOfflineLan.
   ///
   /// In en, this message translates to:
-  /// **'Make sure other devices are on the same LAN to transfer.'**
+  /// **'Scan or show a pair code to connect unsigned-in phones or the web. Same-LAN devices can also transfer directly.'**
   String get devicePanelEmptyHintOfflineLan;
 
   /// No description provided for @devicePanelEmptyHintOnlineAccount.
@@ -4527,7 +4533,7 @@ abstract class AppLocalizations {
   /// No description provided for @connectionDiagHelpHttpSignalingBody.
   ///
   /// In en, this message translates to:
-  /// **'A cloud message (Centrifugo) asks the peer to self-check its HTTP service and report back.\n\nThis checks whether the peer\'s HTTP service is healthy when you don\'t yet know its LAN address, as long as both sides are online. The result may also include or update the peer\'s LAN URL.'**
+  /// **'A cloud message asks the peer to self-check its HTTP service and report back.\n\nThis checks whether the peer\'s HTTP service is healthy when you don\'t yet know its LAN address, as long as both sides are online. The result may also include or update the peer\'s LAN URL.'**
   String get connectionDiagHelpHttpSignalingBody;
 
   /// No description provided for @connectionDiagHelpHttpPullTitle.
@@ -4752,6 +4758,54 @@ abstract class AppLocalizations {
   /// **'Waiting for peer…'**
   String get chatTransferWaitingPeerShort;
 
+  /// No description provided for @chatTransferPhaseTryingHttp.
+  ///
+  /// In en, this message translates to:
+  /// **'Trying LAN HTTP…'**
+  String get chatTransferPhaseTryingHttp;
+
+  /// No description provided for @chatTransferPhaseWaitingPull.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for the other device to pull…'**
+  String get chatTransferPhaseWaitingPull;
+
+  /// No description provided for @chatTransferPhaseConnectingWebrtc.
+  ///
+  /// In en, this message translates to:
+  /// **'Connecting WebRTC…'**
+  String get chatTransferPhaseConnectingWebrtc;
+
+  /// No description provided for @chatTransferPhaseConnectingWebrtcFallback.
+  ///
+  /// In en, this message translates to:
+  /// **'LAN unavailable, connecting WebRTC…'**
+  String get chatTransferPhaseConnectingWebrtcFallback;
+
+  /// No description provided for @chatTransferPhaseTryingS3.
+  ///
+  /// In en, this message translates to:
+  /// **'Uploading to cloud storage…'**
+  String get chatTransferPhaseTryingS3;
+
+  /// No description provided for @chatTransferPhaseTryingS3Fallback.
+  ///
+  /// In en, this message translates to:
+  /// **'Direct path failed, switching to cloud storage…'**
+  String get chatTransferPhaseTryingS3Fallback;
+
+  /// No description provided for @chatTransferSendingVia.
+  ///
+  /// In en, this message translates to:
+  /// **'Sending via {channel}'**
+  String chatTransferSendingVia(String channel);
+
+  /// No description provided for @chatTransferReceivingVia.
+  ///
+  /// In en, this message translates to:
+  /// **'Receiving via {channel}'**
+  String chatTransferReceivingVia(String channel);
+
   /// No description provided for @chatTransferCancelledBare.
   ///
   /// In en, this message translates to:
@@ -4833,7 +4887,7 @@ abstract class AppLocalizations {
   /// No description provided for @chatScreenRemovePeerBody.
   ///
   /// In en, this message translates to:
-  /// **'The account on that device will be signed out. If it is in use, access ends immediately; otherwise the next launch will require signing in again.'**
+  /// **'Disconnect this paired device. Local files and membership authorization are kept.'**
   String get chatScreenRemovePeerBody;
 
   /// No description provided for @chatScreenConfirmRemoveLabel.
@@ -4947,7 +5001,7 @@ abstract class AppLocalizations {
   /// No description provided for @chatScreenSubtitleRemovePeer.
   ///
   /// In en, this message translates to:
-  /// **'Remove the device in this conversation from your account'**
+  /// **'Disconnect this device pair'**
   String get chatScreenSubtitleRemovePeer;
 
   /// No description provided for @chatScreenPendingFilesMissing.
@@ -5093,6 +5147,59 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Send failed: {error}'**
   String chatScreenSendFailedWithError(String error);
+
+  /// No description provided for @deviceSendQuotaHint.
+  ///
+  /// In en, this message translates to:
+  /// **'This device’s free allowance'**
+  String get deviceSendQuotaHint;
+
+  /// No description provided for @deviceSendQuotaMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Messages {used}/{limit}'**
+  String deviceSendQuotaMessage(int used, int limit);
+
+  /// No description provided for @deviceSendQuotaSignaling.
+  ///
+  /// In en, this message translates to:
+  /// **'Signaling {used}/{limit}'**
+  String deviceSendQuotaSignaling(int used, int limit);
+
+  /// No description provided for @deviceSendQuotaTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Sending too frequently'**
+  String get deviceSendQuotaTitle;
+
+  /// No description provided for @deviceSendQuotaMessageBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This minute\'s message quota is used up ({used}/{limit}). Try again in {seconds}s.'**
+  String deviceSendQuotaMessageBody(int used, int limit, int seconds);
+
+  /// No description provided for @deviceSendQuotaSignalingBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This minute\'s transfer signaling quota is used up ({used}/{limit}). Try again in {seconds}s, or send the file later.'**
+  String deviceSendQuotaSignalingBody(int used, int limit, int seconds);
+
+  /// No description provided for @deviceSendQuotaInfoBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Messages {messageUsed}/{messageLimit}; new connections {signalingUsed}/{signalingLimit}. Authorize this device for unlimited normal usage.'**
+  String deviceSendQuotaInfoBody(
+    int messageUsed,
+    int messageLimit,
+    int signalingUsed,
+    int signalingLimit,
+  );
+
+  /// No description provided for @deviceSendQuotaGotIt.
+  ///
+  /// In en, this message translates to:
+  /// **'Got it'**
+  String get deviceSendQuotaGotIt;
 
   /// No description provided for @chatScreenFileMissing.
   ///
@@ -5517,8 +5624,92 @@ abstract class AppLocalizations {
   /// No description provided for @qrScannerUnrecognized.
   ///
   /// In en, this message translates to:
-  /// **'Scan a ShrimpSend login QR code'**
+  /// **'Scan a ShrimpSend login or pair QR code'**
   String get qrScannerUnrecognized;
+
+  /// No description provided for @qrScannerPairSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Device paired. You can send files now.'**
+  String get qrScannerPairSuccess;
+
+  /// No description provided for @qrScannerPairFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not pair this device: {error}'**
+  String qrScannerPairFailed(String error);
+
+  /// No description provided for @qrScannerLoginRequiresAccount.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in on this device before scanning a login QR code'**
+  String get qrScannerLoginRequiresAccount;
+
+  /// No description provided for @scanToPair.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan to pair'**
+  String get scanToPair;
+
+  /// No description provided for @showPairQr.
+  ///
+  /// In en, this message translates to:
+  /// **'Show pair code'**
+  String get showPairQr;
+
+  /// No description provided for @pairQrHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Have the other device scan this QR with ShrimpSend app or web, or paste a device ID.'**
+  String get pairQrHint;
+
+  /// No description provided for @copyDeviceId.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy device ID'**
+  String get copyDeviceId;
+
+  /// No description provided for @copiedDeviceId.
+  ///
+  /// In en, this message translates to:
+  /// **'Device ID copied'**
+  String get copiedDeviceId;
+
+  /// No description provided for @pasteDeviceIdHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Paste device ID or pair link'**
+  String get pasteDeviceIdHint;
+
+  /// No description provided for @pasteDeviceIdAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Add'**
+  String get pasteDeviceIdAction;
+
+  /// No description provided for @peerAdded.
+  ///
+  /// In en, this message translates to:
+  /// **'Device added'**
+  String get peerAdded;
+
+  /// No description provided for @pairSelf.
+  ///
+  /// In en, this message translates to:
+  /// **'You cannot add this device'**
+  String get pairSelf;
+
+  /// No description provided for @pairInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'Invalid device ID'**
+  String get pairInvalid;
+
+  /// No description provided for @pairSessionUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Cannot reach the server. Try again shortly.'**
+  String get pairSessionUnavailable;
 
   /// No description provided for @qrScannerTorchOn.
   ///
@@ -6329,6 +6520,102 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Downloaded'**
   String get webdavLocalDownloaded;
+
+  /// No description provided for @transferWelcomeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'A little closer. A lot simpler.'**
+  String get transferWelcomeTitle;
+
+  /// No description provided for @transferWelcomeDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Send files, photos and text between your devices. No account needed.'**
+  String get transferWelcomeDescription;
+
+  /// No description provided for @transferWelcomeConnect.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect your first device'**
+  String get transferWelcomeConnect;
+
+  /// No description provided for @transferWelcomeFooter.
+  ///
+  /// In en, this message translates to:
+  /// **'Direct between devices · Resume interrupted transfers'**
+  String get transferWelcomeFooter;
+
+  /// No description provided for @conversationAvailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Ready to transfer'**
+  String get conversationAvailable;
+
+  /// No description provided for @conversationConnect.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect'**
+  String get conversationConnect;
+
+  /// No description provided for @conversationConnectDevice.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect a device'**
+  String get conversationConnectDevice;
+
+  /// No description provided for @conversationComposer.
+  ///
+  /// In en, this message translates to:
+  /// **'Type a message, or drop files here'**
+  String get conversationComposer;
+
+  /// No description provided for @conversationNewline.
+  ///
+  /// In en, this message translates to:
+  /// **'Shift + Enter for a new line'**
+  String get conversationNewline;
+
+  /// No description provided for @conversationWelcomeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a device to start sharing'**
+  String get conversationWelcomeTitle;
+
+  /// No description provided for @conversationWelcomeHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Files and messages, together in one conversation.'**
+  String get conversationWelcomeHint;
+
+  /// No description provided for @conversationSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved to receive folder'**
+  String get conversationSaved;
+
+  /// No description provided for @conversationSent.
+  ///
+  /// In en, this message translates to:
+  /// **'Sent'**
+  String get conversationSent;
+
+  /// No description provided for @conversationSearch.
+  ///
+  /// In en, this message translates to:
+  /// **'Search messages'**
+  String get conversationSearch;
+
+  /// No description provided for @conversationFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'Files'**
+  String get conversationFiles;
+
+  /// No description provided for @conversationFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Files'**
+  String get conversationFile;
 }
 
 class _AppLocalizationsDelegate

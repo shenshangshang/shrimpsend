@@ -26,20 +26,31 @@ class _DesktopPasteShortcutsState extends State<DesktopPasteShortcuts> {
   void initState() {
     super.initState();
     DesktopPasteDispatcher.instance.ensureInstalled();
-    DesktopPasteDispatcher.instance.register(
-      owner: this,
-      handler: widget.onPasteFiles,
-    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _syncRegistration();
+  }
+
+  void _syncRegistration() {
+    if (TickerMode.valuesOf(context).enabled &&
+        (ModalRoute.of(context)?.isCurrent ?? true)) {
+      DesktopPasteDispatcher.instance.register(
+        owner: this,
+        handler: widget.onPasteFiles,
+      );
+    } else {
+      DesktopPasteDispatcher.instance.unregister(this);
+    }
   }
 
   @override
   void didUpdateWidget(DesktopPasteShortcuts oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.onPasteFiles != widget.onPasteFiles) {
-      DesktopPasteDispatcher.instance.register(
-        owner: this,
-        handler: widget.onPasteFiles,
-      );
+      _syncRegistration();
     }
   }
 

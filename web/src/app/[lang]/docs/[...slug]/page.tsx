@@ -125,7 +125,6 @@ export async function generateMetadata({
     const resolved = resolveDocsSlug(slug, region);
     if (resolved.kind === 's3-redirect') {
       const title = docTitle(lang, 's3');
-      const canonicalPath = localizedDocsHref(lang, 's3', 'overview');
       const seoTitle = lang === 'zh' ? `${SITE_NAME.zh}${title} - 文档` : `${SITE_NAME.en} ${title} - Docs`;
       return {
         title: { absolute: seoTitle },
@@ -181,25 +180,15 @@ export default async function LocalizedDocsPage({
   const origin = getConfiguredSiteOrigin();
   const region = docsRegionFromOrigin(origin);
 
+  let resolved;
+  let doc;
   try {
-    const resolved = resolveDocsSlug(slug, region);
-    if (resolved.kind === 's3-redirect') {
-      redirect(localizedDocsHref(lang, 's3', 'overview'));
-    }
-    const doc = readDocsFromSlug(region, localePathToDocsLocale(lang), slug);
-    const activeDoc = slug[0] as DocsDocId;
-    const activeSection = resolved.kind === 's3' ? resolved.section : undefined;
-
-    return (
-      <DocsReader
-        doc={doc}
-        initialDoc={activeDoc}
-        initialS3Section={activeSection}
-        localePath={lang}
-        region={region}
-      />
-    );
+    resolved = resolveDocsSlug(slug, region);
+    if (resolved.kind !== 's3-redirect') doc = readDocsFromSlug(region, localePathToDocsLocale(lang), slug);
   } catch {
     notFound();
   }
+  if (resolved.kind === 's3-redirect') redirect(localizedDocsHref(lang, 's3', 'overview'));
+  if (!doc) notFound();
+  return <DocsReader doc={doc} initialDoc={slug[0] as DocsDocId} initialS3Section={resolved.kind === 's3' ? resolved.section : undefined} localePath={lang} region={region}/>;
 }

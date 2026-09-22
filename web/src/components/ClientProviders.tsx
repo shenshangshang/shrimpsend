@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, type ReactNode } from 'react';
+import { WorkspaceProviders } from '@/components/layout/WorkspaceProviders';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { ColorThemeProvider } from '@/contexts/ColorThemeContext';
@@ -31,10 +32,10 @@ export function ClientProviders({ children }: { children: ReactNode }) {
     <I18nProvider>
       <TypographyProvider>
         <AuthProvider>
-          <OpenPanelRouteTracker />
-          <ThemeProvider>
-            <ColorThemeProvider>{children}</ColorThemeProvider>
-          </ThemeProvider>
+            <OpenPanelRouteTracker />
+            <ThemeProvider>
+              <ColorThemeProvider><WorkspaceProviders>{children}</WorkspaceProviders></ColorThemeProvider>
+            </ThemeProvider>
         </AuthProvider>
       </TypographyProvider>
     </I18nProvider>

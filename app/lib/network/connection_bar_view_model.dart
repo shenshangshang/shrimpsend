@@ -100,8 +100,9 @@ final connectionBarViewModelProvider = Provider<ConnectionBarViewModel?>((ref) {
       isRegisteredPeer: context.isRegisteredPeer,
       l10n: l10n,
     ),
-    primaryActionLabel:
-        orchestrator.showS3SetupEntry ? l10n.connectionBarGoToS3Setup : null,
+    primaryActionLabel: orchestrator.showS3SetupEntry
+        ? l10n.connectionBarGoToS3Setup
+        : null,
     showS3SetupEntry: orchestrator.showS3SetupEntry,
   );
 });
@@ -122,7 +123,10 @@ List<ConnectionBarModeItem> buildConnectionBarModeItems({
     isRegisteredPeer: isRegisteredPeer,
   );
   final accountModes = isLoggedIn && isRegisteredPeer;
-  final modeForSelection = accountModes ? currentMode : SendMode.nearby;
+  final guestWebrtc = !isLoggedIn && currentMode == SendMode.webrtc;
+  final modeForSelection = accountModes || guestWebrtc
+      ? currentMode
+      : SendMode.nearby;
 
   final byMode = <SendMode, ConnectionBarModeItem>{};
   final reachDetail = reach ?? DeviceReachDetail.offlineDetail;
@@ -132,8 +136,8 @@ List<ConnectionBarModeItem> buildConnectionBarModeItems({
       SendMode.lan => httpTransferAvailable(reachDetail),
       _ => candidate.available,
     };
-    final reachPullOnly = candidate.mode == SendMode.lan &&
-        httpPullOnlyAvailable(reachDetail);
+    final reachPullOnly =
+        candidate.mode == SendMode.lan && httpPullOnlyAvailable(reachDetail);
     byMode.putIfAbsent(
       candidate.mode,
       () => ConnectionBarModeItem(
@@ -165,7 +169,8 @@ List<ConnectionBarModeItem> buildConnectionBarModeItems({
         SendMode.lan => httpTransferAvailable(reachDetail),
         _ => false,
       },
-      reachPullOnly: modeForSelection == SendMode.lan &&
+      reachPullOnly:
+          modeForSelection == SendMode.lan &&
           httpPullOnlyAvailable(reachDetail),
     ),
   );

@@ -7,9 +7,6 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useI18n } from '@/contexts/I18nContext';
 import { formatUiMessage } from '@/lib/uiMessage';
 import { logger } from '@/lib/logger';
-import { AuthDownloadPanel } from '@/components/auth/auth-download-panel';
-import { SiteFooter } from '@/components/landing/SiteFooter';
-import { SiteNav } from '@/components/landing/SiteNav';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -95,15 +92,10 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="landing-shell relative min-h-dvh overflow-hidden text-foreground">
-      <div className="landing-glow-orb -left-40 top-20 h-80 w-80 opacity-70 motion-safe:animate-app-glow-drift" aria-hidden />
-      <div className="landing-glow-orb right-[-8rem] bottom-10 h-[26rem] w-[26rem] opacity-45 motion-safe:animate-app-glow-drift" aria-hidden />
-
-      <SiteNav active="home" showOpenApp={false} />
-
-      <div className="relative z-[1] mx-auto grid w-full max-w-6xl gap-10 px-5 pb-10 pt-6 lg:min-h-[calc(100dvh-5rem)] lg:grid-cols-[minmax(360px,420px)_1fr] lg:items-center lg:px-8">
-        <section className="mx-auto w-full max-w-[440px] lg:mx-0">
-        <Card className="border-border/80 bg-card/92 shadow-xl shadow-black/8 backdrop-blur-xl ring-1 ring-border/40 dark:shadow-black/25 motion-safe:animate-app-fade-up">
+    <main className="auth-surface px-5"><div className="mx-auto max-w-5xl pt-7"><Link href="/chat" className="text-sm text-muted-foreground">{t('common.back')}</Link></div>
+      <div className="auth-form">
+        <section>
+        <Card className="border-0 bg-transparent shadow-none ring-0">
           <CardContent className="pt-6">
             <div className="mb-6 flex flex-col items-center text-center">
               <h1 className="font-display text-2xl font-semibold tracking-tight">{t('auth.registerPageTitle')}</h1>
@@ -224,10 +216,9 @@ export default function RegisterPage() {
         </Card>
         </section>
 
-        <AuthDownloadPanel />
+
       </div>
 
-      <SiteFooter />
-    </div>
+    </main>
   );
 }

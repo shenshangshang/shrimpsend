@@ -40,8 +40,7 @@ git clone git@github.com:shrimpsend/public-ops.git ../ops   # or private ops rep
 
 ```bash
 ./scripts/setup-local-config.sh
-# Create MySQL database `ultrasend`, then:
-./scripts/start-dev.sh
+./scripts/start-dev.sh   # Docker: MySQL + WuKongIM + backend; Web on the host
 ```
 
 Stop: `./scripts/stop-dev.sh` · Logs: `scripts/logs/`

@@ -119,9 +119,7 @@ else
         mysql -u"${MYSQL_USER:-root}" ${MYSQL_PASSWORD:+-p"$MYSQL_PASSWORD"} -e "$sql"
       return 0
     fi
-    echo "  [警告] 未找到 mysql CLI，且 docker compose mysql 未运行；请手动建库：" >&2
-    echo "    CREATE DATABASE ultrasend;" >&2
-    echo "    CREATE DATABASE ultrasend_overseas;" >&2
+    echo "  [提示] 宿主机无需安装 MySQL。库将在 ./scripts/start-dev.sh 拉起 Docker 服务端时由 Compose 创建。" >&2
     return 1
   }
 
@@ -144,7 +142,7 @@ else
   }
 
   if ! mysql_exec "CREATE DATABASE IF NOT EXISTS ultrasend CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"; then
-    echo "  [警告] 无法连接 MySQL，请手动建库或稍后重试（可用 --skip-db 仅同步配置）" >&2
+    echo "  [提示] 当前未连上 MySQL（Compose 尚未启动时属正常）。start-dev / deploy 会用 Docker 建库。" >&2
   else
     echo "  数据库 ultrasend 就绪"
     mysql_exec "CREATE DATABASE IF NOT EXISTS ultrasend_overseas CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;" || true

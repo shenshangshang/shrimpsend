@@ -1,3 +1,4 @@
+import '../ui/product_scaffold.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
@@ -150,7 +151,8 @@ class _ApkPickerScreenState extends State<ApkPickerScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
-    return Scaffold(
+    return ProductScaffold(
+      section: ProductSection.files,
       appBar: AppBar(
         title: Text(l10n.apkPickerTitle),
         actions: [

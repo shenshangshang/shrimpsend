@@ -71,19 +71,34 @@ public class AppJwtService {
         return b.compact();
     }
 
+    public String generateDeviceAccessToken(String deviceId) {
+        return Jwts.builder()
+                .subject(deviceId)
+                .claim("type", "device_access")
+                .issuedAt(new Date())
+                .expiration(new Date(System.currentTimeMillis() + accessExpirationMs))
+                .signWith(accessKey)
+                .compact();
+    }
+
     public String parseAccessTokenSubject(String token) {
         return parseAccessClaims(accessKey, token).getSubject();
     }
 
     public ParsedAuthToken parseAccessToken(String token) {
         Claims c = parseAccessClaims(accessKey, token);
-        if (!"access".equals(c.get("type"))) {
+        String type = c.get("type", String.class);
+        if ("device_access".equals(type)) {
+            return new ParsedAuthToken(null, c.getSubject(), null, true);
+        }
+        if (!"access".equals(type)) {
             throw new JwtException("Invalid token type");
         }
         return new ParsedAuthToken(
                 c.getSubject(),
                 c.get("did", String.class),
-                c.get("dsv") != null ? c.get("dsv", Integer.class) : null);
+                c.get("dsv") != null ? c.get("dsv", Integer.class) : null,
+                false);
     }
 
     public String parseRefreshTokenSubject(String token) {
@@ -98,7 +113,8 @@ public class AppJwtService {
         return new ParsedAuthToken(
                 c.getSubject(),
                 c.get("did", String.class),
-                c.get("dsv") != null ? c.get("dsv", Integer.class) : null);
+                c.get("dsv") != null ? c.get("dsv", Integer.class) : null,
+                false);
     }
 
     private static Claims parseAccessClaims(SecretKey key, String token) {
@@ -121,5 +137,5 @@ public class AppJwtService {
         return accessExpirationMs / 1000;
     }
 
-    public record ParsedAuthToken(String userId, String deviceId, Integer deviceSessionVersion) {}
+    public record ParsedAuthToken(String userId, String deviceId, Integer deviceSessionVersion, boolean deviceAuth) {}
 }

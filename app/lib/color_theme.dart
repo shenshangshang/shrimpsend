@@ -115,12 +115,12 @@ class AppColorTheme {
 
   static const emerald = AppColorTheme(
     id: 'emerald',
-    accent: Color(0xFF3D9B7E),
-    bubbleSentLight: Color(0xFF3D9B7E),
-    bubbleSentDark: Color(0xFF2D6B57),
-    bubbleReceivedLight: Color(0xFFE4E4E7),
+    accent: Color(0xFF20735C),
+    bubbleSentLight: Color(0xFFDDF0E7),
+    bubbleSentDark: Color(0xFF284C3D),
+    bubbleReceivedLight: Color(0xFFF3F4F1),
     bubbleReceivedDark: Color(0xFF27272A),
-    onBubbleSentLight: Colors.white,
+    onBubbleSentLight: Color(0xFF202A26),
     onBubbleSentDark: Colors.white,
     onBubbleReceivedLight: Color(0xFF18181b),
     onBubbleReceivedDark: Colors.white,

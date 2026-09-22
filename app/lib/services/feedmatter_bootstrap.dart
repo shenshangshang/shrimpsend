@@ -13,6 +13,7 @@ import '../device_id.dart';
 import '../logger.dart';
 import '../preferences/service_region.dart';
 import '../providers/auth_provider.dart';
+import '../utils/runtime_platform.dart';
 import '../theme_store.dart';
 
 bool _initialized = false;
@@ -71,6 +72,7 @@ class FeedmatterBootstrap {
     if (Platform.isMacOS) return 'macos';
     if (Platform.isWindows) return 'windows';
     if (Platform.isLinux) return 'linux';
+    if (RuntimePlatform.isOhos) return 'harmonyos';
     return Platform.operatingSystem;
   }
 

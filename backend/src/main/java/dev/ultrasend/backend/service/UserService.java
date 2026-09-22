@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class UserService {
 
     private final UserRepository userRepository;
+    private final dev.ultrasend.backend.license.DeviceLicenseService deviceLicenses;
     private final PasswordEncoder passwordEncoder;
     private final VerificationCodeService verificationCodeService;
 
@@ -67,6 +68,7 @@ public class UserService {
         if (!valid) {
             throw new IllegalArgumentException("验证码错误或已过期");
         }
+        deviceLicenses.revokeDeletedOwner(userId);
         userRepository.deleteById(userId);
         log.info("confirmDeleteAccount success userId={}", userId);
     }

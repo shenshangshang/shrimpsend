@@ -39,10 +39,25 @@
 - **对方不用安装也能收** — 文件可直接发到浏览器和临时设备，适合客户机不能装软件、访客设备或一次性分享。
 - **断网后可续传** — 原生客户端之间的大文件可从中断处继续，不必从 0% 重来。
 - **复杂网络下仍可用** — 酒店 Wi‑Fi、校园网、运营商 NAT 等场景下，可通过服务端辅助中继保持传输可用。
-- **打通单向网络** — 防火墙或 NAT 常只允许单向连通（例如同网 Windows 拦截入站，手机能推电脑但电脑推不回手机）。登录后由服务器协调两端互相探测可达路径；HTTP 直推失败时自动改为对端**反向拉取**本机文件，必要时退回 WebRTC 或 S3 中继。详见 [shared/protocol.md](../shared/protocol.md#反向拉取-reverse-pull)。
+- **打通单向网络** — 防火墙或 NAT 常只允许单向连通（例如同网 Windows 拦截入站，手机能推电脑但电脑推不回手机）。配对设备使用独立设备凭证，由服务器协调互相探测可达路径；HTTP 直推失败时自动改为对端**反向拉取**本机文件，必要时退回 WebRTC 或 S3 中继。详见 [shared/protocol.md](../shared/protocol.md#反向拉取-reverse-pull)。
 - **局域网优先，也追求速度** — 同网优先直连 / WebRTC；仅在需要时使用中继或 S3 兼容后备。
-- **实时同步** — 登录设备订阅频道 `user#<userId>`，消息即时推送。
-- **可自托管** — 完整栈可在自有环境运行（[AGPL-3.0-or-later](../LICENSE)）；生产密钥放在私有 ops 模板（[SELF_HOST.md](SELF_HOST.md)）。
+- **设备独立使用** — [悟空 IM](https://github.com/WuKongIM/WuKongIM) 在配对设备间传递消息和信令；账号管理购买和设备名额，不自动同步传输历史。
+- **可自托管** — 完整栈可在自有环境运行（[AGPL-3.0-or-later](../LICENSE)）；生产配置集中在独立 `.env.production` 文件（[SELF_HOST.md](SELF_HOST.md)）。
+
+## 五分钟跑起来
+
+用 Docker 一起启动 MySQL、悟空 IM、后端和 Web：
+
+```bash
+git clone https://github.com/shrimpsend/shrimpsend.git
+cd shrimpsend
+./scripts/deploy-docker-local.sh up
+# 独立本地配置：.env.local-deploy
+```
+
+打开 http://localhost:3000/chat，通过连接码或二维码连接另一台设备即可互传，无需创建账号。购买会员和管理设备名额时再登录。见 [本地部署](LOCAL_DOCKER.md) 与 [生产部署](SELF_HOST.md)。
+
+批准的全页面方案已实现到 Flutter、Web 和官网；鸿蒙本轮暂缓。[实施与验证记录](testing/2026-09-21-redesign-implementation.md)。
 
 ## 界面预览
 
@@ -69,11 +84,10 @@ flowchart LR
   subgraph clients [客户端]
     Flutter[Flutter 应用]
     Web[Next.js Web]
-    OHOS[HarmonyOS app_ohos]
   end
   subgraph server [自托管服务栈]
     API[Spring_Boot :9000]
-    RT[Centrifugo :8000]
+    RT[WuKongIM :5200]
     DB[(MySQL 8 :3306)]
     S3[S3 兼容对象存储]
   end
@@ -89,7 +103,7 @@ flowchart LR
 | 组件 | 端口 | 说明 |
 |------|------|------|
 | MySQL 8 | 3306 | 主数据库 |
-| Centrifugo v6 | 8000 | WebSocket 实时通道 |
+| WuKongIM | 5200 / 5001 | WebSocket 实时通道（HTTP API 仅内网） |
 | Spring Boot 后端 | 9000 | REST API、认证、S3 编排 |
 | Next.js Web | 3000 | 浏览器客户端 |
 
@@ -99,9 +113,9 @@ flowchart LR
 
 - **后端**: Spring Boot (Java 17)，数据库 **MySQL 8**
 - **Web**: Next.js (React)
-- **跨平台客户端**: Flutter (macOS / Windows / Linux / iOS / Android)
-- **鸿蒙**: `app_ohos/`
-- **实时**: Centrifugo
+- **跨平台客户端**: Flutter (macOS / Windows / Linux / iOS / Android / HarmonyOS `app/ohos`)
+- **鸿蒙 ArkTS 旧端**: `app_ohos/`（已冻结，勿加功能）
+- **实时**: WuKongIM
 
 ## 部署指南
 
@@ -109,34 +123,28 @@ flowchart LR
 
 | 工具 | 版本 / 说明 |
 |------|-------------|
-| Java | 17+ |
-| Node.js | 20+（`web/`） |
-| [Centrifugo](https://centrifugal.dev/) | 本地：`./scripts/install-centrifugo.sh`（优先 [centrifugo-bins](https://github.com/shrimpsend/centrifugo-bins)）；生产：`sync-to-build-machine.sh` 自动拉取 `scripts/bin/linux/centrifugo`（不入库） |
-| MySQL | 8 |
+| Docker | 24+（MySQL + 悟空 IM + 后端均走 Compose） |
+| Node.js | 20+（宿主机跑 `web/`） |
+| Java | 17+ 仅在本机跑 Gradle 测试时需要 |
 | Flutter | 仅构建 `app/` 时需要 |
 
-**首次运行 `./scripts/start-dev.sh` 前：** 执行 `cd web && npm ci` 与 `./scripts/install-centrifugo.sh`（或事先 `./scripts/sync-to-build-machine.sh` 仅补 linux 二进制）。启动脚本会按当前系统选择 `scripts/bin/mac/` 或 `scripts/bin/linux/` 下的二进制。
+**首次运行 `./scripts/start-dev.sh` 前：** 执行 `cd web && npm ci`。启动脚本会用 Docker Compose 拉起整个服务端，再启动 Web。
 
 ### 本地开发（国内逻辑）
 
 | 角色 | 配置 | 启动 / 停止 |
 |------|------|-------------|
-| **维护者**（私有 `ops/local/`） | `./scripts/deploy-local.sh` — 同步团队配置并初始化 `ultrasend`、`ultrasend_overseas` 库 | `./scripts/start-dev.sh` · 停止：`./scripts/stop-dev.sh` |
+| **维护者**（私有 `ops/local/`） | `./scripts/deploy-local.sh` — 同步团队配置（库由 Compose 创建） | `./scripts/start-dev.sh` · 停止：`./scripts/stop-dev.sh` |
 | **贡献者**（仅 example 模板） | `./scripts/setup-local-config.sh` — 从 `*.example` 生成本地文件 | 同上 |
 
-**贡献者**首次启动前需手动建库（维护者由 `deploy-local.sh` 自动完成，除非 `--skip-db`）：
-
-```sql
-CREATE DATABASE ultrasend CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-```
-
-默认 JDBC：`jdbc:mysql://localhost:3306/ultrasend`，用户 `root`，密码 `changeme`。可在 `backend/.env` 中设置 `SPRING_DATASOURCE_*`。
+Compose 首次初始化数据卷时会创建 `ultrasend` 与 `ultrasend_overseas`，无需在宿主机安装 MySQL。
 
 | 服务 | 地址 |
 |------|------|
-| Centrifugo | http://localhost:8000 |
-| 后端 API | http://localhost:9000 |
-| Web | http://localhost:3000 |
+| MySQL | 127.0.0.1:3307（Docker 宿主机端口） |
+| 悟空 IM | ws://localhost:5200（API http://127.0.0.1:5001） |
+| 后端 API | http://localhost:9000（docker） |
+| Web | http://localhost:3000（宿主机） |
 
 日志：`scripts/logs/` · 进程 PID：`scripts/.dev-pids`
 
@@ -144,7 +152,7 @@ CREATE DATABASE ultrasend CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 ### 本地开发（海外 / ShrimpSend 逻辑）
 
-配置步骤与国内相同。维护者执行 `deploy-local.sh` 时会创建 `ultrasend_overseas` 库。
+配置步骤与国内相同。Compose 会创建 `ultrasend_overseas`。
 
 ```bash
 ./scripts/start-dev.sh --overseas
@@ -157,68 +165,58 @@ CREATE DATABASE ultrasend CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 stripe listen --forward-to localhost:9000/api/membership/stripe/webhook
 ```
 
-**仅调试后端**（不启 Centrifugo/Web）：`backend/scripts/run-dev-overseas.sh`
+**仅调试后端**（Docker 服务端、不启 Web）：`backend/scripts/run-dev-overseas.sh`
 
-### 生产部署（裸机）
+### 生产部署（全 Docker）
 
-需 **ops** 配置目录同步到本仓。完整说明：[SELF_HOST.md](SELF_HOST.md)。
+MySQL、悟空 IM、后端和 Web 全部由 Docker 运行。只编辑一份独立 `.env.production` 配置；服务器无需安装 Node / Java。
 
 ```bash
-git clone git@github.com:shrimpsend/shrimpsend.git shrimpsend
-cd shrimpsend
-git clone git@github.com:shrimpsend/public-ops.git ../ops   # 公开样例；生产前替换占位值
-# 维护者：git clone git@github.com:shrimpsend/ops.git ../ops
-# 可选：export ULTRASEND_OPS_DIR=/path/to/your-ops
-./scripts/deploy.sh          # 交互：拉代码、选国内/海外、构建、重启
-./scripts/deploy.sh stop
+cp .env.production.example .env.production
+chmod 600 .env.production
+# 填写域名、数据库密码、JWT 和加密密钥
+./scripts/deploy.sh check
+./scripts/deploy.sh up
 ./scripts/deploy.sh status
 ./scripts/deploy.sh logs
 ```
 
-海外非交互部署：
+海外集群在配置中设置 `SPRING_PROFILES_ACTIVE=prod-overseas`、`MYSQL_DATABASE=ultrasend_overseas`、`NEXT_PUBLIC_OPENPANEL_WEB_CLUSTER=intl` 及对应域名。配置可放仓库外，通过 `DEPLOY_ENV_FILE` 指定。Web 公开配置变化后须重建。旧实例先按 [迁移说明](SELF_HOST.md#migrate-an-existing-installation) 保留数据卷和加密密钥。
 
-```bash
-SPRING_PROFILE=prod-overseas CLUSTER_LABEL='海外 (ShrimpSend)' ./scripts/deploy.sh
-```
+当前架构和最近两天的改动、下一步优先级见 [项目梳理](PROJECT_STATUS.md)。
 
-`deploy.sh` 内可再次确认是否从 ops 同步；也可事先单独运行 `scripts/sync-to-build-machine.sh`。
+### Docker Compose（本地开发）
 
-| 集群 | Spring profile | Centrifugo 配置 |
-|------|----------------|-----------------|
-| 国内 xiachuan | `prod` | `config.prod.bare.json` |
-| 海外 ShrimpSend | `prod-overseas` | `config.prod-overseas.bare.json` |
-
-### Docker Compose（可选）
-
-容器内运行 MySQL + Centrifugo + 后端；**Web 不在 Compose 内**，需在宿主机启动。
+容器内运行 MySQL + 悟空 IM + 后端；**Web 不在 Compose 内**，需在宿主机启动。
 
 ```bash
 ./scripts/setup-local-config.sh   # 或 deploy-local 同步 ops/local/docker.env → .env
 docker compose up -d
-./scripts/start-dev.sh            # 在宿主机启动 Web（及可选的全栈）
+./scripts/start-dev.sh            # 推荐：Docker 服务端 + 宿主机 Web
 ```
 
-Compose 使用 `config.docker.json`（proxy 指向 `backend:9000`）；本机脚本使用 `config.json`（localhost）。**无需**在宿主机先执行 `gradlew bootJar`（镜像构建时已完成）。
+Compose 使用 Docker 网络中的悟空 IM（`:5001` 仅绑定本机）。**无需**在宿主机先执行 `gradlew bootJar`（镜像构建时已完成）。
 
 ### 环境变量（可选）
 
 - **Web** — `web/.env.local`（`setup-local-config.sh` 或 `deploy-local` 已从 example 复制）
   - `NEXT_PUBLIC_API_URL`：默认 `http://localhost:9000`
-  - `NEXT_PUBLIC_CENTRIFUGO_WS`：默认 `ws://localhost:8000/connection/websocket`
+  - 实时 WebSocket 由 `GET /api/realtime/token` 返回（本地 `ws://host:5200`，生产同源 `/wkws`）
   - OpenPanel / Stripe secret 仅放 `.env.local`
-- **Flutter** — `API_URL`、`CENTRIFUGO_WS` 可通过 `--dart-define` 覆盖
+- **Flutter** — `API_URL`、`WUKONGIM_WS` 可通过 `--dart-define` 覆盖
 
 ### 排障：单独启动各组件
 
 以下**不是**推荐主流程，仅用于调试某一服务。全栈请始终使用 `./scripts/start-dev.sh` 或 `./scripts/start-dev.sh --overseas`。
 
-**Centrifugo**
+**悟空 IM**
 
 ```bash
-centrifugo -c config.json
+docker compose up -d wukongim
+# 验收：./scripts/spike-wukongim.sh
 ```
 
-**后端**
+**后端**（一般走 Compose；以下仅用于本机 Gradle 调试）
 
 ```bash
 cd backend && ./gradlew bootRun
@@ -239,7 +237,7 @@ flutter pub get
 flutter run
 # 可选：
 # flutter run --dart-define=API_URL=http://localhost:9000 \
-#   --dart-define=CENTRIFUGO_WS=ws://localhost:8000/connection/websocket
+#   --dart-define=WUKONGIM_WS=ws://localhost:5200
 ```
 
 OpenPanel 与客户端统计说明：[app/README.md](../app/README.md)。
@@ -250,8 +248,8 @@ OpenPanel 与客户端统计说明：[app/README.md](../app/README.md)。
 |------|------|------|
 | 本地（国内） | `setup-local-config.sh` 或 `deploy-local.sh` | `./scripts/start-dev.sh` |
 | 本地（海外） | 同上 | `./scripts/start-dev.sh --overseas` |
-| 生产 | ops 同步 + `deploy.sh` | `./scripts/deploy.sh` |
-| Docker | `.env` + `config.docker.json` | `docker compose up -d` |
+| 生产 | `.env.production` | `./scripts/deploy.sh` |
+| Docker | `.env` | `docker compose up -d` |
 
 完整指南：[SELF_HOST.md](SELF_HOST.md) · 运维配置：[ops/README.md](../ops/README.md)
 
@@ -272,10 +270,10 @@ OpenPanel 与客户端统计说明：[app/README.md](../app/README.md)。
 shrimpsend/
 ├── backend/          # Spring Boot
 ├── web/              # Next.js
-├── app/              # Flutter (iOS/Android/desktop)
-├── app_ohos/         # HarmonyOS
+├── app/              # Flutter (iOS/Android/desktop/HarmonyOS ohos/)
+├── app_ohos/         # 已冻结的 ArkTS 鸿蒙端
 ├── ops/              # 生产配置模板（敏感子目录 gitignored，见 ops/README.md）
-├── config.json       # Centrifugo 本地配置（setup-local-config 生成）
+├── config.json       # 旧 Centrifugo 模板（仅回滚）
 ├── shared/           # 协议说明
 └── docker-compose.yml
 ```
@@ -289,7 +287,7 @@ shrimpsend/
 - 发送文件时可选「全部设备 (S3)」或「指定设备 (局域网)」；指定设备时尝试 WebSocket 直连
 - 浏览器接收，对方无需安装 App
 - 大文件断网续传（原生客户端之间）
-- 跨 NAT、校园网、运营商 NAT 的服务端辅助路径（需登录）
+- 跨 NAT、校园网、运营商 NAT 的服务端辅助路径（需设备配对；受设备额度与存储配置约束）
 - 设置页：S3 配置、设备列表与改名
 
 ## 文档索引
@@ -327,4 +325,4 @@ ShrimpSend / 虾传（本仓库 `shrimpsend`）以 [GNU Affero General Public Li
 
 - 仓库首页默认展示英文 [README.md](../README.md)；本文为中文完整说明。
 - 局域网文件传输协议见 [shared/protocol.md](../shared/protocol.md)。
-- 本地开发密钥由 `setup-local-config.sh` 生成；生产环境使用私有 ops 仓，公开仓库仅含 `*.example` 模板。
+- 本地开发密钥由 `setup-local-config.sh` 生成；生产环境使用独立 `.env.production`，公开仓库仅含配置示例。

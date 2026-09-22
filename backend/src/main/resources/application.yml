@@ -6,11 +6,12 @@ spring:
       max-file-size: 512MB
       max-request-size: 520MB
   datasource:
-    url: jdbc:mysql://localhost:3306/ultrasend?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+    url: "${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/ultrasend?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true}"
     driver-class-name: com.mysql.cj.jdbc.Driver
     username: "${SPRING_DATASOURCE_USERNAME:root}"
     password: "${SPRING_DATASOURCE_PASSWORD:changeme}"
   jpa:
+    open-in-view: false
     hibernate:
       ddl-auto: update
     show-sql: false
@@ -22,6 +23,9 @@ server:
   port: 9000
 
 app:
+  device-identity:
+    lease-seconds: ${DEVICE_PRESENCE_LEASE_SECONDS:45}
+    sweep-ms: ${DEVICE_PRESENCE_SWEEP_MS:5000}
   admin:
     # 逗号分隔；生产建议用环境变量覆盖
     emails: "${APP_ADMIN_EMAILS:admin@example.com}"
@@ -137,11 +141,28 @@ storage:
     presign-expire-seconds: ${STORAGE_S3_PRESIGN_EXPIRE_SECONDS:600}
     path-style-access-enabled: ${STORAGE_S3_PATH_STYLE:false}
 
+realtime:
+  bus: "${REALTIME_BUS:wukongim}"
+
+wukongim:
+  api-url: "${WUKONGIM_API_URL:http://127.0.0.1:5001}"
+  ws-public-url: "${WUKONGIM_WS_PUBLIC_URL:ws://127.0.0.1:5200}"
+  manager-token: "${WUKONGIM_MANAGER_TOKEN:dev-wukongim-manager-token}"
+  system-uid: "${WUKONGIM_SYSTEM_UID:ultrasend}"
+  publish-timeout-ms: 2000
+  signaling-expire-sec: 120
+  roster-expire-sec: 30
+  webhook-secret: "${WUKONGIM_WEBHOOK_SECRET:}"
+  dual-write-user-channel: true
+
 centrifugo:
   url: http://localhost:8000
   http-api-key: "${CENTRIFUGO_HTTP_API_KEY:dev-centrifugo-http-api-key}"
   token-hmac-secret: "${CENTRIFUGO_TOKEN_HMAC_SECRET:dev-centrifugo-hmac-secret-change-me}"
   connection-token-expiration-sec: 3600
   subscription-token-expiration-sec: 3600
+  publish-timeout-ms: 2000
+  mailbox-ttl-sec: 120
+  mailbox-sweep-ms: 60000
   proxy:
     connection-expire-sec: 60

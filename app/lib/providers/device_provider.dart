@@ -1,5 +1,5 @@
+import 'device_alias_provider.dart';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -7,6 +7,7 @@ import '../api/api.dart';
 import '../device_id.dart';
 import '../lan/lan_discovery.dart';
 import '../logger.dart';
+import '../utils/runtime_platform.dart';
 import 'auth_provider.dart';
 import 'auth_session_provider.dart';
 
@@ -55,13 +56,13 @@ final lanDiscoveryProvider = Provider<LanDiscoveryService>((ref) {
     return LanDiscoveryService(
       deviceId: 'pending',
       deviceName: 'pending',
-      platform: Platform.operatingSystem,
+      platform: RuntimePlatform.osName,
     );
   }
   final service = LanDiscoveryService.ensureInstance(
     deviceId: deviceInfo.id,
     deviceName: deviceInfo.name,
-    platform: Platform.operatingSystem,
+    platform: RuntimePlatform.osName,
   );
   return service;
 });
@@ -88,21 +89,25 @@ class LanDevicesNotifier extends StreamNotifier<List<DeviceDto>> {
 
 class CloudDeviceRosterNotifier
     extends StateNotifier<AsyncValue<List<DeviceDto>>> {
-  CloudDeviceRosterNotifier(this.ref) : super(const AsyncValue.data([]));
+  CloudDeviceRosterNotifier(
+    this.ref, {
+    Future<List<DeviceDto>> Function()? fetchDevices,
+  }) : _fetchDevices = fetchDevices ?? listPairedDevices,
+       super(const AsyncValue.data([]));
+  final Future<List<DeviceDto>> Function() _fetchDevices;
 
   final Ref ref;
+  int _generation = 0;
 
   Future<void> refreshSnapshot() async {
-    final auth = ref.read(authProvider);
-    if (!auth.isLoggedIn) {
-      state = const AsyncValue.data([]);
-      return;
-    }
+    final generation = ++_generation;
     try {
-      final devices = await listDevices();
+      final devices = await _fetchDevices();
+      if (!mounted || generation != _generation) return;
       ref.read(authSessionControllerProvider.notifier).markServerReachable();
-      state = AsyncValue.data(devices);
+      replaceSnapshot(devices);
     } catch (e, st) {
+      if (!mounted || generation != _generation) return;
       logChat.warning('cloudDeviceRoster refresh failed: $e');
       if ((state.valueOrNull ?? const <DeviceDto>[]).isEmpty) {
         state = AsyncValue.error(e, st);
@@ -111,28 +116,42 @@ class CloudDeviceRosterNotifier
   }
 
   void replaceSnapshot(List<DeviceDto> devices) {
-    state = AsyncValue.data(devices);
+    final current = {
+      for (final d in state.valueOrNull ?? <DeviceDto>[]) d.deviceId: d,
+    };
+    state = AsyncValue.data(
+      devices.map((d) {
+        final old = current[d.deviceId];
+        return old != null &&
+                (old.presenceUpdatedAt ?? 0) > (d.presenceUpdatedAt ?? 0)
+            ? old
+            : d;
+      }).toList(),
+    );
   }
 
   void applyUpsert(DeviceDto device) {
     final current = state.valueOrNull ?? const <DeviceDto>[];
     final index = current.indexWhere((d) => d.deviceId == device.deviceId);
-    if (index < 0) {
-      state = AsyncValue.data([...current, device]);
+    if (index < 0) return;
+    if ((current[index].presenceUpdatedAt ?? 0) >
+        (device.presenceUpdatedAt ?? 0))
       return;
-    }
     final updated = [...current];
     updated[index] = device;
     state = AsyncValue.data(updated);
   }
 
   void applyRemove(String deviceId) {
+    // An older in-flight snapshot must not resurrect a just-removed pairing.
+    _generation++;
     final current = state.valueOrNull ?? const <DeviceDto>[];
     final updated = current.where((d) => d.deviceId != deviceId).toList();
     state = AsyncValue.data(updated);
   }
 
   void clear() {
+    _generation++;
     state = const AsyncValue.data([]);
   }
 }
@@ -143,18 +162,7 @@ final cloudDeviceRosterProvider =
       AsyncValue<List<DeviceDto>>
     >((ref) {
       final notifier = CloudDeviceRosterNotifier(ref);
-      ref.listen<AuthState>(authProvider, (previous, next) {
-        if (!next.isLoggedIn) {
-          notifier.clear();
-          return;
-        }
-        if (previous?.userId != next.userId) {
-          notifier.refreshSnapshot();
-        }
-      });
-      if (ref.read(authProvider).isLoggedIn) {
-        Future.microtask(notifier.refreshSnapshot);
-      }
+      Future.microtask(notifier.refreshSnapshot);
       return notifier;
     });
 
@@ -170,12 +178,13 @@ final myDevicesAsyncProvider = Provider<AsyncValue<List<DeviceDto>>>((ref) {
   final cloudAsync = ref.watch(cloudDevicesProvider);
   final lan = ref.watch(lanDevicesProvider).valueOrNull ?? [];
   final lanById = {for (final d in lan) d.deviceId: d};
+  final aliases = ref.watch(deviceAliasesProvider);
   return cloudAsync.whenData((cloud) {
     return cloud.map((d) {
       final lanDevice = lanById[d.deviceId];
       return DeviceDto(
         deviceId: d.deviceId,
-        name: d.name,
+        name: aliases[d.deviceId] ?? d.name,
         platform: d.platform,
         lanHttpUrl: lanDevice?.lanHttpUrl ?? d.lanHttpUrl,
         lastSeen: d.lastSeen,
@@ -192,12 +201,137 @@ final myDevicesProvider = Provider<List<DeviceDto>>((ref) {
   return ref.watch(myDevicesAsyncProvider).valueOrNull ?? [];
 });
 
+/// Devices paired via QR / `device_pair_hello` (persisted for guest web peers).
+class PairedPeersNotifier extends StateNotifier<List<DeviceDto>> {
+  static const _key = 'ultrasend_paired_peers';
+
+  PairedPeersNotifier() : super(const []) {
+    _load();
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_key);
+    if (raw == null || raw.isEmpty) return;
+    try {
+      final list = jsonDecode(raw);
+      if (list is! List) return;
+      final devices = <DeviceDto>[];
+      final seen = <String>{};
+      for (final item in list) {
+        if (item is! Map) continue;
+        final map = Map<String, dynamic>.from(item);
+        final id = map['deviceId']?.toString().trim() ?? '';
+        if (id.isEmpty || seen.contains(id)) continue;
+        seen.add(id);
+        devices.add(
+          DeviceDto(
+            deviceId: id,
+            name: map['name']?.toString() ?? id,
+            platform: map['platform']?.toString(),
+            presenceStatus: null,
+          ),
+        );
+      }
+      state = devices;
+    } catch (e) {
+      logChat.warning('pairedPeers load failed: $e');
+    }
+  }
+
+  Future<void> _persist() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _key,
+      jsonEncode(
+        state
+            .map(
+              (d) => {
+                'deviceId': d.deviceId,
+                'name': d.name,
+                'platform': d.platform,
+              },
+            )
+            .toList(),
+      ),
+    );
+  }
+
+  void remove(String deviceId) {
+    state = state.where((d) => d.deviceId != deviceId).toList();
+    _persist();
+  }
+
+  void upsert(DeviceDto device) {
+    if (device.deviceId.isEmpty) return;
+    final next = [...state];
+    final index = next.indexWhere((d) => d.deviceId == device.deviceId);
+    if (index < 0) {
+      next.add(device);
+    } else {
+      final existing = next[index];
+      next[index] = DeviceDto(
+        deviceId: device.deviceId,
+        name: device.name.isNotEmpty ? device.name : existing.name,
+        platform: device.platform ?? existing.platform,
+        lanHttpUrl: device.lanHttpUrl ?? existing.lanHttpUrl,
+        lastSeen: device.lastSeen ?? existing.lastSeen,
+        presenceStatus: device.presenceStatus ?? existing.presenceStatus,
+        presenceUpdatedAt:
+            device.presenceUpdatedAt ?? existing.presenceUpdatedAt,
+        displayCode: device.displayCode ?? existing.displayCode,
+      );
+    }
+    state = next;
+    _persist();
+  }
+}
+
+final pairedPeersProvider =
+    StateNotifierProvider<PairedPeersNotifier, List<DeviceDto>>(
+      (_) => PairedPeersNotifier(),
+    );
+
 /// LAN-discovered devices that are not in the current user's cloud device list (nearby devices).
 final nearbyDevicesProvider = Provider<List<DeviceDto>>((ref) {
   final lan = ref.watch(lanDevicesProvider).valueOrNull ?? [];
+  final paired = ref.watch(pairedPeersProvider);
+  final aliases = ref.watch(deviceAliasesProvider);
   final cloud = ref.watch(cloudDevicesProvider).valueOrNull ?? [];
   final cloudIds = cloud.map((d) => d.deviceId).toSet();
-  return lan.where((d) => !cloudIds.contains(d.deviceId)).toList();
+  final byId = <String, DeviceDto>{};
+  for (final d in [...paired, ...lan]) {
+    if (cloudIds.contains(d.deviceId)) continue;
+    final existing = byId[d.deviceId];
+    if (existing == null) {
+      byId[d.deviceId] = d;
+      continue;
+    }
+    byId[d.deviceId] = DeviceDto(
+      deviceId: d.deviceId,
+      name: d.name.isNotEmpty ? d.name : existing.name,
+      platform: d.platform ?? existing.platform,
+      lanHttpUrl: d.lanHttpUrl ?? existing.lanHttpUrl,
+      lastSeen: d.lastSeen ?? existing.lastSeen,
+      presenceStatus: d.presenceStatus ?? existing.presenceStatus,
+      presenceUpdatedAt: d.presenceUpdatedAt ?? existing.presenceUpdatedAt,
+      displayCode: d.displayCode ?? existing.displayCode,
+    );
+  }
+  return byId.values
+      .map(
+        (d) => DeviceDto(
+          deviceId: d.deviceId,
+          name: aliases[d.deviceId] ?? d.name,
+          platform: d.platform,
+          lanHttpUrl: d.lanHttpUrl,
+          presenceStatus: d.presenceStatus,
+          presenceUpdatedAt: d.presenceUpdatedAt,
+          lastSeen: d.lastSeen,
+          displayCode: d.displayCode,
+        ),
+      )
+      .toList();
 });
 
 final deviceCountProvider = Provider<int>((ref) {
@@ -255,44 +389,21 @@ final selectedLanTargetsProvider =
       (_) => SelectedTargetsNotifier(),
     );
 
-/// Selected targets filtered to only include devices visible in the current
-/// send mode's device list, excluding the current device.
+/// Selected targets filtered to devices visible in the roster, excluding self.
 final effectiveSelectedTargetsProvider = Provider<Set<String>>((ref) {
   final selected = ref.watch(selectedLanTargetsProvider);
   if (selected.isEmpty) return {};
-  final mode = ref.watch(selectedSendModeProvider);
-  if (mode == SendMode.s3) return {};
   final currentDeviceId = ref.watch(deviceInfoProvider).valueOrNull?.id;
-  switch (mode) {
-    case SendMode.nearby:
-      final lanIds = ref
-          .watch(lanDevicesProvider)
-          .valueOrNull
-          ?.where(
-            (d) =>
-                d.lanHttpUrl != null &&
-                d.lanHttpUrl!.isNotEmpty &&
-                d.deviceId != currentDeviceId,
-          )
-          .map((d) => d.deviceId)
-          .toSet();
-      if (lanIds == null) return {};
-      return selected.intersection(lanIds);
-    case SendMode.lan:
-    case SendMode.webrtc:
-      final myIds = ref
-          .watch(myDevicesProvider)
-          .where((d) => d.deviceId != currentDeviceId)
-          .map((d) => d.deviceId)
-          .toSet();
-      final nearbyIds = ref
-          .watch(nearbyDevicesProvider)
-          .map((d) => d.deviceId)
-          .toSet();
-      return selected.intersection(myIds.union(nearbyIds));
-    case SendMode.s3:
-      return {};
-  }
+  final myIds = ref
+      .watch(myDevicesProvider)
+      .where((d) => d.deviceId != currentDeviceId)
+      .map((d) => d.deviceId)
+      .toSet();
+  final nearbyIds = ref
+      .watch(nearbyDevicesProvider)
+      .map((d) => d.deviceId)
+      .toSet();
+  return selected.intersection(myIds.union(nearbyIds));
 });
 
 /// Effective selected target count based on available devices.
@@ -457,16 +568,16 @@ class DeviceReachDetail {
   bool get isConfirmedOnline => isOnline;
 
   String get status {
-    if (checking) return 'checking';
     if (canPullOnly) return 'pull_online';
     if (isOnline) return 'online';
+    if (checking) return 'checking';
     return 'offline';
   }
 
   DeviceReachStatus get uiReachStatus {
-    if (checking) return DeviceReachStatus.checking;
     if (canPullOnly) return DeviceReachStatus.pullOnline;
     if (isOnline) return DeviceReachStatus.online;
+    if (checking) return DeviceReachStatus.checking;
     return DeviceReachStatus.offline;
   }
 

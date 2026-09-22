@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>虾传 · 全页面 UI 设计册</title>
+  <style>
+    :root{color-scheme:light;--ink:#202b25;--muted:#718077;--line:#dfe5df;--green:#206b55;--wash:#edf3ed}
+    *{box-sizing:border-box}body{margin:0;background:#f7f8f5;color:var(--ink);font:14px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}button,input,a{font:inherit}button,a{touch-action:manipulation}button{cursor:pointer}button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #84b7a0;outline-offset:3px}a{color:var(--green);text-decoration:none}a:hover{text-decoration:underline}
+    header{height:80px;display:flex;align-items:center;justify-content:space-between;padding:0 32px;border-bottom:1px solid var(--line);background:#fff;gap:20px;position:sticky;top:0;z-index:3}.brand{font-size:18px;font-weight:650;letter-spacing:.03em}.brand small{font-size:12px;font-weight:400;color:var(--muted);letter-spacing:0;margin-left:15px}.review-tag{font-size:12px;padding:5px 10px;border:1px solid #d9e5dc;color:var(--green);border-radius:5px}.layout{display:grid;grid-template-columns:258px minmax(0,1fr)}aside{height:calc(100vh - 80px);position:sticky;top:80px;overflow:auto;border-right:1px solid var(--line);padding:23px 16px;background:#fafbf8}.search{width:100%;padding:9px 12px;background:white;border:1px solid var(--line);border-radius:7px;outline:none;font-size:13px}.group{margin:24px 9px 8px;color:var(--muted);font-size:11px;letter-spacing:.08em}.nav-item{border:0;background:none;display:flex;text-align:left;align-items:center;gap:10px;width:100%;border-radius:7px;padding:10px 11px;line-height:1.3;color:#516057;margin:2px 0;font-size:13px}.nav-item span{color:#99a39d;font:11px ui-monospace,monospace}.nav-item:hover{background:#f0f3ee}.nav-item[aria-current="page"]{color:var(--green);background:#e6eee6;font-weight:600}.nav-item[aria-current="page"] span{color:var(--green)}.aside-foot{padding:24px 10px 8px;font-size:12px;color:var(--muted)}main{min-width:0;padding:30px 32px 60px}.title-row{display:flex;align-items:flex-start;justify-content:space-between;gap:20px}.eyebrow{font:11px ui-monospace,monospace;color:var(--muted);letter-spacing:.09em}h1{font-size:25px;line-height:1.4;font-weight:650;margin:6px 0 7px;letter-spacing:-.025em}.description{color:var(--muted);margin:0;font-size:13px}.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:flex-end}.button{display:inline-flex;align-items:center;justify-content:center;gap:5px;background:white;border:1px solid var(--line);color:#3a4b40;padding:8px 13px;line-height:1.3;border-radius:7px;font-size:12px;text-decoration:none;white-space:nowrap}.button:hover{background:var(--wash);text-decoration:none}.button:disabled{opacity:.4;cursor:default}.button.primary{background:var(--green);color:white;border-color:var(--green)}.canvas{margin:24px 0 0;background:#e9ede8;border:1px solid var(--line);border-radius:9px;overflow:hidden;position:relative}.image-button{border:0;padding:0;background:none;display:block;width:100%;cursor:zoom-in}.image-button img{width:100%;height:auto;display:block}.canvas-label{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-top:1px solid var(--line);background:#fff;font-size:11px;color:var(--muted)}.pager{display:flex;justify-content:space-between;align-items:center;margin-top:18px;gap:20px}.pager-text{font-size:12px;color:var(--muted)}.notes{margin-top:28px;border-top:1px solid var(--line);padding-top:18px;display:grid;grid-template-columns:1fr 1fr;gap:28px;color:var(--muted);font-size:12px}.notes strong{color:#45544a;display:block;margin-bottom:4px;font-weight:600}.notes p{margin:0}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;margin-top:24px}.tile{background:white;border:1px solid var(--line);padding:0;border-radius:8px;overflow:hidden;text-align:left;color:var(--ink);cursor:pointer}.tile:hover{border-color:#91ad9b}.tile img{width:100%;height:170px;object-fit:contain;display:block;background:#edf0eb}.tile-body{padding:14px}.tile strong{font-size:14px;font-weight:600}.tile p{font-size:12px;color:var(--muted);margin:5px 0 0;line-height:1.6}.total-intro{max-width:760px;line-height:1.8;margin:8px 0;color:var(--muted);font-size:13px}.empty{color:var(--muted);padding:25px 10px}.hidden{display:none!important}
+    dialog{border:0;padding:0;width:calc(100vw - 36px);height:calc(100vh - 36px);max-width:none;max-height:none;border-radius:9px;background:#e8ece6;overflow:hidden}dialog::backdrop{background:rgba(19,29,23,.65)}.zoom-head{height:60px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 20px;background:#fff;border-bottom:1px solid var(--line)}.zoom-head strong{font-weight:600;font-size:14px}.zoom-body{overflow:auto;height:calc(100% - 60px);padding:20px;overscroll-behavior:contain}.zoom-body img{display:block;max-width:none;margin:0 auto;width:100%;height:auto}.zoom-actions{display:flex;gap:8px}.zoom-actions label{font-size:12px;display:flex;align-items:center;gap:7px}.zoom-actions input{width:100px;accent-color:var(--green)}
+    @media(min-width:1800px){main{padding-left:50px;padding-right:50px}.canvas{max-width:1550px;margin-left:auto;margin-right:auto}}
+    @media(max-width:1080px){header{padding:0 20px}.layout{grid-template-columns:210px minmax(0,1fr)}aside{padding:18px 10px}main{padding:24px 20px}.title-row{display:block}.toolbar{justify-content:flex-start;margin-top:16px}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    @media(max-width:680px){header{height:66px;padding:0 15px}.brand{font-size:16px}.brand small{display:none}.layout{display:block}aside{height:auto;position:static;padding:12px 15px;border-right:0;border-bottom:1px solid var(--line)}#nav{display:none}aside.expanded #nav{display:block;max-height:48vh;overflow:auto}.aside-foot{display:none}.search{font-size:14px}main{padding:21px 15px 40px}h1{font-size:23px}.notes{grid-template-columns:1fr;gap:14px}.grid{grid-template-columns:1fr}.tile img{height:auto}.canvas{margin-top:18px}.pager-text{display:none}.zoom-head{padding:10px 12px;height:100px;display:block}.zoom-head strong{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.zoom-actions{justify-content:space-between;margin-top:8px}.zoom-actions label{display:flex}.zoom-actions input{width:66px}.zoom-body{padding:10px;height:calc(100% - 100px)}dialog{width:calc(100vw - 16px);height:calc(100vh - 16px)}}
+  </style>
+</head>
+<body>
+  <header><div class="brand">虾传 <small>SHRIMPSEND / DESIGN REVIEW</small></div><span class="review-tag">设计效果稿 · 待确认</span></header>
+  <div class="layout">
+    <aside><input id="search" class="search" type="search" placeholder="搜索页面或功能…" aria-label="搜索设计页面"><nav id="nav" aria-label="设计册目录"></nav><div class="aside-foot">17 张画板 · 69 个页面与状态画面<br>2026.09.21<br><a href="coverage.md" target="_blank">查看页面对应清单</a></div></aside>
+    <main>
+      <div class="title-row"><div><div class="eyebrow" id="eyebrow">DESIGN COLLECTION</div><h1 id="title">全页面 UI 设计</h1><p class="description" id="description"></p></div><div class="toolbar"><button class="button" id="directory">全部目录</button><button class="button" id="zoom">放大查看</button><a class="button" id="original" target="_blank" rel="noopener">打开原图</a></div></div>
+      <section id="single"><figure class="canvas"><button class="image-button" id="imageButton" aria-label="放大当前设计图"><img id="board" alt="" decoding="async"></button><figcaption class="canvas-label"><span id="frameCount"></span><span>点击画面放大 · 左右方向键翻页</span></figcaption></figure><div class="pager"><button class="button" id="previous">上一张</button><span class="pager-text" id="position"></span><button class="button primary" id="next">下一张</button></div></section>
+      <section id="overview" class="hidden"><p class="total-intro">从日常传输到授权、设置、云端文件、官网和后台，按模块查看整套设计。下方每张画板都可打开并放大。相同结构的多语言页面共用模板。</p><div class="grid" id="grid"></div></section>
+      <section class="notes"><div><strong>这一版先确认设计</strong><p>这是可浏览的静态效果稿，界面内的按钮、二维码与数据用于展示。此轮没有修改 Web 或 Flutter 的业务界面。</p></div><div><strong>审阅重点</strong><p>整体精细度、页面结构与操作是否清楚。主导航统一为「传输 / 文件 / 设置」，账号、设备授权和设备连接分别处理。</p></div></section>
+    </main>
+  </div>
+  <dialog id="lightbox" aria-label="放大查看设计图"><div class="zoom-head"><strong id="zoomTitle"></strong><div class="zoom-actions"><label>缩放 <input id="scale" type="range" min="100" max="600" step="10" value="150"></label><button class="button" id="fit">适应窗口</button><button class="button" id="closeZoom">关闭 Esc</button></div></div><div class="zoom-body" id="zoomBody"><img id="zoomImage" alt=""></div></dialog>
+  <script id="design-data" type="application/json">[
+  {
+    "id": "00-overview",
+    "title": "传输首页",
+    "group": "主界面",
+    "description": "设备会话、文字与文件、进度、下载位置",
+    "frames": 1,
+    "source": "exec-60d9da67-d23b-4472-9720-754b004e02d9.png",
+    "image": "images/00-overview.png"
+  },
+  {
+    "id": "01-connect",
+    "title": "连接设备",
+    "group": "主界面",
+    "description": "初次打开、连接码、扫码展示、连接确认",
+    "frames": 4,
+    "source": "exec-45ad5be4-f01b-4158-8f85-27fa8f42bb76.png",
+    "image": "images/01-connect.png"
+  },
+  {
+    "id": "02-files",
+    "title": "文件与搜索",
+    "group": "主界面",
+    "description": "文件管理、全局搜索、文件预览、选择文件",
+    "frames": 4,
+    "source": "exec-a822ccac-7bc4-4613-88e0-c2d6a6249d37.png",
+    "image": "images/02-files.png"
+  },
+  {
+    "id": "03-authorization",
+    "title": "本机授权",
+    "group": "账号与权益",
+    "description": "输入授权码、扫码核对、等待确认、授权成功",
+    "frames": 4,
+    "source": "exec-edddb68b-47d5-49d2-8bbf-5f31de6652c9.png",
+    "image": "images/03-authorization.png"
+  },
+  {
+    "id": "04-membership",
+    "title": "会员与设备名额",
+    "group": "账号与权益",
+    "description": "会员概览、生成授权码、购买端确认、购买与订单",
+    "frames": 4,
+    "source": "exec-5e6ec67d-60c9-4af8-95ae-659efe101231.png",
+    "image": "images/04-membership-v2.png"
+  },
+  {
+    "id": "05-account",
+    "title": "首次使用与账号",
+    "group": "账号与权益",
+    "description": "首次使用、登录、注册、账号管理",
+    "frames": 4,
+    "source": "exec-d4237383-b5a3-4110-9360-fe0407ba5754.png",
+    "image": "images/05-account-v2.png"
+  },
+  {
+    "id": "06-settings",
+    "title": "设置基础",
+    "group": "设置与工具",
+    "description": "通用、接收与保存、外观、语言与区域",
+    "frames": 4,
+    "source": "exec-dbbaee05-85fb-4589-b650-5723e2c45ef4.png",
+    "image": "images/06-settings.png"
+  },
+  {
+    "id": "07-preferences",
+    "title": "偏好与存储连接",
+    "group": "设置与工具",
+    "description": "字体、快捷键、S3、云端连接列表",
+    "frames": 4,
+    "source": "exec-7616b1c3-4377-4ae5-bc75-e1226dc323c0.png",
+    "image": "images/07-preferences.png"
+  },
+  {
+    "id": "08-webdav",
+    "title": "WebDAV 云端文件",
+    "group": "设置与工具",
+    "description": "添加连接、云端浏览、最近与收藏、远程详情",
+    "frames": 4,
+    "source": "exec-17c25464-3dcb-44c4-a62c-31b57ffc5b14.png",
+    "image": "images/08-webdav.png"
+  },
+  {
+    "id": "09-tools",
+    "title": "传输任务与辅助工具",
+    "group": "设置与工具",
+    "description": "任务列表、发送应用、意见反馈、运行日志",
+    "frames": 4,
+    "source": "exec-54eae367-caeb-4cfa-ad21-2944587f6a2b.png",
+    "image": "images/09-tools.png"
+  },
+  {
+    "id": "10-help",
+    "title": "帮助、更新与权益迁移",
+    "group": "设置与工具",
+    "description": "关于、版本历史、旧会员迁移、授权到期",
+    "frames": 4,
+    "source": "exec-cb1a35c2-7a33-44f6-a3bb-b6508bff9165.png",
+    "image": "images/10-help.png"
+  },
+  {
+    "id": "11-public",
+    "title": "官网、文档与法律页面",
+    "group": "官网与后台",
+    "description": "首页与下载、使用文档、隐私政策、使用条款",
+    "frames": 4,
+    "source": "exec-f0aa9d33-b34f-4d83-8277-08f4137f1d76.png",
+    "image": "images/11-public.png"
+  },
+  {
+    "id": "12-admin",
+    "title": "管理后台",
+    "group": "官网与后台",
+    "description": "后台首页、版本列表、版本编辑、发布确认",
+    "frames": 4,
+    "source": "exec-81302a00-1864-4d37-b25a-b48120ffa1fc.png",
+    "image": "images/12-admin.png"
+  },
+  {
+    "id": "13-mobile",
+    "title": "移动端核心页面",
+    "group": "跨端与状态",
+    "description": "设备列表、会话、文件、授权、设置、扫码",
+    "frames": 6,
+    "source": "exec-c5bba5ec-663b-4d85-9249-4b1c3efd3f09.png",
+    "image": "images/13-mobile.png"
+  },
+  {
+    "id": "14-states",
+    "title": "连接与接收的关键状态",
+    "group": "跨端与状态",
+    "description": "离线、断线续传、目录不可写、单向网络详情",
+    "frames": 4,
+    "source": "exec-fc84ee23-9da9-432f-98de-f445d7eca6bb.png",
+    "image": "images/14-states.png"
+  },
+  {
+    "id": "15-dark",
+    "title": "深色模式",
+    "group": "跨端与状态",
+    "description": "会话、文件、设置、会员",
+    "frames": 4,
+    "source": "exec-ce537dd2-098a-48d9-80cd-985120545e0e.png",
+    "image": "images/15-dark.png"
+  },
+  {
+    "id": "16-feedback",
+    "title": "空状态与操作反馈",
+    "group": "跨端与状态",
+    "description": "空列表与加载、授权失效、额度、重名、解除授权、移除连接",
+    "frames": 6,
+    "source": "exec-e18e8ef0-9a19-4c58-8413-0d5dca8a4b32.png",
+    "image": "images/16-feedback-v2.png"
+  }
+]</script>
+  <script>
+    const items=JSON.parse(document.getElementById('design-data').textContent);
+    const $=id=>document.getElementById(id);let current=0,all=false;
+    function makeNav(query=''){
+      $('nav').replaceChildren();let group='';const q=query.trim().toLowerCase();let hits=0;
+      items.forEach((item,i)=>{if(q&&!`${item.title}${item.description}${item.group}`.toLowerCase().includes(q))return;hits++;
+        if(group!==item.group){group=item.group;const label=document.createElement('div');label.className='group';label.textContent=group;$('nav').append(label)}
+        const b=document.createElement('button');b.className='nav-item';b.dataset.index=i;const n=document.createElement('span');n.textContent=String(i).padStart(2,'0');b.append(n,document.createTextNode(item.title));if(i===current&&!all)b.setAttribute('aria-current','page');b.onclick=()=>show(i);$('nav').append(b);
+      });if(!hits){const e=document.createElement('p');e.className='empty';e.textContent='没有找到对应页面';$('nav').append(e)}
+    }
+    function updateHash(value){history.replaceState(null,'','#'+value)}
+    function show(i,hash=true){current=Math.max(0,Math.min(items.length-1,i));all=false;const it=items[current];$('single').classList.remove('hidden');$('overview').classList.add('hidden');$('zoom').classList.remove('hidden');$('original').classList.remove('hidden');$('title').textContent=it.title;$('eyebrow').textContent=`${String(current).padStart(2,'0')} / ${it.group}`;$('description').textContent=it.description;$('board').src=it.image;$('board').alt=`${it.title}：${it.description}`;$('original').href=it.image;$('frameCount').textContent=`${it.frames} 个页面与状态画面`;$('position').textContent=`${current+1} / ${items.length}`;$('previous').disabled=current===0;$('next').disabled=current===items.length-1;makeNav($('search').value);if(hash)updateHash(it.id);document.querySelector('aside').classList.remove('expanded');}
+    function directory(hash=true){all=true;$('single').classList.add('hidden');$('overview').classList.remove('hidden');$('zoom').classList.add('hidden');$('original').classList.add('hidden');$('title').textContent='全页面 UI 设计';$('eyebrow').textContent='COMPLETE DESIGN COLLECTION';$('description').textContent='17 张画板 · 69 个页面与状态画面 · 一套完整设计方向';makeNav($('search').value);if(hash)updateHash('all');}
+    function openZoom(){const it=items[current];$('zoomTitle').textContent=it.title;$('zoomImage').src=it.image;$('zoomImage').alt=$('board').alt;const initialScale=window.innerWidth<=680?400:150;$('scale').value=initialScale;$('zoomImage').style.width=initialScale+'%';$('lightbox').showModal();$('zoomBody').scrollTop=0;$('zoomBody').scrollLeft=0;}
+    items.forEach((it,i)=>{const b=document.createElement('button');b.className='tile';const image=document.createElement('img');image.src=it.image;image.alt=it.title;image.loading='lazy';const body=document.createElement('div');body.className='tile-body';const h=document.createElement('strong');h.textContent=`${String(i).padStart(2,'0')}  ${it.title}`;const p=document.createElement('p');p.textContent=it.description;body.append(h,p);b.append(image,body);b.onclick=()=>{show(i);window.scrollTo({top:0})};$('grid').append(b)});
+    $('search').oninput=e=>{document.querySelector('aside').classList.add('expanded');makeNav(e.target.value)};$('search').onfocus=()=>document.querySelector('aside').classList.add('expanded');$('directory').onclick=()=>directory();$('previous').onclick=()=>show(current-1);$('next').onclick=()=>show(current+1);$('zoom').onclick=openZoom;$('imageButton').onclick=openZoom;$('closeZoom').onclick=()=>$('lightbox').close();$('scale').oninput=e=>$('zoomImage').style.width=e.target.value+'%';$('fit').onclick=()=>{$('scale').value=100;$('zoomImage').style.width='100%'};
+    window.addEventListener('keydown',e=>{if(e.target.tagName==='INPUT'||$('lightbox').open||all)return;if(e.key==='ArrowRight'){e.preventDefault();show(current+1)}if(e.key==='ArrowLeft'){e.preventDefault();show(current-1)}});
+    function fromHash(){const hash=decodeURIComponent(location.hash.slice(1));const found=items.findIndex(i=>i.id===hash);if(hash==='all')directory(false);else show(found>=0?found:0,false)}window.addEventListener('hashchange',fromHash);fromHash();
+  </script>
+</body>
+</html>

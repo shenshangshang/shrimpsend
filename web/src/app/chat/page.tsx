@@ -1,25 +1,14 @@
 'use client';
 
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useI18n } from '@/contexts/I18nContext';
-import { ChatProvider } from '@/contexts/ChatContext';
 import { MainLayout } from '@/components/layout/MainLayout';
 
 export default function ChatPage() {
   const { t } = useI18n();
-  const { userId, accessToken, isReady } = useAuth();
-  const router = useRouter();
+  const { isReady } = useAuth();
 
-  useEffect(() => {
-    if (!isReady) return;
-    if (!accessToken || !userId) {
-      router.push('/login');
-    }
-  }, [isReady, accessToken, userId, router]);
-
-  if (!isReady || !accessToken || !userId) {
+  if (!isReady) {
     return (
       <div className="flex min-h-dvh flex-col items-center justify-center gap-3 text-muted-foreground animate-app-fade-in">
         <div
@@ -32,8 +21,6 @@ export default function ChatPage() {
   }
 
   return (
-    <ChatProvider>
-      <MainLayout />
-    </ChatProvider>
+    <MainLayout />
   );
 }

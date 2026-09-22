@@ -1,11 +1,13 @@
 package dev.ultrasend.backend.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import dev.ultrasend.backend.centrifugo.CentrifugoPublishService;
+import dev.ultrasend.backend.realtime.RealtimePublisher;
 import dev.ultrasend.backend.config.MessageEncryptionProperties;
 import dev.ultrasend.backend.config.UserDataEncryptionProperties;
+import dev.ultrasend.backend.entity.Device;
 import dev.ultrasend.backend.entity.Message;
 import dev.ultrasend.backend.entity.User;
+import dev.ultrasend.backend.repository.DeviceRepository;
 import dev.ultrasend.backend.repository.MessageRepository;
 import dev.ultrasend.backend.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -33,7 +35,9 @@ class MessageServiceTest {
     @Mock
     private MessageRepository messageRepository;
     @Mock
-    private CentrifugoPublishService centrifugoPublishService;
+    private RealtimePublisher realtimePublisher;
+    @Mock
+    private MailboxService mailboxService;
     @Mock
     private UserRepository userRepository;
     @Mock
@@ -42,6 +46,10 @@ class MessageServiceTest {
     private MessageCryptoService cryptoService;
     private UserDataEncryptionService userDataEncryption;
     private MessageService messageService;
+    @Mock
+    private DevicePairingService devicePairingService;
+    @Mock
+    private DeviceRepository deviceRepository;
     private ObjectMapper objectMapper;
 
     private static final byte[] USER_KEK = "01234567890123456789012345678901".getBytes(StandardCharsets.UTF_8);
@@ -66,10 +74,13 @@ class MessageServiceTest {
         objectMapper = new ObjectMapper();
         messageService = new MessageService(
                 messageRepository,
-                centrifugoPublishService,
+                realtimePublisher,
+                mailboxService,
                 objectMapper,
                 cryptoService,
-                userDataEncryption);
+                userDataEncryption,
+                devicePairingService,
+                deviceRepository);
     }
 
     @Test
@@ -94,7 +105,88 @@ class MessageServiceTest {
         @SuppressWarnings("unchecked")
         Map<String, Object> payload = (Map<String, Object>) stored.get("payload");
         assertTrue(userDataEncryption.isUserEncrypted(payload.get("text").toString()));
-        verify(centrifugoPublishService).publishToUser(eq("1"), same(envelope));
+        verify(realtimePublisher).publishToUserBestEffort(eq("1"), same(envelope));
+    }
+
+    @Test
+    void sendEphemeralStoresMailboxInsteadOfHistory() {
+        Map<String, Object> envelope = new java.util.HashMap<>();
+        envelope.put("type", "lan_file_offer");
+        envelope.put("payload", Map.of("pullUrl", "http://10.0.0.2/f"));
+        envelope.put("fromDeviceId", "device_a");
+        envelope.put("ts", 1L);
+
+        messageService.send("1", envelope);
+
+        verify(messageRepository, never()).save(any());
+        verify(mailboxService).storeIfEphemeral(eq(1L), same(envelope));
+        verify(realtimePublisher).publishToUserBestEffort(eq("1"), same(envelope));
+        verify(realtimePublisher, never()).publishToDeviceBestEffort(any(), any());
+    }
+
+    @Test
+    void sendDirectedEphemeralAlsoPublishesToExternalDevice() {
+        Map<String, Object> envelope = new java.util.HashMap<>();
+        envelope.put("type", "lan_file_offer");
+        envelope.put("payload", Map.of("pullUrl", "http://10.0.0.2/f"));
+        envelope.put("fromDeviceId", "device_a");
+        envelope.put("toDeviceId", "web-guest");
+        envelope.put("ts", 1L);
+        when(deviceRepository.findByDeviceId("web-guest")).thenReturn(Optional.empty());
+        when(deviceRepository.findByDeviceId("device_a")).thenReturn(Optional.of(
+                Device.builder().deviceId("device_a").user(User.builder().id(1L).build()).build()));
+        when(devicePairingService.canSignal("device_a", "web-guest")).thenReturn(true);
+
+        messageService.send("1", envelope);
+
+        verify(realtimePublisher).publishToUserBestEffort(eq("1"), same(envelope));
+        verify(realtimePublisher).publishToDeviceBestEffort(eq("web-guest"), same(envelope));
+    }
+
+    @Test
+    void unpairedExternalSendIsRejectedBeforePersistenceOrPublication() {
+        Map<String, Object> envelope = new java.util.HashMap<>(Map.of(
+                "type", "text", "payload", Map.of("text", "hello"),
+                "fromDeviceId", "device_a", "toDeviceId", "web-guest", "ts", 1L));
+        when(deviceRepository.findByDeviceId("web-guest")).thenReturn(Optional.empty());
+        when(deviceRepository.findByDeviceId("device_a")).thenReturn(Optional.of(
+                Device.builder().deviceId("device_a").user(User.builder().id(1L).build()).build()));
+        org.junit.jupiter.api.Assertions.assertThrows(
+                org.springframework.web.server.ResponseStatusException.class,
+                () -> messageService.send("1", envelope));
+        verifyNoInteractions(messageRepository, realtimePublisher, mailboxService);
+    }
+
+    @Test
+    void spoofedExternalSenderIsRejectedBeforePublication() {
+        Map<String, Object> envelope = new java.util.HashMap<>(Map.of(
+                "type", "text", "payload", Map.of("text", "hello"),
+                "fromDeviceId", "other-account", "toDeviceId", "web-guest", "ts", 1L));
+        when(deviceRepository.findByDeviceId("web-guest")).thenReturn(Optional.empty());
+        when(deviceRepository.findByDeviceId("other-account")).thenReturn(Optional.of(
+                Device.builder().deviceId("other-account").user(User.builder().id(2L).build()).build()));
+        org.junit.jupiter.api.Assertions.assertThrows(
+                org.springframework.web.server.ResponseStatusException.class,
+                () -> messageService.send("1", envelope));
+        verifyNoInteractions(messageRepository, realtimePublisher, mailboxService);
+    }
+
+    @Test
+    void sendDirectedEphemeralDoesNotDoublePublishSameAccountDevice() {
+        Map<String, Object> envelope = new java.util.HashMap<>();
+        envelope.put("type", "lan_file_offer");
+        envelope.put("payload", Map.of("pullUrl", "http://10.0.0.2/f"));
+        envelope.put("fromDeviceId", "device_a");
+        envelope.put("toDeviceId", "web-own");
+        envelope.put("ts", 1L);
+        User owner = User.builder().id(1L).build();
+        Device web = Device.builder().deviceId("web-own").name("Web").user(owner).build();
+        when(deviceRepository.findByDeviceId("web-own")).thenReturn(Optional.of(web));
+
+        messageService.send("1", envelope);
+
+        verify(realtimePublisher).publishToUserBestEffort(eq("1"), same(envelope));
+        verify(realtimePublisher, never()).publishToDeviceBestEffort(any(), any());
     }
 
     @Test
@@ -212,5 +304,73 @@ class MessageServiceTest {
     @Test
     void deleteMessagesByThreadKeyRequiresNonBlankThreadKey() {
         assertThrows(IllegalArgumentException.class, () -> messageService.deleteMessagesByThreadKey(1L, "  "));
+    }
+
+    @Test
+    void sendFromDeviceRejectsWhenUnpaired() {
+        Map<String, Object> envelope = new java.util.HashMap<>();
+        envelope.put("type", "lan_http_probe");
+        envelope.put("toDeviceId", "peer");
+        envelope.put("payload", Map.of("probeId", "p1"));
+        when(devicePairingService.canSignal("dev-a", "peer")).thenReturn(false);
+        assertThrows(org.springframework.web.server.ResponseStatusException.class,
+                () -> messageService.sendFromDevice("dev-a", envelope));
+        verify(realtimePublisher, never()).publishToDeviceBestEffort(any(), any());
+    }
+
+    @Test
+    void sendFromDeviceRejectsNonSignalingNonText() {
+        Map<String, Object> envelope = new java.util.HashMap<>();
+        envelope.put("type", "file");
+        envelope.put("toDeviceId", "peer");
+        envelope.put("payload", Map.of("fileName", "a.bin"));
+
+        assertThrows(org.springframework.web.server.ResponseStatusException.class,
+                () -> messageService.sendFromDevice("dev-a", envelope));
+        verify(realtimePublisher, never()).publishToDeviceBestEffort(any(), any());
+        verify(messageRepository, never()).save(any());
+    }
+
+    @Test
+    void sendFromDevicePublishesTextWithoutPersisting() {
+        Map<String, Object> envelope = new java.util.HashMap<>();
+        envelope.put("type", "text");
+        envelope.put("toDeviceId", "peer");
+        envelope.put("payload", Map.of("text", "hi", "localId", "l1"));
+        when(devicePairingService.canSignal("dev-a", "peer")).thenReturn(true);
+
+        messageService.sendFromDevice("dev-a", envelope);
+
+        verify(mailboxService).storeIfEphemeral(isNull(), any());
+        verify(realtimePublisher).publishToDeviceBestEffort(eq("peer"), any());
+        verify(messageRepository, never()).save(any());
+    }
+
+    @Test
+    void sendFromDevicePublishesToPairedPeer() {
+        Map<String, Object> envelope = new java.util.HashMap<>();
+        envelope.put("type", "lan_http_probe");
+        envelope.put("toDeviceId", "peer");
+        envelope.put("payload", Map.of("probeId", "p1"));
+        when(devicePairingService.canSignal("dev-a", "peer")).thenReturn(true);
+
+        messageService.sendFromDevice("dev-a", envelope);
+
+        verify(mailboxService).storeIfEphemeral(isNull(), any());
+        verify(realtimePublisher).publishToDeviceBestEffort(eq("peer"), any());
+        verify(messageRepository, never()).save(any());
+    }
+
+    @Test
+    void sendFromDevicePublishesLanFileOfferToPeer() {
+        Map<String, Object> envelope = new java.util.HashMap<>();
+        envelope.put("type", "lan_file_offer");
+        envelope.put("toDeviceId", "peer");
+        envelope.put("payload", Map.of("pullUrl", "http://10.0.0.2/f", "targetDeviceId", "peer"));
+        when(devicePairingService.canSignal("dev-a", "peer")).thenReturn(true);
+
+        messageService.sendFromDevice("dev-a", envelope);
+
+        verify(realtimePublisher).publishToDeviceBestEffort(eq("peer"), any());
     }
 }

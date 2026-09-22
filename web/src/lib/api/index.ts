@@ -5,6 +5,9 @@ export {
   getAccessToken,
   getUserId,
   getRefreshToken,
+  getDeviceAccessToken,
+  setDeviceAccessToken,
+  realtimeAuthToken,
   hasCompleteStoredSession,
   bootstrapStoredSession,
   maybeRefreshOnVisible,
@@ -23,7 +26,8 @@ export { login, register, refreshTokens } from './auth';
 export type { DeviceDto } from './devices';
 export { registerDevice, updateDevice, updateDevicePresence, deleteDevice, listDevices } from './devices';
 export type { MessageEnvelope, LocalStatus, ChatMessage, MessageHistoryItem } from './messages';
-export { getMessageHistory, sendMessage, deleteMessage, deleteThreadMessages } from './messages';
+export { getMessageHistory, sendMessage, deleteMessage, deleteThreadMessages, pairDevice } from './messages';
+export { DeviceSendRateLimitedError, fetchDeviceQuota } from './deviceSendQuota';
 export type { S3ConfigRequest, S3ConfigResponse, S3StorageMode, PresignUploadResponse } from './s3';
 export {
   getS3Config,
@@ -38,8 +42,10 @@ export {
   switchToHostedS3,
   switchToCustomS3,
 } from './s3';
-export type { CentrifugoTokenResponse } from './centrifugo';
-export { getCentrifugoToken } from './centrifugo';
+export type { RealtimeTokenResponse } from './realtimeToken';
+export { getRealtimeToken, createDeviceSession } from './realtimeToken';
+export type { MailboxPendingItem } from './mailbox';
+export { getMailboxPending } from './mailbox';
 export type { UserProfile } from './user';
 export {
   fetchUserProfile,

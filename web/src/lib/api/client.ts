@@ -1,5 +1,6 @@
 import { logger } from '../logger';
 import { getApiUrl } from '../config';
+import { DeviceSessionRetry } from './DeviceSessionRetry';
 import {
   RefreshSessionOutcome,
   RefreshTokenError,
@@ -25,6 +26,7 @@ const KEY_ACCESS_TOKEN = 'accessToken';
 const KEY_REFRESH_TOKEN = 'refreshToken';
 const KEY_USER_ID = 'userId';
 const KEY_ACCESS_TOKEN_EXPIRES_AT = 'accessTokenExpiresAt';
+const KEY_DEVICE_ACCESS_TOKEN = 'ultrasend_device_access_token';
 
 export class AuthError extends Error {
   constructor() {
@@ -45,7 +47,7 @@ export function getToken(): string | null {
   return localStorage.getItem(KEY_ACCESS_TOKEN);
 }
 
-/** 供 Centrifugo connect proxy 鉴权：返回当前 accessToken，未登录时为 null */
+/** 返回当前 accessToken，未登录时为 null */
 export function getAccessToken(): string | null {
   return getToken();
 }
@@ -54,6 +56,35 @@ export function getAccessToken(): string | null {
 export function getUserId(): string | null {
   if (typeof window === 'undefined') return null;
   return localStorage.getItem(KEY_USER_ID);
+}
+
+export function getDeviceAccessToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem(KEY_DEVICE_ACCESS_TOKEN);
+}
+
+export function setDeviceAccessToken(token: string | null): void {
+  if (typeof window === 'undefined') return;
+  if (!token) {
+    localStorage.removeItem(KEY_DEVICE_ACCESS_TOKEN);
+    return;
+  }
+  localStorage.setItem(KEY_DEVICE_ACCESS_TOKEN, token);
+}
+
+export const deviceSessionRetry = new DeviceSessionRetry(getDeviceAccessToken);
+
+/** Only replay small API envelopes; file bodies use their own resumable transports. */
+export function fetchWithDeviceAuth(url: string, init: RequestInit = {}): Promise<Response> {
+  return deviceSessionRetry.run((token) => {
+    const headers = new Headers(init.headers);
+    if (token) headers.set('Authorization', `Bearer ${token}`);
+    return fetch(url, { ...init, headers });
+  });
+}
+
+export function realtimeAuthToken(): string | null {
+  return getToken() ?? getDeviceAccessToken();
 }
 
 export function getRefreshToken(): string | null {

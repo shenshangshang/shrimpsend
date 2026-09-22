@@ -42,12 +42,16 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.GET, "/").permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/membership/tiers").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/auth/logout").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/auth/qr/scan", "/api/auth/qr/confirm", "/api/auth/qr/cancel").authenticated()
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/membership/alipay/notify", "/api/membership/revenuecat/webhook", "/api/membership/stripe/webhook").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/centrifugo/proxy/refresh").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/centrifugo/proxy/disconnect").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/wukongim/webhook").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/wukongim/before-send").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/realtime/device-session").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/app/version", "/api/app/versions", "/api/app/desktop-update.json", "/api/app/public-download").permitAll()
                         .requestMatchers(HttpMethod.GET, "/admin", "/admin/**").permitAll()
                         .requestMatchers("/api/**").authenticated()
@@ -68,6 +72,7 @@ public class SecurityConfig {
         config.setAllowedOriginPatterns(origins);
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
+        config.setExposedHeaders(List.of("X-Device-Send-Quota"));
         config.setAllowCredentials(true);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);

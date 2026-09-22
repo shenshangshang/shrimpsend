@@ -19,6 +19,7 @@ import '../services/received_file_dao.dart';
 import '../services/save_folder_listing_service.dart';
 import '../services/visible_export_target.dart';
 import '../utils/file_utils.dart';
+import '../utils/runtime_platform.dart';
 import '../utils/reveal_file_in_folder.dart';
 import '../utils/save_as_feedback.dart';
 import '../utils/text_bytes_decoder.dart';
@@ -58,7 +59,7 @@ class ReceivedFileActionItem {
 bool _isDesktopPlatform() =>
     Platform.isWindows || Platform.isLinux || Platform.isMacOS;
 
-bool _isMobilePlatform() => Platform.isAndroid || Platform.isIOS;
+bool _isMobilePlatform() => RuntimePlatform.isMobile;
 
 bool _canSaveToGallery(ReceivedFileInfo file) =>
     _isMobilePlatform() &&

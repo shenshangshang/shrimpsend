@@ -40,7 +40,7 @@ async function queryTransferStatus(httpUrl: string, fileId: string): Promise<num
  * Supports resume: queries the receiver for already-received bytes and sends
  * only the remaining portion.
  *
- * @returns true if at least one device received the file
+ * @returns true if every selected device received the file
  * @throws DOMException with name 'AbortError' if aborted
  */
 export async function trySendFileViaLan(
@@ -50,7 +50,7 @@ export async function trySendFileViaLan(
   onProgress?: (pct: number) => void,
   localId?: string,
 ): Promise<boolean> {
-  let ok = false;
+  let succeeded = 0;
   const lanDevices = targetDevices.filter((d) => d.lanHttpUrl);
   const totalDevices = lanDevices.length;
   let devicesDone = 0;
@@ -66,7 +66,7 @@ export async function trySendFileViaLan(
         onProgress?.(Math.min(Math.round(deviceBase + (pct / 100) * devicePart), 99));
       };
       await sendFileSingleHttp(file, d.lanHttpUrl, abortController, progressCb, localId);
-      ok = true;
+      succeeded++;
       devicesDone++;
       onProgress?.(Math.round((devicesDone / totalDevices) * 100));
     } catch (e) {
@@ -75,7 +75,7 @@ export async function trySendFileViaLan(
     }
   }
 
-  return ok;
+  return totalDevices > 0 && succeeded === totalDevices;
 }
 
 /**
@@ -89,15 +89,13 @@ async function sendFileSingleHttp(
   onProgress?: (pct: number) => void,
   localId?: string,
 ): Promise<void> {
-  const fileId = makeFileId(file.name, file.size);
+  const fileId = localId ?? makeFileId(file.name, file.size);
 
   let offset = 0;
   try {
     offset = await queryTransferStatus(httpUrl, fileId);
-    if (offset >= file.size) {
-      onProgress?.(100);
-      return;
-    }
+    // A full partial file still needs the final POST; zero-byte files do too.
+    if (!Number.isSafeInteger(offset) || offset < 0 || offset > file.size) offset = 0;
   } catch {
     offset = 0;
   }

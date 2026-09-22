@@ -225,14 +225,7 @@ public class DeviceService {
      * platform 为 null 时按非 Web 处理。
      */
     private void ensureCanAddDevice(Long userId, String platform) {
-        int limit = membershipService.resolveDeviceLimitForUser(userId);
-        int eff = countEffectiveDevicesForLimit(userId);
-        boolean hasWeb = hasActiveWebDevice(userId);
-        boolean isWeb = platform != null && "web".equalsIgnoreCase(platform);
-        boolean increasesEff = !isWeb || !hasWeb;
-        if (increasesEff && eff >= limit) {
-            throw new IllegalArgumentException(String.format(DEVICE_LIMIT_REGISTER_MESSAGE, limit));
-        }
+        // Account login manages billing; licensed transmission slots are counted separately.
     }
 
     private boolean hasActiveWebDevice(Long userId) {

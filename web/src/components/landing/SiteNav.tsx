@@ -32,10 +32,10 @@ export function SiteNav({ active, showOpenApp = true }: SiteNavProps) {
   const activeLocale = localeOptions.find((option) => option.value === localeTag) ?? localeOptions[0]!;
   const localePath = localeTagToPath(localeTag);
   const navItems = [
-    { id: 'home', href: localizedHomeHref(localePath), key: 'landing.navHome' },
+    { id: 'home', href: localizedHashHref(localePath, 'features'), key: 'landing.navHome' },
+    { id: 'download', href: localizedHashHref(localePath, 'download'), key: 'landing.downloadPrimary' },
     { id: 'docs', href: localizedDocsHref(localePath, 'intro'), key: 'landing.navDocs' },
     { id: 'pricing', href: localizedHashHref(localePath, 'pricing'), key: 'landing.navPricing' },
-    { id: 'faq', href: localizedHashHref(localePath, 'faq'), key: 'landing.navFaq' },
   ] as const;
 
   useEffect(() => {
@@ -72,18 +72,18 @@ export function SiteNav({ active, showOpenApp = true }: SiteNavProps) {
   };
 
   return (
-    <nav ref={navRef} className="relative z-50 mx-auto flex w-full max-w-7xl items-center justify-between gap-2 px-4 py-5 sm:gap-4 sm:px-5 md:px-8">
+    <nav ref={navRef} className="site-nav relative z-50 mx-auto flex w-full max-w-7xl items-center justify-between gap-2 px-5 py-4 sm:gap-4 md:px-8">
       <Link href={localizedHomeHref(localePath)} className="flex items-center gap-2.5">
         <BrandLogo
           size={36}
           alt={t('auth.brandAlt')}
-          className="shadow-lg shadow-primary/15 ring-1 ring-white/10"
+          className=""
           priority
         />
         <span className="font-display text-lg font-semibold tracking-tight max-[360px]:hidden">{t('common.brandName')}</span>
       </Link>
 
-      <div className="hidden items-center gap-2 rounded-full border border-white/10 bg-white/[0.035] p-1 text-sm text-muted-foreground backdrop-blur-xl md:flex">
+      <div className="hidden items-center gap-4 text-sm text-muted-foreground md:flex">
         {navItems.map((item) => {
           const isActive = item.id === active;
           return (
@@ -92,13 +92,13 @@ export function SiteNav({ active, showOpenApp = true }: SiteNavProps) {
               href={item.href}
               aria-current={isActive ? 'page' : undefined}
               className={cn(
-                'rounded-full px-3 py-1.5 transition-colors',
+                'rounded-lg px-3 py-1.5 transition-colors',
                 isActive
                   ? 'bg-primary/14 font-medium text-foreground ring-1 ring-primary/20'
-                  : 'hover:bg-white/[0.055] hover:text-foreground',
+                  : 'hover:bg-muted hover:text-foreground',
               )}
             >
-              {t(item.key)}
+              {item.id === 'home' ? (localePath === 'zh' ? '功能' : 'Features') : item.id === 'download' ? (localePath === 'zh' ? '下载' : 'Download') : item.id === 'pricing' ? (localePath === 'zh' ? '会员' : 'Membership') : t(item.key)}
             </Link>
           );
         })}
@@ -106,7 +106,7 @@ export function SiteNav({ active, showOpenApp = true }: SiteNavProps) {
 
       <div className="flex items-center gap-1.5 sm:gap-2">
         {showOpenApp ? (
-          <Link href="/chat" className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'rounded-full bg-white/[0.04] px-3 sm:px-4')}>
+          <Link href="/chat" className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'rounded-lg bg-background px-3 sm:px-4')}>
             {t('landing.openApp')}
           </Link>
         ) : null}
@@ -116,7 +116,7 @@ export function SiteNav({ active, showOpenApp = true }: SiteNavProps) {
             onClick={() => setLocaleOpen((v) => !v)}
             aria-haspopup="menu"
             aria-expanded={localeOpen}
-            className="inline-flex h-8 items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 text-xs font-medium text-foreground outline-none transition-colors hover:bg-white/[0.07] focus:border-primary/40 focus:ring-2 focus:ring-primary/20"
+            className="inline-flex h-11 items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 text-xs font-medium text-foreground outline-none transition-colors hover:bg-muted focus:border-primary/40 focus:ring-2 focus:ring-primary/20"
           >
             <Languages className="size-3.5 text-primary/85" aria-hidden />
             <span className="hidden sm:inline">{t(activeLocale.labelKey)}</span>
@@ -126,7 +126,7 @@ export function SiteNav({ active, showOpenApp = true }: SiteNavProps) {
           {localeOpen && (
             <div
               role="menu"
-              className="absolute right-0 top-10 z-50 w-40 overflow-hidden rounded-2xl border border-white/12 bg-background/95 p-1.5 shadow-2xl shadow-black/30 ring-1 ring-white/10 backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150"
+              className="absolute right-0 top-10 z-50 w-40 overflow-hidden rounded-xl border border-border bg-background/95 p-1.5 shadow-sm animate-in fade-in zoom-in-95 duration-150"
             >
               {localeOptions.map((option) => {
                 const selected = option.value === localeTag;
@@ -141,7 +141,7 @@ export function SiteNav({ active, showOpenApp = true }: SiteNavProps) {
                       'flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm transition-colors',
                       selected
                         ? 'bg-primary/14 font-medium text-foreground'
-                        : 'text-muted-foreground hover:bg-white/[0.06] hover:text-foreground',
+                        : 'text-muted-foreground hover:bg-muted hover:text-foreground',
                     )}
                   >
                     <Check className={cn('size-4 text-primary', selected ? 'opacity-100' : 'opacity-0')} aria-hidden />
@@ -161,7 +161,7 @@ export function SiteNav({ active, showOpenApp = true }: SiteNavProps) {
           aria-label={mobileMenuOpen ? t('landing.navCloseMenu') : t('landing.navMenu')}
           aria-expanded={mobileMenuOpen}
           aria-controls="mobile-site-nav"
-          className="inline-flex size-8 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-foreground outline-none transition-colors hover:bg-white/[0.07] focus:border-primary/40 focus:ring-2 focus:ring-primary/20 md:hidden"
+          className="inline-flex size-11 items-center justify-center rounded-lg border border-border bg-background text-foreground outline-none transition-colors hover:bg-muted focus:border-primary/40 focus:ring-2 focus:ring-primary/20 md:hidden"
         >
           {mobileMenuOpen ? <X className="size-4" aria-hidden /> : <Menu className="size-4" aria-hidden />}
         </button>
@@ -170,7 +170,7 @@ export function SiteNav({ active, showOpenApp = true }: SiteNavProps) {
       {mobileMenuOpen ? (
         <div
           id="mobile-site-nav"
-          className="absolute inset-x-4 top-[4.5rem] z-50 overflow-hidden rounded-3xl border border-white/12 bg-background/94 p-2 shadow-2xl shadow-black/30 ring-1 ring-white/10 backdrop-blur-2xl md:hidden"
+          className="absolute inset-x-4 top-[4.5rem] z-50 overflow-hidden rounded-xl border border-border bg-background/94 p-2 shadow-sm md:hidden"
         >
           <div className="grid gap-1">
             {navItems.map((item) => {
@@ -182,13 +182,13 @@ export function SiteNav({ active, showOpenApp = true }: SiteNavProps) {
                   aria-current={isActive ? 'page' : undefined}
                   onClick={() => setMobileMenuOpen(false)}
                   className={cn(
-                    'rounded-2xl px-4 py-3 text-sm transition-colors',
+                    'rounded-xl px-4 py-3 text-sm transition-colors',
                     isActive
                       ? 'bg-primary/14 font-medium text-foreground ring-1 ring-primary/20'
-                      : 'text-muted-foreground hover:bg-white/[0.06] hover:text-foreground',
+                      : 'text-muted-foreground hover:bg-muted hover:text-foreground',
                   )}
                 >
-                  {t(item.key)}
+                  {item.id === 'home' ? (localePath === 'zh' ? '功能' : 'Features') : item.id === 'download' ? (localePath === 'zh' ? '下载' : 'Download') : item.id === 'pricing' ? (localePath === 'zh' ? '会员' : 'Membership') : t(item.key)}
                 </Link>
               );
             })}

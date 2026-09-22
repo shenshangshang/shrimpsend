@@ -100,7 +100,7 @@ void main() {
       final ids = diagnosticStepOrder(
         devicePriority: ProbePriority.lanDiscovered,
       );
-      expect(ids.length, 5);
+      expect(ids.length, 4);
       expect(
         ids.indexOf(ConnectionDiagnosticStepId.httpDirect),
         lessThan(ids.indexOf(ConnectionDiagnosticStepId.httpSignaling)),
@@ -112,7 +112,7 @@ void main() {
       final ids = diagnosticStepOrder(
         devicePriority: ProbePriority.presenceOnline,
       );
-      expect(ids.length, 5);
+      expect(ids.length, 4);
       expect(
         ids.indexOf(ConnectionDiagnosticStepId.httpSignaling),
         lessThan(ids.indexOf(ConnectionDiagnosticStepId.httpDirect)),
@@ -122,7 +122,7 @@ void main() {
 
     test('lazy uses cloud-first ordering like presenceOnline', () {
       final ids = diagnosticStepOrder(devicePriority: ProbePriority.lazy);
-      expect(ids.length, 5);
+      expect(ids.length, 4);
       expect(
         ids.indexOf(ConnectionDiagnosticStepId.httpSignaling),
         lessThan(ids.indexOf(ConnectionDiagnosticStepId.httpDirect)),

@@ -8,4 +8,5 @@ export 'link_strategy.dart';
 export 'connection_bar_view_model.dart';
 export 'connection_orchestrator.dart';
 export 'connection_resolution.dart';
+export 'transfer_path_cascade.dart';
 export 'wifi_aware_controller.dart';

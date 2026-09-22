@@ -24,10 +24,7 @@ final class DesktopPasteDispatcher {
   }
 
   /// [owner] is typically the [State] of the screen that registers.
-  void register({
-    required Object owner,
-    required DesktopPasteHandler handler,
-  }) {
+  void register({required Object owner, required DesktopPasteHandler handler}) {
     _handlers.removeWhere((r) => r.owner == owner);
     _handlers.add(_Registration(owner, handler));
   }
@@ -39,7 +36,8 @@ final class DesktopPasteDispatcher {
   bool _onKey(KeyEvent event) {
     if (event is! KeyDownEvent) return false;
     if (event.logicalKey != LogicalKeyboardKey.keyV) return false;
-    final pressed = HardwareKeyboard.instance.isControlPressed ||
+    final pressed =
+        HardwareKeyboard.instance.isControlPressed ||
         HardwareKeyboard.instance.isMetaPressed;
     if (!pressed || _handlers.isEmpty) return false;
 
@@ -48,8 +46,12 @@ final class DesktopPasteDispatcher {
   }
 
   Future<void> _dispatchPaste() async {
+    if (_handlers.isEmpty) return;
+    final owner = _handlers.last.owner;
     final files = await DesktopFileClipboard.readFilesForPending();
-    if (files.isEmpty) return;
+    if (files.isEmpty || _handlers.isEmpty || _handlers.last.owner != owner) {
+      return;
+    }
     await _handlers.last.handler(files);
   }
 }

@@ -1,3 +1,4 @@
+import '../ui/product_scaffold.dart';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -55,7 +56,8 @@ class _ShortcutSettingsScreenState extends State<ShortcutSettingsScreen> {
     final theme = Theme.of(context);
     final colors = context.appColors;
 
-    return Scaffold(
+    return ProductScaffold(
+      preferencesTab: 'shortcuts',
       appBar: AppBar(
         title: Text(l10n.settingsShortcutsPageTitle),
       ),

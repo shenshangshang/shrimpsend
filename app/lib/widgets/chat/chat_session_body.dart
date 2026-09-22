@@ -1,15 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_chat_core/flutter_chat_core.dart' hide ChatColors;
 import 'package:flutter_chat_ui/flutter_chat_ui.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../providers/device_provider.dart';
 import 'chat_theme_helpers.dart';
-import 'transfer_mode_bar.dart';
+import 'device_send_quota_bar.dart';
 
 class ChatSessionBody extends StatelessWidget {
-  final VoidCallback? onRefresh;
-  final Future<void> Function(SendMode mode)? onModeSelected;
   final String currentUserId;
   final String deviceName;
   final InMemoryChatController chatController;
@@ -39,8 +35,6 @@ class ChatSessionBody extends StatelessWidget {
 
   const ChatSessionBody({
     super.key,
-    this.onRefresh,
-    this.onModeSelected,
     required this.currentUserId,
     required this.deviceName,
     required this.chatController,
@@ -60,10 +54,7 @@ class ChatSessionBody extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        _ConnectionBarSection(
-          onRefresh: onRefresh,
-          onModeSelected: onModeSelected,
-        ),
+        const DeviceSendQuotaBar(),
         Expanded(
           child: Chat(
             currentUserId: currentUserId,
@@ -81,6 +72,29 @@ class ChatSessionBody extends StatelessWidget {
             backgroundColor: colors.surface,
             builders: Builders(
               textMessageBuilder: textMessageBuilder,
+              chatMessageBuilder:
+                  (
+                    context,
+                    message,
+                    index,
+                    animation,
+                    child, {
+                    isRemoved,
+                    required isSentByMe,
+                    groupStatus,
+                  }) => ChatMessage(
+                    message: message,
+                    index: index,
+                    animation: animation,
+                    isRemoved: isRemoved,
+                    groupStatus: groupStatus,
+                    horizontalPadding: MediaQuery.sizeOf(context).width >= 768
+                        ? 40
+                        : 16,
+                    verticalPadding: 20,
+                    verticalGroupedPadding: 12,
+                    child: child,
+                  ),
               chatAnimatedListBuilder: (context, itemBuilder) =>
                   GestureDetector(
                     onTap: onChatTap,
@@ -97,26 +111,6 @@ class ChatSessionBody extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-/// Watches connection state in isolation so probe-progress rebuilds stay
-/// inside this subtree and never bubble up to [ChatSessionBody] or [ChatScreen].
-class _ConnectionBarSection extends ConsumerWidget {
-  const _ConnectionBarSection({
-    required this.onRefresh,
-    required this.onModeSelected,
-  });
-
-  final VoidCallback? onRefresh;
-  final Future<void> Function(SendMode mode)? onModeSelected;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return TransferModeBar(
-      onRefresh: onRefresh,
-      onModeSelected: onModeSelected,
     );
   }
 }

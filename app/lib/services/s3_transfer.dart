@@ -1,8 +1,8 @@
 import 'dart:io';
+import 'android_receive_storage.dart';
 
 import 'package:uuid/uuid.dart';
 
-import '../api/api.dart';
 import '../api/s3.dart' as s3_api;
 import '../logger.dart';
 import 'cancel_token.dart';
@@ -229,11 +229,14 @@ class S3TransferService extends CloudTransferService {
         );
       }
 
-      final partsForComplete = completedParts
-          .map((p) => {'partNumber': p.partNumber, 'eTag': p.eTag})
-          .toList()
-        ..sort((a, b) =>
-            (a['partNumber'] as int).compareTo(b['partNumber'] as int));
+      final partsForComplete =
+          completedParts
+              .map((p) => {'partNumber': p.partNumber, 'eTag': p.eTag})
+              .toList()
+            ..sort(
+              (a, b) =>
+                  (a['partNumber'] as int).compareTo(b['partNumber'] as int),
+            );
 
       await s3_api.completeMultipartUpload(
         uploadId: uploadId,
@@ -243,9 +246,7 @@ class S3TransferService extends CloudTransferService {
 
       await mgr.markStatus(record.transferId, TransferStatus.completed);
       onProgress?.call(fileSize, fileSize);
-      logChat.info(
-        'hosted multipart upload ok key=$key parts=$totalParts',
-      );
+      logChat.info('hosted multipart upload ok key=$key parts=$totalParts');
 
       return CloudUploadResult(key: key, fileName: fileName);
     } catch (e) {
@@ -395,7 +396,10 @@ class S3TransferService extends CloudTransferService {
     );
 
     final String partialPath;
-    if (record?.filePath != null && record!.filePath!.endsWith('.partial')) {
+    if (await AndroidReceiveStorage.owns(savePath)) {
+      partialPath = savePath;
+    } else if (record?.filePath != null &&
+        record!.filePath!.endsWith('.partial')) {
       partialPath = record.filePath!;
     } else {
       partialPath = '$savePath.partial';
@@ -412,13 +416,13 @@ class S3TransferService extends CloudTransferService {
         await mgr.markStatus(record.transferId, TransferStatus.completed);
         onProgress?.call(record.fileSize, record.fileSize);
         return CloudDownloadResult(
-          filePath: savePath,
+          filePath:
+              await AndroidReceiveStorage.complete(savePath, record.fileSize) ??
+              savePath,
           totalBytes: record.fileSize,
         );
       }
-      logChat.info(
-        'S3 download resume partial=$partialPath offset=$offset',
-      );
+      logChat.info('S3 download resume partial=$partialPath offset=$offset');
     }
 
     final client = HttpClient();
@@ -520,10 +524,15 @@ class S3TransferService extends CloudTransferService {
     logChat.info(
       'S3TransferService download ok path=$savePath bytes=$received',
     );
-    return CloudDownloadResult(filePath: savePath, totalBytes: received);
+    return CloudDownloadResult(
+      filePath:
+          await AndroidReceiveStorage.complete(savePath, received) ?? savePath,
+      totalBytes: received,
+    );
   }
 
   Future<void> _finalizePartial(File partial, String finalPath) async {
+    if (partial.path == finalPath) return;
     final finalFile = File(finalPath);
     if (await finalFile.exists()) {
       try {

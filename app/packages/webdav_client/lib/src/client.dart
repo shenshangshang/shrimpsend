@@ -55,7 +55,8 @@ class Client {
   /// Test whether the service can connect
   Future<void> ping([CancelToken? cancelToken]) async {
     var resp = await c.wdOptions(this, '/', cancelToken: cancelToken);
-    if (resp.statusCode != 200) {
+    final status = resp.statusCode ?? 0;
+    if (status < 200 || status >= 300) {
       throw newResponseError(resp);
     }
   }

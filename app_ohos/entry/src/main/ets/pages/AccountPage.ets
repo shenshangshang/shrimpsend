@@ -5,6 +5,7 @@ import { AuthApi } from '../network/AuthApi';
 import { UserApi } from '../network/UserApi';
 import { getOrCreateDeviceId } from '../storage/DeviceIdentity';
 import { AppLogFile } from '../services/AppLogFile';
+import { RealtimeHub } from '../realtime/RealtimeHub';
 
 @Entry
 @Component
@@ -106,6 +107,7 @@ struct AccountPage {
       // ignore
     }
     await ApiSession.clear();
+    RealtimeHub.disconnect();
     AppLogFile.append('logout');
     await router.replaceUrl({ url: 'pages/LoginPage' });
   }
