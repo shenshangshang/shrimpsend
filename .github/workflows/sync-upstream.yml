@@ -21,7 +21,9 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git remote add upstream https://github.com/shrimpsend/shrimpsend.git
+          # Upstream shrimpsend/shrimpsend was deleted upstream; St0ff3l/shrimpsend
+          # is a full-history mirror (contains all former upstream commits).
+          git remote add upstream https://github.com/St0ff3l/shrimpsend.git
           git fetch upstream main
           if git merge upstream/main --no-edit; then
             git push origin main
